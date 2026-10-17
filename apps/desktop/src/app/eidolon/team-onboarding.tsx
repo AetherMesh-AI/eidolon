@@ -903,19 +903,22 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
               {preview && (
                 <>
                   <p className="eid-team-note">{copy.inherited}</p>
-                  <p>{copy.retainedSupport}</p>
-                  {!!preview.supportAgents?.length && (
-                    <div>
-                      <p>{copy.supportIdentities}</p>
-                      <ul>
-                        {preview.supportAgents.map(member => (
-                          <li key={member.id}>
-                            <bdi>{member.name}</bdi>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <details>
+                    <summary>{copy.details}</summary>
+                    <p>{copy.retainedSupport}</p>
+                    {!!preview.supportAgents?.length && (
+                      <div>
+                        <p>{copy.supportIdentities}</p>
+                        <ul>
+                          {preview.supportAgents.map(member => (
+                            <li key={member.id}>
+                              <bdi>{member.name}</bdi>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </details>
                 </>
               )}
             </>

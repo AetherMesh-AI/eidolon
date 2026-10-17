@@ -677,7 +677,7 @@ print(json.dumps(matches))
       await dialog.getByLabel('Work to delegate', { exact: true }).fill(inputs.jobs)
       await dialog.getByLabel('What success looks like', { exact: true }).fill(inputs.goals)
       await dialog.getByLabel('Team naming style (optional)', { exact: true }).fill(inputs.namingStyle)
-      await expect(dialog).toContainText('Setup model calls remaining: 3.')
+      await expect(dialog).toContainText('Setup calls left: 3.')
       const generate = dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })
       // Directory model Save does not refresh this mounted entry's setup snapshot.
       // Use the visible passive check before asking it to generate.
@@ -740,7 +740,7 @@ print(json.dumps(matches))
       await review.click()
       const create = dialog.getByRole('button', { name: 'Create team', exact: true })
       await expect(create).toBeEnabled()
-      await expect(dialog).toContainText('Setup model calls remaining: 2.')
+      await expect(dialog).toContainText('Setup calls left: 2.')
       expect(snapshot(home).teams).toEqual([])
       expect(snapshot(home).agents).toEqual(before.agents)
 
@@ -938,3 +938,4 @@ print(json.dumps(matches))
     }
   }
 })
+

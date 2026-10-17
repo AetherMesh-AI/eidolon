@@ -101,7 +101,7 @@ test.setTimeout(180_000)
 test.afterEach(async () => {
   await fixture?.cleanup()
   fixture = undefined
-  await new Promise<void>(resolve => proxy ? proxy.close(() => resolve()) : resolve())
+  await new Promise<void>(resolve => (proxy ? proxy.close(() => resolve()) : resolve()))
   proxy = undefined
 })
 
@@ -240,7 +240,9 @@ async function captures(
       expect(immediate.offset).toBe(3)
 
       for (const description of context) {
-        await expect(description, 'original Tab reveals adjacent label/help without helper scrolling').toBeInViewport({ ratio: 1 })
+        await expect(description, 'original Tab reveals adjacent label/help without helper scrolling').toBeInViewport({
+          ratio: 1
+        })
       }
 
       // The compatibility focus helper runs only after original Tab geometry passed.
@@ -278,9 +280,12 @@ async function captures(
         expect(closeTarget?.height).toBeGreaterThanOrEqual(36)
         expect(titleText.length).toBeGreaterThan(0)
         expect(
-          titleText.filter(rect =>
-            rect.left < focus.ring.right && rect.right > focus.ring.left &&
-            rect.top < focus.ring.bottom && rect.bottom > focus.ring.top
+          titleText.filter(
+            rect =>
+              rect.left < focus.ring.right &&
+              rect.right > focus.ring.left &&
+              rect.top < focus.ring.bottom &&
+              rect.bottom > focus.ring.top
           ),
           'the complete close focus ring does not cover the rendered title'
         ).toEqual([])
@@ -315,7 +320,10 @@ async function captures(
         viewport,
         focus,
         immediate,
-        budgetContext: { authoritative: ledger(f).state.setupBudget, visibleText: await dialog.locator('.eid-team-budget-values').allTextContents() },
+        budgetContext: {
+          authoritative: ledger(f).state.setupBudget,
+          visibleText: await dialog.locator('.eid-team-budget-values').allTextContents()
+        },
         header,
         tabSteps,
         captureMethod: 'electron.capturePage',
@@ -328,7 +336,10 @@ async function captures(
 }
 
 function ledger(f: MockBackendFixture) {
-  return JSON.parse(run(f, `
+  return JSON.parse(
+    run(
+      f,
+      `
 import os,json,sqlite3
 from pathlib import Path
 from eidolon_cli.organization_team_budget import budget_policy
@@ -343,11 +354,19 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
   receipts=[json.loads(r[0])['receipt'] for r in c.execute('SELECT result_json FROM organization_owner_policy_receipts') if json.loads(r[0])['receipt']['action']=='setupBudget']
  saved=c.execute('SELECT count(*) FROM organization_team_setup').fetchone()[0]
 print(json.dumps({'state':budget_policy(home,identity),'generations':generations,'receipts':receipts,'savedTeams':saved}))
-`)) as {
-    state: { policyGeneration: number; configuration: unknown; setupBudget: {
-      policyVersion: number; status: string; usage: { legacy: number; improveTeamInput: number; generateTeam: number; total: number };
-      remaining: { improveCalls: number; generationCalls: number; totalCalls: number }
-    } }
+`
+    )
+  ) as {
+    state: {
+      policyGeneration: number
+      configuration: unknown
+      setupBudget: {
+        policyVersion: number
+        status: string
+        usage: { legacy: number; improveTeamInput: number; generateTeam: number; total: number }
+        remaining: { improveCalls: number; generationCalls: number; totalCalls: number }
+      }
+    }
     generations: { status: string; dispatched: number; reserved_tokens: number }[]
     receipts: { idempotencyKey: string; policyGeneration: number }[]
     savedTeams: number
@@ -356,7 +375,7 @@ print(json.dumps({'state':budget_policy(home,identity),'generations':generations
 
 async function openBudget(dialog: Locator) {
   const budget = dialog.locator('.eid-team-budget')
-  await budget.locator('summary').click()
+  await budget.locator(':scope > summary').click()
   await expect(budget.getByLabel('Improve calls', { exact: true })).toBeVisible()
 
   return budget
@@ -374,13 +393,18 @@ async function reviewSuggested(budget: Locator) {
 async function applySuggested(budget: Locator) {
   await reviewSuggested(budget)
   await budget.getByRole('button', { name: 'Apply setup budget', exact: true }).click()
-  await expect(budget.getByRole('region', { name: 'Saved budget receipt', exact: true })).toBeVisible()
+  await expect(budget.getByRole('region', { name: 'Budget saved', exact: true })).toBeVisible()
 }
 
 function replies() {
-  return { starterTeamReply: JSON.stringify(team), starterTeamInputReply: () => JSON.stringify({
-    suggestion: 'Produce an evidence-linked report.', assumptions: ['The cadence is not yet confirmed.']
-  }) }
+  return {
+    starterTeamReply: JSON.stringify(team),
+    starterTeamInputReply: () =>
+      JSON.stringify({
+        suggestion: 'Produce an evidence-linked report.',
+        assumptions: ['The cadence is not yet confirmed.']
+      })
+  }
 }
 
 test('owner explicitly adopts split setup limits while legacy debt, text and keyboard focus survive', async () => {
@@ -410,23 +434,62 @@ test('owner explicitly adopts split setup limits while legacy debt, text and key
     await expect(goals).toHaveValue('A useful source-linked report')
   }
 
-  await captures(f, dialog, [
-    { name: 'improve-limit', target: budget.getByLabel('Improve calls', { exact: true }),
-      context: [budget.getByLabel('Improve calls', { exact: true }).locator('..'), budget.locator('fieldset .eid-team-note').first()] },
-    { name: 'generate-limit', target: budget.getByLabel('Generate / Regenerate calls', { exact: true }),
-      context: [budget.getByLabel('Generate / Regenerate calls', { exact: true }).locator('..')] },
-    { name: 'aggregate-limit', target: budget.getByLabel('Total setup calls', { exact: true }),
-      context: [budget.getByLabel('Total setup calls', { exact: true }).locator('..')] }
-  ], 'setup-budget-draft', assertDescriptions)
+  await captures(
+    f,
+    dialog,
+    [
+      {
+        name: 'improve-limit',
+        target: budget.getByLabel('Improve calls', { exact: true }),
+        context: [
+          budget.getByLabel('Improve calls', { exact: true }).locator('..'),
+          budget.locator('fieldset .eid-team-note').first()
+        ]
+      },
+      {
+        name: 'generate-limit',
+        target: budget.getByLabel('Generate / Regenerate calls', { exact: true }),
+        context: [budget.getByLabel('Generate / Regenerate calls', { exact: true }).locator('..')]
+      },
+      {
+        name: 'aggregate-limit',
+        target: budget.getByLabel('Total setup calls', { exact: true }),
+        context: [budget.getByLabel('Total setup calls', { exact: true }).locator('..')]
+      },
+      { name: 'usage-details', target: budget.locator('.eid-team-budget-body > details > summary') }
+    ],
+    'setup-budget-draft',
+    assertDescriptions
+  )
+  const usageDetails = budget.locator('.eid-team-budget-body > details')
+  await expect(usageDetails).not.toHaveAttribute('open', '')
+  await tabTo(f, dialog, usageDetails.locator(':scope > summary'))
+  await f.page.keyboard.press('Enter')
+  await expect(usageDetails).toHaveAttribute('open', '')
+  await expect(usageDetails.getByText('Reserved tokens / token ceiling', { exact: true })).toBeVisible()
+  await f.page.keyboard.press('Space')
+  await expect(usageDetails).not.toHaveAttribute('open', '')
+  await expect(usageDetails.locator(':scope > summary')).toBeFocused()
+  await assertDescriptions()
+
   await budget.getByRole('button', { name: 'Review setup budget', exact: true }).click()
   await expect(budget.getByRole('region', { name: 'Review setup budget', exact: true })).toBeVisible()
   expect(ledger(f)).toEqual(before)
-  await captures(f, dialog, [
-    { name: 'explicit-apply', target: budget.getByRole('button', { name: 'Apply setup budget', exact: true }),
-      context: [budget.locator('.eid-team-budget-review > p.eid-team-note').first()] }
-  ], 'setup-budget-reviewed', assertDescriptions)
+  await captures(
+    f,
+    dialog,
+    [
+      {
+        name: 'explicit-apply',
+        target: budget.getByRole('button', { name: 'Apply setup budget', exact: true }),
+        context: [budget.locator('.eid-team-budget-review > p.eid-team-note').first()]
+      }
+    ],
+    'setup-budget-reviewed',
+    assertDescriptions
+  )
   await budget.getByRole('button', { name: 'Apply setup budget', exact: true }).click()
-  await expect(budget.getByRole('region', { name: 'Saved budget receipt', exact: true })).toBeVisible()
+  await expect(budget.getByRole('region', { name: 'Budget saved', exact: true })).toBeVisible()
   await expect.poll(() => ledger(f).state.setupBudget.policyVersion).toBe(2)
   const adopted = ledger(f)
   expect(adopted.state.policyGeneration).toBe(before.state.policyGeneration + 1)
@@ -444,7 +507,10 @@ test('owner explicitly adopts split setup limits while legacy debt, text and key
   expect(after.state.setupBudget.remaining).toEqual({ improveCalls: 3, generationCalls: 2, totalCalls: 4 })
   expect(f.mock.receivedPrompts).toHaveLength(3)
   expect(after.savedTeams).toBe(0)
-  expect(JSON.parse(f.mock.receivedPrompts[2])).toMatchObject({ jobs: 'Research product changes', goals: 'A useful source-linked report' })
+  expect(JSON.parse(f.mock.receivedPrompts[2])).toMatchObject({
+    jobs: 'Research product changes',
+    goals: 'A useful source-linked report'
+  })
 })
 
 test('lost policy acknowledgement retries the exact owner intent without duplicate receipts or inference', async () => {
@@ -457,12 +523,18 @@ test('lost policy acknowledgement retries the exact owner intent without duplica
     const server = socket.connectToServer()
     const pending = new Set<string | number>()
     socket.onMessage(message => {
-      const request = JSON.parse(message.toString()) as { id: string | number; method: string; params: Record<string, unknown> }
+      const request = JSON.parse(message.toString()) as {
+        id: string | number
+        method: string
+        params: Record<string, unknown>
+      }
 
       if (request.method === 'organization.applySetupBudget') {
         requests.push(request.params)
 
-        if (drop) {pending.add(request.id)}
+        if (drop) {
+          pending.add(request.id)
+        }
       }
 
       server.send(message)
@@ -473,9 +545,17 @@ test('lost policy acknowledgement retries the exact owner intent without duplica
       if (pending.has(response.id) && response.result) {
         pending.delete(response.id)
         drop = false
-        socket.send(JSON.stringify({ jsonrpc: '2.0', id: response.id, error: {
-          code: 5076, message: 'Synthetic acknowledgement loss', data: { reason: 'synthetic_acknowledgement_loss' }
-        } }))
+        socket.send(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: response.id,
+            error: {
+              code: 5076,
+              message: 'Synthetic acknowledgement loss',
+              data: { reason: 'synthetic_acknowledgement_loss' }
+            }
+          })
+        )
 
         return
       }
@@ -493,13 +573,16 @@ test('lost policy acknowledgement retries the exact owner intent without duplica
   await reviewSuggested(budget)
   await budget.getByRole('button', { name: 'Apply setup budget', exact: true }).click()
   await expect(budget.getByRole('button', { name: 'Check original budget change', exact: true })).toBeEnabled()
-  const lost = 'The acknowledgement was lost. The change may already be saved. Reconcile the original change before editing again.'
+
+  const lost =
+    'The acknowledgement was lost. The change may already be saved. Reconcile the original change before editing again.'
+
   await expect(budget.getByRole('alert')).toHaveText(lost)
   const committed = ledger(f)
   expect(committed.receipts).toHaveLength(1)
   expect(committed.state.policyGeneration).toBe(before.state.policyGeneration + 1)
   await budget.getByRole('button', { name: 'Check original budget change', exact: true }).click()
-  await expect(budget.getByRole('region', { name: 'Saved budget receipt', exact: true })).toBeVisible()
+  await expect(budget.getByRole('region', { name: 'Budget saved', exact: true })).toBeVisible()
   await acknowledgeExpectedErrorBanner(f.page, lost)
   expect(requests).toHaveLength(2)
   expect(requests[1]).toEqual(requests[0])
@@ -511,31 +594,47 @@ test('lost policy acknowledgement retries the exact owner intent without duplica
 
 test('source conflicts and an uncertain physical send never permit policy refill or another inference', async () => {
   let physicalPosts = 0
-  fixture = await setupMockBackend({ modelContextLength: 128000, beforeLaunch: async (sandbox, mock) => {
-    const upstream = new URL(mock.url)
-    proxy = http.createServer((request, response) => {
-      if (request.method === 'POST') {
-        request.resume()
-        request.on('end', () => { physicalPosts++; request.socket.destroy() })
+  fixture = await setupMockBackend({
+    modelContextLength: 128000,
+    beforeLaunch: async (sandbox, mock) => {
+      const upstream = new URL(mock.url)
+      proxy = http.createServer((request, response) => {
+        if (request.method === 'POST') {
+          request.resume()
+          request.on('end', () => {
+            physicalPosts++
+            request.socket.destroy()
+          })
 
-        return
+          return
+        }
+
+        const forwarded = http.request(
+          new URL(request.url ?? '/', upstream.origin),
+          { method: request.method },
+          incoming => {
+            response.writeHead(incoming.statusCode ?? 502, incoming.headers)
+            incoming.pipe(response)
+          }
+        )
+
+        forwarded.on('error', () => {
+          response.writeHead(502)
+          response.end()
+        })
+        request.pipe(forwarded)
+      })
+      await new Promise<void>(resolve => proxy!.listen(0, '127.0.0.1', resolve))
+      const address = proxy.address()
+
+      if (!address || typeof address === 'string') {
+        throw new Error('Expected numeric loopback listener')
       }
 
-      const forwarded = http.request(new URL(request.url ?? '/', upstream.origin), { method: request.method }, incoming => {
-        response.writeHead(incoming.statusCode ?? 502, incoming.headers)
-        incoming.pipe(response)
-      })
-
-      forwarded.on('error', () => { response.writeHead(502); response.end() })
-      request.pipe(forwarded)
-    })
-    await new Promise<void>(resolve => proxy!.listen(0, '127.0.0.1', resolve))
-    const address = proxy.address()
-
-    if (!address || typeof address === 'string') {throw new Error('Expected numeric loopback listener')}
-    const file = path.join(sandbox.hermesHome, 'config.yaml')
-    writeFileSync(file, readFileSync(file, 'utf8').replaceAll(upstream.origin, `http://127.0.0.1:${address.port}`))
-  } })
+      const file = path.join(sandbox.hermesHome, 'config.yaml')
+      writeFileSync(file, readFileSync(file, 'utf8').replaceAll(upstream.origin, `http://127.0.0.1:${address.port}`))
+    }
+  })
   const f = fixture
   await waitForAppReady(f)
   const inferenceRequests: Record<string, unknown>[] = []
@@ -544,7 +643,10 @@ test('source conflicts and an uncertain physical send never permit policy refill
     socket.onMessage(message => {
       const request = JSON.parse(message.toString()) as { method: string; params: Record<string, unknown> }
 
-      if (request.method === 'organization.generateTeam') {inferenceRequests.push(request.params)}
+      if (request.method === 'organization.generateTeam') {
+        inferenceRequests.push(request.params)
+      }
+
       server.send(message)
     })
     server.onMessage(message => socket.send(message))
@@ -582,7 +684,12 @@ test('source conflicts and an uncertain physical send never permit policy refill
   expect(uncertain.state.setupBudget.remaining.totalCalls).toBe(6)
   await expect(budget.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled()
   await budget.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect(budget.getByText('A setup request is running or its outcome is uncertain. Review it before changing the budget or starting another request.', { exact: true })).toBeVisible()
+  await expect(
+    budget.getByText(
+      'A setup request is running or its outcome is uncertain. Review it before changing the budget or starting another request.',
+      { exact: true }
+    )
+  ).toBeVisible()
   await expect(budget.getByRole('button', { name: 'Review setup budget', exact: true })).toBeDisabled()
   // The existing intent remains available for receipt recovery, never a new send.
   const generate = dialog.getByRole('button', { name: labels.en.generate, exact: true })

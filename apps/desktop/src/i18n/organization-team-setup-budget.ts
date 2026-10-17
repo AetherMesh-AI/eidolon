@@ -1,6 +1,23 @@
 import type { Locale } from './types'
 
 const messages = {
+  retainedSummary: [
+    'Used calls and pending charges still count. Lower limits do not refund usage.',
+    '使用済みの呼び出しと未確定の料金も引き続き計上されます。上限を下げても使用分は戻りません。',
+    '已用调用和待结算费用仍计入额度。降低上限不会退还已用额度。',
+    '已用呼叫和待結算費用仍計入額度。降低上限不會退還已用額度。',
+    'تظل الاستدعاءات المستخدمة والرسوم المعلّقة محسوبة. خفض الحدود لا يعيد الاستخدام.',
+    'Использованные вызовы и ожидаемые списания по-прежнему учитываются. Снижение лимитов не возвращает израсходованное.'
+  ],
+  limitsSummary: [
+    'API setup only. Other limits may reduce available calls. Cost estimates do not guarantee your provider bill.',
+    'API設定専用です。他の上限により利用できる呼び出しが減る場合があります。費用の見積もりはプロバイダーの請求額を保証しません。',
+    '仅适用于 API 设置。其他限制可能减少可用调用次数。费用估算不保证提供商的实际账单金额。',
+    '僅適用於 API 設定。其他限制可能減少可用呼叫次數。費用估算不保證供應商的實際帳單金額。',
+    'لإعداد API فقط. قد تقلل الحدود الأخرى الاستدعاءات المتاحة. تقديرات التكلفة لا تضمن قيمة فاتورة المزوّد.',
+    'Только настройка через API. Другие лимиты могут сократить число доступных вызовов. Оценка стоимости не гарантирует сумму счёта провайдера.'
+  ],
+  details: ['Details', '詳細', '详情', '詳細資訊', 'التفاصيل', 'Подробности'],
   noCostCeiling: [
     'No USD ceiling configured',
     'USD上限未設定',
@@ -26,14 +43,7 @@ const messages = {
     'Бюджет настройки можно менять только до появления команды или истории работы в организации.'
   ],
   title: ['Setup budget', 'セットアップ予算', '设置预算', '設定預算', 'ميزانية الإعداد', 'Бюджет настройки'],
-  current: [
-    'Current effective limits',
-    '現在の実効上限',
-    '当前有效上限',
-    '目前有效上限',
-    'الحدود الفعلية الحالية',
-    'Текущие действующие лимиты'
-  ],
+  current: ['Current limits', '現在の上限', '当前上限', '目前上限', 'الحدود الحالية', 'Текущие лимиты'],
   legacy: [
     'The existing shared setup limit remains in force until you review and apply a change.',
     '変更を確認して適用するまで、既存の共有セットアップ上限が維持されます。',
@@ -82,14 +92,7 @@ const messages = {
     'الدولارات المحجوزة / السقف المحدد بالدولار',
     'Зарезервированные USD / заданный потолок USD'
   ],
-  retained: [
-    'Retained usage',
-    '保持される使用量',
-    '保留的使用量',
-    '保留的使用量',
-    'الاستخدام المحتفظ به',
-    'Сохранённый расход'
-  ],
+  retained: ['Used so far', 'これまでの使用量', '已使用量', '已使用量', 'الاستخدام حتى الآن', 'Уже использовано'],
   legacyUsage: [
     'Earlier shared calls',
     '以前の共有呼び出し数',
@@ -124,12 +127,12 @@ const messages = {
     'Вставить рекомендуемые лимиты в черновик'
   ],
   draftHelp: [
-    'Whole numbers from 0 to 1000. Each operation limit must fit within the total. Zero disables that operation. Nothing changes until Apply.',
-    '0～1000の整数を入力してください。各操作の上限は合計以下にします。0でその操作を無効にします。適用するまで変更されません。',
-    '输入 0 到 1000 的整数。每项操作上限不得超过总上限。0 表示禁用该操作。应用前不会更改。',
-    '輸入 0 到 1000 的整數。每項操作上限不得超過總上限。0 表示停用該操作。套用前不會變更。',
-    'أعداد صحيحة من 0 إلى 1000. يجب ألا يتجاوز حد كل عملية الإجمالي. الصفر يعطّل العملية. لا يتغير شيء قبل التطبيق.',
-    'Целые числа от 0 до 1000. Лимит операции не должен превышать общий. Ноль отключает операцию. Изменения вступают в силу только после применения.'
+    'Use whole numbers from 0–1000. Zero disables an action. Each action limit must not exceed the total. Apply to save.',
+    '0～1000の整数を入力します。0は操作を無効にします。各操作の上限は合計以下にしてください。適用すると保存されます。',
+    '填写 0–1000 的整数。0 表示禁用该操作。各操作上限不能超过总上限。应用后保存。',
+    '填寫 0–1000 的整數。0 表示停用該操作。各操作上限不能超過總上限。套用後儲存。',
+    'أدخل أعداداً صحيحة من 0 إلى 1000. الصفر يعطّل العملية. لا يتجاوز حد أي عملية الإجمالي. طبّق للحفظ.',
+    'Целые числа от 0 до 1000. Ноль отключает действие. Лимит каждого действия не выше общего. Примените для сохранения.'
   ],
   limitsNote: [
     'API setup only. Other call, token and cost ceilings can reduce the usable allowance. USD reservations use configured prices and do not guarantee the final provider invoice. Subscription generation is not supported.',
@@ -163,14 +166,7 @@ const messages = {
     'التحقق من تغيير الميزانية الأصلي',
     'Проверить исходное изменение бюджета'
   ],
-  receipt: [
-    'Saved budget receipt',
-    '保存済み予算の記録',
-    '已保存的预算凭据',
-    '已儲存的預算收據',
-    'إيصال الميزانية المحفوظ',
-    'Квитанция сохранённого бюджета'
-  ],
+  receipt: ['Budget saved', '予算を保存しました', '预算已保存', '預算已儲存', 'تم حفظ الميزانية', 'Бюджет сохранён'],
   refreshFailed: [
     'The change is saved, but current limits could not be refreshed. Refresh before making another model request.',
     '変更は保存されましたが、現在の上限を更新できませんでした。次のモデル要求の前に更新してください。',

@@ -4,6 +4,7 @@ export interface TeamOnboardingCopy {
   setupOrganization: string
   title: string
   intro: string
+  details: string
   connectModel: string
   modelSettings: string
   checkConfiguration: string
@@ -103,7 +104,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   en: {
     setupOrganization: 'Set up organization',
     title: 'Build your starter team',
-    intro: 'Review model settings, describe your work, then review your persistent team.',
+    intro: 'Describe your work, then review your team.',
+    details: 'Details',
     connectModel: 'Connect a model',
     modelSettings: 'Model settings',
     checkConfiguration: 'Check configuration',
@@ -119,13 +121,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       'The selected Codex app-server route is not supported for AI team setup yet. You can describe your work and set up a team manually, or review Model settings.',
     generationUnsupported:
       'The selected model route is not supported for AI team setup. You can describe your work and set up a team manually, or review Model settings.',
-    jobsHelp:
-      'List the tasks or responsibilities you want this team to handle, including recurring work, topics and limits. This describes the team; it does not start work.',
+    jobsHelp: 'What should this team handle? Include recurring work and any limits.',
     jobsExample: 'Research product changes each week, draft release notes, and review documentation.',
-    goalsHelp:
-      'Describe the successful result: deliverables, quality standards or targets. Include dates or measures only if you already have them.',
+    goalsHelp: 'What would a good result look like? Add deadlines or targets if you have them.',
     goalsExample: 'A weekly source-linked summary and reviewed release notes ready for me to publish.',
-    namingHelp: 'Optional: say how agents should be named. Leave blank to let the model choose names.',
+    namingHelp: 'Any preference for names? Leave blank to let the model choose.',
     namingExample: 'Short, distinct names inspired by astronomy.',
     jobs: 'Work to delegate',
     goals: 'What success looks like',
@@ -136,13 +136,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: 'Improve work description',
     improveGoals: 'Improve success description',
     improving: 'Improving your description',
-    improveHelp:
-      'Improve uses only the text in these three fields. Add a few words first; you will review the suggestion and any assumptions before applying it.',
+    improveHelp: 'Start with a few words. Improve uses only these three fields and gives you a suggestion to review.',
     improveUnavailable:
       'Text improvement is unavailable on this runtime. Update the backend to use Improve; you can still edit these fields yourself.',
     reviewSuggestion: 'Review suggested wording',
-    suggestionReviewHelp:
-      'Your original text stays unchanged until you apply. Edit the suggestion and check any assumptions first.',
+    suggestionReviewHelp: 'Check the wording and assumptions. Your original stays unchanged until you apply.',
     original: 'Your original text',
     suggestion: 'Suggested text',
     assumptions: 'Assumptions to check',
@@ -157,9 +155,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       'Built-in support identities remain available. Unused default workers are retained as retired history.',
     presets: 'Starter presets',
     reviewCoverage:
-      'The foundation includes an executive, at least one manager and at least one worker. Review the full proposal below: each purpose explains why the role exists, and responsibilities define its duties. Independent review and built-in support remain available. Nothing is saved until you choose Create team.',
-    reviewHint:
-      'Give everyone a unique name, a purpose and responsibilities (one per line). Each manager needs at least one worker.',
+      'Your team needs an executive, at least one manager and one worker. Nothing is saved until you choose Create team.',
+    reviewHint: 'Give each member a unique name, purpose and duties (one per line). Each manager needs a worker.',
     review: 'Review your team',
     name: 'Name',
     purpose: 'Purpose',
@@ -189,9 +186,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     error: 'Could not confirm setup. Retry the same action to check its outcome.',
     stale: 'Connection changed. Reopen setup before continuing.',
     authority:
-      'Team design does not grant tool access, change budgets, or start tasks. The root executive uses Fixed model routing.',
-    allowanceAvailable:
-      'Setup model calls remaining: {count}. Token, cost and shared limits are checked before every send.',
+      'Creating a team starts no tasks, grants no tool access and leaves budgets unchanged. The executive uses Fixed model routing.',
+    allowanceAvailable: 'Setup calls left: {count}. Token, cost and shared limits still apply.',
     allowanceExhausted: 'The setup allowance is exhausted. You can keep editing and create a reviewed team manually.',
     allowanceRunning:
       'A setup model request is already running. Check configuration to refresh its status before starting another.',
@@ -204,11 +200,10 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       'The recovered proposal used an earlier draft. Your newer edits are unchanged. Review this team, or request a new proposal if setup allowance remains.',
     regenerateHelp:
-      'Request a different team from the same descriptions. This uses another call from the shared setup allowance and may incur provider charges. Your current proposal stays until a new one succeeds.',
+      'Want another team from the same descriptions? This uses another setup call; provider charges may apply. Your current proposal stays until the new one succeeds.',
     generationCost:
-      'Improve and Generate team share at most three model calls for setup; your configured limits may be lower. Each request uses the selected provider and may incur charges.',
-    generationCancel:
-      'Closing this preview does not stop a model request already sent; provider charges may still apply.',
+      'Each Improve or Generate request uses one setup call with your selected provider and may incur charges. Your configured limits apply.',
+    generationCancel: 'Closing this preview does not stop a sent request or prevent provider charges.',
     readinessUnchecked: 'Model execution has not been tested. Review readiness before requesting work.',
     description: 'Describe the jobs and outcomes this team should handle.',
     configured: 'A team already exists. Manage it in Organization.',
@@ -224,7 +219,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ja: {
     setupOrganization: '組織を設定',
     title: '最初のチームを作成',
-    intro: 'モデル設定を確認し、仕事内容を説明して、継続的に活動するチームを確認します。',
+    intro: '仕事内容を入力して、チーム案を確認しましょう。',
+    details: '詳細',
     connectModel: 'モデルを接続',
     modelSettings: 'モデル設定',
     checkConfiguration: '設定を確認',
@@ -240,13 +236,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       '選択したCodex app-server経路は、AIによるチーム設定にまだ対応していません。仕事内容を入力して手動で設定するか、「モデル設定」を確認してください。',
     generationUnsupported:
       '選択したモデル経路は、AIによるチーム設定に対応していません。仕事内容を入力して手動で設定するか、「モデル設定」を確認してください。',
-    jobsHelp:
-      'このチームに任せたい作業や担当業務を、定期的な作業、分野、制約も含めて記入してください。チームの役割を説明するもので、作業は開始されません。',
+    jobsHelp: '何を任せたいですか？定期的な仕事や制限も含めてください。',
     jobsExample: '製品の変更を毎週調査し、リリースノートを作成して、ドキュメントを確認する。',
-    goalsHelp:
-      '成功した状態を、成果物、品質基準、目標などで説明してください。日付や数値は決まっている場合に記入してください。',
+    goalsHelp: 'どんな結果を期待しますか？期限や目標があれば追加してください。',
     goalsExample: '出典リンク付きの週次まとめと、私が公開できる確認済みのリリースノート。',
-    namingHelp: '任意：エージェントの名前の付け方を指定できます。空欄の場合はモデルが名前を選びます。',
+    namingHelp: '名前の希望はありますか？空欄ならモデルが選びます。',
     namingExample: '天文学にちなんだ、短く区別しやすい名前。',
     jobs: '任せたい仕事',
     goals: '成功したときの成果',
@@ -257,12 +251,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: '仕事内容を改善',
     improveGoals: '成果の説明を改善',
     improving: '説明を改善中',
-    improveHelp:
-      '改善にはこの3つの入力欄の内容のみを使用します。まず短い説明を入力してください。提案と仮定を確認してから適用できます。',
+    improveHelp: 'まず短い説明を入力してください。「改善」はこの3つの欄だけを使い、確認用の提案を作成します。',
     improveUnavailable:
       'このランタイムでは文章の改善を利用できません。バックエンドを更新してください。各入力欄は手動で編集できます。',
     reviewSuggestion: '提案された文章を確認',
-    suggestionReviewHelp: '適用するまで元の文章は変わりません。先に提案を編集し、仮定を確認してください。',
+    suggestionReviewHelp: '表現と仮定を確認してください。適用するまで元の文章は変わりません。',
     original: '元の文章',
     suggestion: '提案された文章',
     assumptions: '確認が必要な仮定',
@@ -276,9 +269,9 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     retainedSupport: '組み込みの支援メンバーは保持されます。未使用の既定ワーカーは引退済みの履歴として保持されます。',
     presets: '初期プリセット',
     reviewCoverage:
-      '基本構成にはエグゼクティブ、少なくとも1人のマネージャーと1人のワーカーが含まれます。以下の提案全体を確認してください。目的には役割が必要な理由、担当業務には具体的な仕事を記入します。独立したレビューと組み込みの支援機能は維持されます。「チームを作成」を選択するまで保存されません。',
+      'チームには統括責任者、1人以上のマネージャーとワーカーが必要です。「チームを作成」を選ぶまで保存されません。',
     reviewHint:
-      '全員に一意の名前、目的、担当業務（1行に1件）を設定してください。各マネージャーには少なくとも1人のワーカーが必要です。',
+      '各メンバーに固有の名前、目的、担当業務（1行に1つ）を設定します。各マネージャーにはワーカーが必要です。',
     review: 'チームを確認',
     name: '名前',
     purpose: '目的',
@@ -308,8 +301,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     error: '設定を確認できませんでした。同じ操作を再試行して結果を確認してください。',
     stale: '接続が変更されました。続行する前に設定を開き直してください。',
     authority:
-      'チームの設計では、ツールへのアクセス権の付与、予算の変更、タスクの開始は行いません。最上位エグゼクティブは固定モデルルーティングを使用します。',
-    allowanceAvailable: '設定用モデル呼び出しの残り回数：{count}。送信の前にトークン、料金、共有上限を確認します。',
+      'チームを作成してもタスクは始まらず、ツール権限や予算は変わりません。統括責任者は固定モデルルーティングを使います。',
+    allowanceAvailable: '残りの設定用呼び出し：{count}。トークン、費用、共有上限は引き続き適用されます。',
     allowanceExhausted: '設定用の利用枠を使い切りました。引き続き編集し、確認したチームを手動で作成できます。',
     allowanceRunning:
       '設定用のモデル要求はすでに実行中です。別の要求を開始する前に設定を確認し、状態を更新してください。',
@@ -321,11 +314,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       '取得した提案は以前の下書きに基づいています。新しい編集内容は変更していません。このチームを確認するか、設定用利用枠が残っていれば新しい提案を依頼してください。',
     regenerateHelp:
-      '同じ説明から別のチームを提案してもらいます。共有の設定用利用枠をもう1回使用し、料金が発生する場合があります。新しい提案が成功するまで現在の提案を保持します。',
+      '同じ説明から別のチーム案を作りますか？設定用呼び出しをもう1回使い、プロバイダーの料金が発生する場合があります。新しい案が完成するまで現在の案は残ります。',
     generationCost:
-      '文章の改善とチームの生成で、設定用のモデル呼び出しを合計最大3回共有します。設定した上限がさらに低い場合もあります。選択したプロバイダーを使用し、料金が発生する場合があります。',
+      '改善・生成の各リクエストは、選択したプロバイダーで設定用呼び出しを1回使い、料金が発生する場合があります。設定した上限が適用されます。',
     generationCancel:
-      'このプレビューを閉じても、送信済みのモデルリクエストは停止しません。プロバイダーの料金が発生する場合があります。',
+      'このプレビューを閉じても送信済みのリクエストは止まらず、プロバイダーの料金が発生する場合があります。',
     readinessUnchecked: 'モデルの実行はまだテストされていません。作業を依頼する前に準備状況を確認してください。',
     description: 'このチームが担当する仕事と、達成すべき成果を説明してください。',
     configured: 'チームはすでに存在します。「組織」で管理してください。',
@@ -341,7 +334,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   zh: {
     setupOrganization: '设置组织',
     title: '组建你的初始团队',
-    intro: '检查模型设置，描述工作，然后审核你的常驻团队。',
+    intro: '描述工作，然后审核团队方案。',
+    details: '详情',
     connectModel: '连接模型',
     modelSettings: '模型设置',
     checkConfiguration: '检查配置',
@@ -354,11 +348,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     appServerUnsupported:
       '所选 Codex app-server 路由暂不支持 AI 团队设置。你可以描述工作并手动设置团队，或检查“模型设置”。',
     generationUnsupported: '所选模型路由不支持 AI 团队设置。你可以描述工作并手动设置团队，或检查“模型设置”。',
-    jobsHelp: '列出希望团队处理的任务或职责，包括日常工作、主题和限制。这用于描述团队，不会开始执行工作。',
+    jobsHelp: '想让团队负责什么？请包括日常工作和限制。',
     jobsExample: '每周研究产品变化、起草发布说明并审阅文档。',
-    goalsHelp: '描述成功的结果，例如交付成果、质量标准或目标。仅在已有安排时填写日期或衡量指标。',
+    goalsHelp: '你期待什么结果？如有期限或目标，也请填写。',
     goalsExample: '每周提供带来源链接的摘要，以及供我发布的已审阅发布说明。',
-    namingHelp: '可选：说明如何为智能体命名。留空则由模型选择名称。',
+    namingHelp: '对名字有什么偏好？留空则由模型选择。',
     namingExample: '采用受天文学启发的简短、易区分名称。',
     jobs: '要委派的工作',
     goals: '成功的标准',
@@ -369,10 +363,10 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: '改进工作描述',
     improveGoals: '改进成功标准描述',
     improving: '正在改进描述',
-    improveHelp: '改进仅使用这三个输入框中的文字。请先输入简短描述；应用前可审核建议和假设。',
+    improveHelp: '先写几句话。“改进”仅使用这三个输入框，为你提供待审核的建议。',
     improveUnavailable: '此运行时不支持文字改进。请更新后端以使用“改进”；你仍可手动编辑这些字段。',
     reviewSuggestion: '审核建议措辞',
-    suggestionReviewHelp: '应用前，原文保持不变。请先编辑建议并检查其中的假设。',
+    suggestionReviewHelp: '检查措辞和假设。应用前，原文保持不变。',
     original: '你的原文',
     suggestion: '建议文本',
     assumptions: '需要核实的假设',
@@ -385,9 +379,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     supportIdentities: '保留的支持成员',
     retainedSupport: '保留内置支持成员。未使用的默认执行成员作为已退役历史保留。',
     presets: '初始预设',
-    reviewCoverage:
-      '基础团队包括一名主管、至少一名经理和一名执行成员。请审核下方完整建议：用途说明角色存在的理由，职责说明其工作。独立审核和内置支持仍然可用。选择“创建团队”之前不会保存。',
-    reviewHint: '为每个人填写唯一名称、用途和职责（每行一项）。每位经理至少需要一名执行成员。',
+    reviewCoverage: '团队需要一名主管、至少一名经理和一名执行成员。选择“创建团队”前不会保存。',
+    reviewHint: '为每位成员填写唯一名称、用途和职责（每行一项）。每位经理需要一名执行成员。',
     review: '审核团队',
     name: '名称',
     purpose: '用途',
@@ -416,8 +409,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     firstRequest: '描述你的首次请求',
     error: '无法确认设置。请重试同一操作以检查结果。',
     stale: '连接已更改。请重新打开设置后再继续。',
-    authority: '团队设计不会授予工具访问权限、改变预算或启动任务。根执行主管使用固定模型路由。',
-    allowanceAvailable: '剩余设置模型调用次数：{count}。每次发送前都会检查令牌、费用和共享限制。',
+    authority: '创建团队不会启动任务、授予工具权限或更改预算。主管使用固定模型路由。',
+    allowanceAvailable: '剩余设置调用次数：{count}。令牌、费用和共享限制仍适用。',
     allowanceExhausted: '设置额度已用尽。你可以继续编辑并手动创建审核后的团队。',
     allowanceRunning: '已有设置模型请求正在运行。开始另一请求前，请检查配置以刷新状态。',
     allowanceUncertain: '之前模型请求的结果未知。请检查配置或重试同一请求以核实结果；新的模型调用已被阻止。',
@@ -427,10 +420,9 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       '恢复的方案基于较早的草稿。你的最新编辑保持不变。请审核当前团队，或在还有设置额度时请求新方案。',
     regenerateHelp:
-      '使用相同描述请求另一个团队方案。这会再使用一次共享设置额度，并可能产生提供商费用。新方案成功返回前，当前方案保持不变。',
-    generationCost:
-      '文字改进和团队生成共享最多三次设置模型调用；你配置的限制可能更低。每次请求都使用所选提供商，并可能产生费用。',
-    generationCancel: '关闭此预览不会停止已发送的模型请求，仍可能产生提供商费用。',
+      '想用相同描述生成另一个团队方案？这会再用一次设置调用，并可能产生提供商费用。新方案成功返回前，当前方案保持不变。',
+    generationCost: '每次改进或生成都使用一次设置调用，由所选提供商处理，并可能收费。你配置的限制仍适用。',
+    generationCancel: '关闭此预览不会停止已发送的请求，仍可能产生提供商费用。',
     readinessUnchecked: '尚未测试模型执行。请求工作前请检查就绪情况。',
     description: '描述此团队应处理的工作和应达成的成果。',
     configured: '团队已存在。请在“组织”中管理。',
@@ -445,7 +437,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   'zh-hant': {
     setupOrganization: '設定組織',
     title: '建立你的初始團隊',
-    intro: '檢查模型設定、描述工作，然後檢視你的常駐團隊。',
+    intro: '描述工作，然後檢視團隊方案。',
+    details: '詳細資訊',
     connectModel: '連接模型',
     modelSettings: '模型設定',
     checkConfiguration: '檢查設定',
@@ -458,11 +451,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     appServerUnsupported:
       '所選 Codex app-server 路由暫不支援 AI 團隊設定。你可以描述工作並手動設定團隊，或檢查「模型設定」。',
     generationUnsupported: '所選模型路由不支援 AI 團隊設定。你可以描述工作並手動設定團隊，或檢查「模型設定」。',
-    jobsHelp: '列出希望團隊處理的任務或職責，包括日常工作、主題與限制。這用於描述團隊，不會開始執行工作。',
+    jobsHelp: '想讓團隊負責什麼？請包括日常工作與限制。',
     jobsExample: '每週研究產品變化、撰寫發行說明並審閱文件。',
-    goalsHelp: '描述成功的結果，例如交付成果、品質標準或目標。僅在已有安排時填寫日期或衡量指標。',
+    goalsHelp: '你期待什麼結果？如有期限或目標，也請填寫。',
     goalsExample: '每週提供附來源連結的摘要，以及供我發布的已審閱發行說明。',
-    namingHelp: '選填：說明如何為代理命名。留空則由模型選擇名稱。',
+    namingHelp: '對名字有什麼偏好？留空則由模型選擇。',
     namingExample: '採用受天文學啟發的簡短、易區分名稱。',
     jobs: '要委派的工作',
     goals: '成功的標準',
@@ -473,10 +466,10 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: '改進工作描述',
     improveGoals: '改進成功標準描述',
     improving: '正在改進描述',
-    improveHelp: '改進僅使用這三個輸入框中的文字。請先輸入簡短描述；套用前可檢視建議與假設。',
+    improveHelp: '先寫幾句話。「改進」僅使用這三個輸入框，提供建議供你檢視。',
     improveUnavailable: '此執行階段不支援文字改進。請更新後端以使用「改進」；你仍可手動編輯這些欄位。',
     reviewSuggestion: '檢視建議措辭',
-    suggestionReviewHelp: '套用前，原文保持不變。請先編輯建議並檢查其中的假設。',
+    suggestionReviewHelp: '檢查措辭與假設。套用前，原文保持不變。',
     original: '你的原文',
     suggestion: '建議文字',
     assumptions: '需要確認的假設',
@@ -489,9 +482,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     supportIdentities: '保留的支援成員',
     retainedSupport: '保留內建支援成員。未使用的預設執行成員會保留為已退役歷史。',
     presets: '初始預設',
-    reviewCoverage:
-      '基礎團隊包括一名主管、至少一名經理與一名執行成員。請檢視下方完整建議：用途說明角色存在的理由，職責說明其工作。獨立審查與內建支援仍然可用。選擇「建立團隊」之前不會儲存。',
-    reviewHint: '為每個人填寫唯一名稱、用途和職責（每行一項）。每位經理至少需要一名執行成員。',
+    reviewCoverage: '團隊需要一名主管、至少一名經理與一名執行成員。選擇「建立團隊」前不會儲存。',
+    reviewHint: '為每位成員填寫唯一名稱、用途和職責（每行一項）。每位經理需要一名執行成員。',
     review: '檢視團隊',
     name: '名稱',
     purpose: '用途',
@@ -520,8 +512,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     firstRequest: '描述你的首次請求',
     error: '無法確認設定。請重試相同操作以確認結果。',
     stale: '連線已變更。請重新開啟設定後再繼續。',
-    authority: '團隊設計不會授予工具存取權限、變更預算或啟動任務。根執行主管使用固定模型路由。',
-    allowanceAvailable: '剩餘設定模型呼叫次數：{count}。每次傳送前都會檢查權杖、費用與共用限制。',
+    authority: '建立團隊不會啟動任務、授予工具權限或變更預算。主管使用固定模型路由。',
+    allowanceAvailable: '剩餘設定呼叫次數：{count}。權杖、費用與共用限制仍適用。',
     allowanceExhausted: '設定額度已用盡。你可以繼續編輯並手動建立已檢視的團隊。',
     allowanceRunning: '已有設定模型請求正在執行。開始另一請求前，請檢查設定以重新整理狀態。',
     allowanceUncertain: '先前模型請求的結果未知。請檢查設定或重試相同請求以確認結果；新的模型呼叫已被阻止。',
@@ -531,10 +523,9 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       '恢復的方案基於較早的草稿。你的最新編輯保持不變。請檢視目前團隊，或在還有設定額度時請求新方案。',
     regenerateHelp:
-      '使用相同描述請求另一個團隊方案。這會再使用一次共用設定額度，並可能產生供應商費用。新方案成功傳回前，目前方案保持不變。',
-    generationCost:
-      '文字改進和團隊產生共用最多三次設定模型呼叫；你設定的限制可能更低。每次請求都使用所選供應商，並可能產生費用。',
-    generationCancel: '關閉此預覽不會停止已傳送的模型請求，仍可能產生供應商費用。',
+      '想用相同描述產生另一個團隊方案？這會再用一次設定呼叫，並可能產生供應商費用。新方案成功傳回前，目前方案保持不變。',
+    generationCost: '每次改進或產生都使用一次設定呼叫，由所選供應商處理，並可能收費。你設定的限制仍適用。',
+    generationCancel: '關閉此預覽不會停止已傳送的請求，仍可能產生供應商費用。',
     readinessUnchecked: '尚未測試模型執行。請求工作前請檢查就緒情況。',
     description: '描述此團隊應處理的工作和應達成的成果。',
     configured: '團隊已存在。請在「組織」中管理。',
@@ -549,7 +540,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ar: {
     setupOrganization: 'إعداد المؤسسة',
     title: 'أنشئ فريقك الأول',
-    intro: 'راجع إعدادات النموذج، وصف عملك، ثم راجع فريقك الدائم.',
+    intro: 'صِف العمل، ثم راجع فريقك.',
+    details: 'التفاصيل',
     connectModel: 'ربط نموذج',
     modelSettings: 'إعدادات النموذج',
     checkConfiguration: 'التحقق من الإعدادات',
@@ -565,13 +557,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       'مسار Codex app-server المحدد غير مدعوم بعد لإعداد الفريق بالذكاء الاصطناعي. يمكنك وصف العمل وإعداد الفريق يدوياً أو مراجعة إعدادات النموذج.',
     generationUnsupported:
       'مسار النموذج المحدد غير مدعوم لإعداد الفريق بالذكاء الاصطناعي. يمكنك وصف العمل وإعداد الفريق يدوياً أو مراجعة إعدادات النموذج.',
-    jobsHelp:
-      'اذكر المهام أو المسؤوليات التي تريد تفويضها للفريق، بما فيها العمل المتكرر والمواضيع والحدود. هذا يصف الفريق ولا يبدأ العمل.',
+    jobsHelp: 'ما العمل الذي تريد إسناده للفريق؟ أضف العمل المتكرر وأي حدود.',
     jobsExample: 'بحث تغييرات المنتج أسبوعياً، وصياغة ملاحظات الإصدار، ومراجعة الوثائق.',
-    goalsHelp:
-      'صف النتيجة الناجحة: المخرجات أو معايير الجودة أو الأهداف. أضف المواعيد أو المقاييس فقط إذا كانت محددة لديك.',
+    goalsHelp: 'ما النتيجة التي تتوقعها؟ أضف مواعيد أو أهدافاً إن وجدت.',
     goalsExample: 'ملخص أسبوعي بروابط المصادر وملاحظات إصدار مراجَعة وجاهزة للنشر بواسطتي.',
-    namingHelp: 'اختياري: وضّح طريقة تسمية الوكلاء. اتركه فارغاً ليختار النموذج الأسماء.',
+    namingHelp: 'هل تفضّل أسلوباً معيناً للأسماء؟ اترك الحقل فارغاً ليختار النموذج.',
     namingExample: 'أسماء قصيرة ومميزة مستوحاة من علم الفلك.',
     jobs: 'العمل المراد تفويضه',
     goals: 'كيف يبدو النجاح',
@@ -582,12 +572,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: 'تحسين وصف العمل',
     improveGoals: 'تحسين وصف النجاح',
     improving: 'جارٍ تحسين الوصف',
-    improveHelp:
-      'يستخدم التحسين النص في هذه الحقول الثلاثة فقط. أضف وصفاً قصيراً أولاً؛ ستراجع الاقتراح وأي افتراضات قبل تطبيقه.',
+    improveHelp: 'ابدأ ببضع كلمات. يستخدم التحسين هذه الحقول الثلاثة فقط ويقدّم اقتراحاً للمراجعة.',
     improveUnavailable:
       'تحسين النص غير متاح في بيئة التشغيل هذه. حدّث الخادم لاستخدام التحسين؛ ما زال بإمكانك تعديل الحقول يدوياً.',
     reviewSuggestion: 'مراجعة الصياغة المقترحة',
-    suggestionReviewHelp: 'يبقى نصك الأصلي دون تغيير حتى تطبّق الاقتراح. عدّل الاقتراح وتحقق من الافتراضات أولاً.',
+    suggestionReviewHelp: 'تحقّق من الصياغة والافتراضات. يبقى نصك الأصلي دون تغيير حتى تطبّق الاقتراح.',
     original: 'نصك الأصلي',
     suggestion: 'النص المقترح',
     assumptions: 'افتراضات تحتاج للتحقق',
@@ -601,8 +590,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     retainedSupport: 'تُحفظ هويات الدعم المدمجة. تُحفظ هويات المنفّذين الافتراضية غير المستخدمة كسجل متقاعد.',
     presets: 'إعدادات أولية جاهزة',
     reviewCoverage:
-      'يتضمن الأساس مسؤولاً تنفيذياً ومديراً واحداً على الأقل ومنفّذاً واحداً على الأقل. راجع المقترح الكامل أدناه: يوضح الغرض سبب وجود الدور وتحدد المسؤوليات مهامه. تبقى المراجعة المستقلة والدعم المدمج متاحين. لا يُحفظ شيء حتى تختار إنشاء الفريق.',
-    reviewHint: 'امنح كل عضو اسماً فريداً وغرضاً ومسؤوليات (واحدة في كل سطر). يحتاج كل مدير إلى منفّذ واحد على الأقل.',
+      'يحتاج الفريق إلى مسؤول تنفيذي ومدير واحد على الأقل ومنفّذ واحد على الأقل. لا يُحفظ شيء حتى تختار إنشاء الفريق.',
+    reviewHint: 'حدّد لكل عضو اسماً فريداً وغرضاً ومهامّ (واحدة في كل سطر). يحتاج كل مدير إلى منفّذ.',
     review: 'مراجعة فريقك',
     name: 'الاسم',
     purpose: 'الغرض',
@@ -632,9 +621,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     error: 'تعذّر تأكيد الإعداد. أعد محاولة الإجراء نفسه للتحقق من نتيجته.',
     stale: 'تغيّر الاتصال. أعد فتح الإعداد قبل المتابعة.',
     authority:
-      'تصميم الفريق لا يمنح صلاحيات الوصول إلى الأدوات ولا يغيّر الميزانيات ولا يبدأ المهام. يستخدم المسؤول التنفيذي الأعلى توجيه النماذج الثابت.',
-    allowanceAvailable:
-      'استدعاءات النموذج المتبقية للإعداد: {count}. تُفحص حدود الرموز والتكلفة والحدود المشتركة قبل كل إرسال.',
+      'إنشاء الفريق لا يبدأ مهامّ ولا يمنح صلاحيات للأدوات ولا يغيّر الميزانيات. يستخدم المسؤول التنفيذي توجيه النماذج الثابت.',
+    allowanceAvailable: 'استدعاءات الإعداد المتبقية: {count}. تظل حدود الرموز والتكلفة والحدود المشتركة سارية.',
     allowanceExhausted: 'نفدت مخصصات الإعداد. يمكنك متابعة التحرير وإنشاء الفريق المراجَع يدوياً.',
     allowanceRunning: 'هناك طلب نموذج للإعداد قيد التنفيذ بالفعل. تحقّق من الإعدادات لتحديث حالته قبل بدء طلب آخر.',
     allowanceUncertain:
@@ -645,10 +633,10 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       'استند المقترح المستعاد إلى مسودة سابقة. لم تتغير تعديلاتك الأحدث. راجع هذا الفريق أو اطلب مقترحاً جديداً إذا بقيت مخصصات للإعداد.',
     regenerateHelp:
-      'اطلب فريقاً مختلفاً من الأوصاف نفسها. يستخدم هذا استدعاءً إضافياً من مخصصات الإعداد المشتركة وقد تترتب عليه رسوم. يبقى المقترح الحالي حتى ينجح المقترح الجديد.',
+      'هل تريد فريقاً آخر من الأوصاف نفسها؟ يستخدم هذا استدعاء إعداد إضافياً وقد تترتب عليه رسوم المزوّد. يبقى المقترح الحالي حتى ينجح الجديد.',
     generationCost:
-      'يشترك تحسين النص وتوليد الفريق في ثلاث استدعاءات للنموذج كحد أقصى للإعداد؛ وقد تكون حدودك أقل. يستخدم كل طلب المزوّد المحدد وقد تترتب عليه رسوم.',
-    generationCancel: 'إغلاق هذه المعاينة لا يوقف طلب النموذج الذي أُرسل بالفعل؛ وقد تظل رسوم المزوّد سارية.',
+      'يستخدم كل طلب تحسين أو توليد استدعاء إعداد واحداً لدى المزوّد المحدد، وقد تترتب عليه رسوم. تسري الحدود التي حددتها.',
+    generationCancel: 'إغلاق هذه المعاينة لا يوقف طلباً أُرسل بالفعل ولا يمنع رسوم المزوّد المحتملة.',
     readinessUnchecked: 'لم يُختبر تشغيل النموذج بعد. راجع الجاهزية قبل طلب العمل.',
     description: 'صف الأعمال والنتائج التي ينبغي أن يتولاها هذا الفريق.',
     configured: 'يوجد فريق بالفعل. يمكنك إدارته في المؤسسة.',
@@ -664,7 +652,8 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ru: {
     setupOrganization: 'Настроить организацию',
     title: 'Создайте свою первую команду',
-    intro: 'Проверьте настройки модели, опишите работу и проверьте состав своей постоянной команды.',
+    intro: 'Опишите работу, затем проверьте состав команды.',
+    details: 'Подробности',
     connectModel: 'Подключить модель',
     modelSettings: 'Настройки модели',
     checkConfiguration: 'Проверить конфигурацию',
@@ -681,14 +670,12 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       'Выбранный маршрут Codex app-server пока не поддерживается для настройки команды с ИИ. Вы можете описать работу и настроить команду вручную или проверить настройки модели.',
     generationUnsupported:
       'Выбранный маршрут модели не поддерживается для настройки команды с ИИ. Вы можете описать работу и настроить команду вручную или проверить настройки модели.',
-    jobsHelp:
-      'Перечислите задачи и обязанности команды, включая регулярную работу, темы и ограничения. Это описание команды, а не запуск работы.',
+    jobsHelp: 'Что поручить команде? Укажите регулярную работу и ограничения.',
     jobsExample: 'Еженедельно исследовать изменения продукта, готовить заметки к выпуску и проверять документацию.',
-    goalsHelp:
-      'Опишите успешный результат: материалы, стандарты качества или цели. Указывайте сроки и показатели, только если они уже определены.',
+    goalsHelp: 'Какого результата вы ждёте? Добавьте сроки и цели, если они есть.',
     goalsExample:
       'Еженедельная сводка со ссылками на источники и проверенные заметки к выпуску, готовые к моей публикации.',
-    namingHelp: 'Необязательно: укажите, как называть агентов. Оставьте поле пустым, чтобы модель выбрала имена.',
+    namingHelp: 'Есть пожелания к именам? Оставьте поле пустым, чтобы модель выбрала их.',
     namingExample: 'Короткие, различимые имена, вдохновлённые астрономией.',
     jobs: 'Работа для команды',
     goals: 'Как выглядит успех',
@@ -699,13 +686,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     improveJobs: 'Улучшить описание работы',
     improveGoals: 'Улучшить описание успеха',
     improving: 'Улучшаем описание',
-    improveHelp:
-      'Улучшение использует только текст этих трёх полей. Сначала добавьте несколько слов; перед применением вы проверите предложение и допущения.',
+    improveHelp: 'Начните с нескольких слов. Улучшение использует только эти три поля и предлагает текст для проверки.',
     improveUnavailable:
       'Улучшение текста недоступно в этой версии среды. Обновите сервер; поля по-прежнему можно редактировать вручную.',
     reviewSuggestion: 'Проверить предложенный текст',
-    suggestionReviewHelp:
-      'Исходный текст не изменится до применения. Сначала отредактируйте предложение и проверьте допущения.',
+    suggestionReviewHelp: 'Проверьте формулировки и допущения. Исходный текст не изменится до применения.',
     original: 'Ваш исходный текст',
     suggestion: 'Предложенный текст',
     assumptions: 'Допущения для проверки',
@@ -720,9 +705,9 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
       'Встроенные вспомогательные участники сохраняются. Неиспользуемые исполнители сохраняются в истории как выведенные из состава.',
     presets: 'Готовые шаблоны',
     reviewCoverage:
-      'Основа команды включает руководителя, хотя бы одного менеджера и одного исполнителя. Проверьте весь состав ниже: назначение объясняет необходимость роли, а обязанности определяют её задачи. Независимая проверка и встроенная поддержка сохраняются. Ничего не сохраняется до нажатия «Создать команду».',
+      'Команде нужны руководитель, хотя бы один менеджер и один исполнитель. Ничего не сохраняется до нажатия «Создать команду».',
     reviewHint:
-      'Укажите каждому уникальное имя, назначение и обязанности (по одной на строку). Каждому менеджеру нужен хотя бы один исполнитель.',
+      'Укажите каждому уникальное имя, назначение и обязанности (по одной на строку). Каждому менеджеру нужен исполнитель.',
     review: 'Проверить команду',
     name: 'Имя',
     purpose: 'Назначение',
@@ -752,9 +737,9 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     error: 'Не удалось подтвердить настройку. Повторите то же действие, чтобы проверить результат.',
     stale: 'Подключение изменилось. Откройте настройку заново, прежде чем продолжить.',
     authority:
-      'Создание структуры команды не предоставляет доступ к инструментам, не меняет бюджеты и не запускает задачи. Главный руководитель использует фиксированную маршрутизацию моделей.',
+      'Создание команды не запускает задачи, не даёт доступ к инструментам и не меняет бюджеты. Руководитель использует фиксированную маршрутизацию моделей.',
     allowanceAvailable:
-      'Осталось вызовов модели для настройки: {count}. Перед каждой отправкой проверяются лимиты токенов, стоимости и общего бюджета.',
+      'Осталось вызовов для настройки: {count}. Лимиты токенов, стоимости и общие ограничения сохраняются.',
     allowanceExhausted:
       'Лимит настройки исчерпан. Вы можете продолжить редактирование и вручную создать проверенную команду.',
     allowanceRunning:
@@ -767,11 +752,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     previousDraftPreserved:
       'Восстановленный вариант основан на предыдущем черновике. Ваши новые правки не изменены. Проверьте текущую команду или запросите новый вариант, если остался лимит настройки.',
     regenerateHelp:
-      'Запросите другой состав по тем же описаниям. Это использует ещё один вызов из общего лимита настройки и может быть платным. Текущий вариант сохранится до успешного получения нового.',
+      'Нужен другой состав по тем же описаниям? Это ещё один вызов для настройки; провайдер может взимать плату. Текущий вариант сохранится до получения нового.',
     generationCost:
-      'Улучшение текста и генерация команды делят общий лимит настройки: не более трёх вызовов модели. Ваши ограничения могут быть ниже. Каждый запрос использует выбранного провайдера и может быть платным.',
+      'Каждый запрос улучшения или генерации расходует один вызов для настройки у выбранного провайдера и может быть платным. Действуют заданные вами лимиты.',
     generationCancel:
-      'Закрытие этого предварительного просмотра не остановит уже отправленный запрос к модели. Провайдер по-прежнему может взимать плату.',
+      'Закрытие этого просмотра не остановит отправленный запрос и не отменит возможную плату провайдеру.',
     readinessUnchecked: 'Выполнение запросов моделью ещё не проверено. Проверьте готовность перед запросом работы.',
     description: 'Опишите работу и результаты, за которые должна отвечать эта команда.',
     configured: 'Команда уже существует. Управляйте ею в разделе «Организация».',

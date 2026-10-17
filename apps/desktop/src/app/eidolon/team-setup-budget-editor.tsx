@@ -165,12 +165,6 @@ function BudgetUsage({ view, copy }: { view: SetupBudgetView; copy: SetupBudgetC
           <dd>{view.limits.totalCalls}</dd>
         </div>
         <div>
-          <dt>{copy.tokens}</dt>
-          <dd>
-            {view.reservedTokens} / {view.limits.totalTokens}
-          </dd>
-        </div>
-        <div>
           <dt>{copy.cost}</dt>
           <dd>
             <bdi>
@@ -179,25 +173,39 @@ function BudgetUsage({ view, copy }: { view: SetupBudgetView; copy: SetupBudgetC
           </dd>
         </div>
       </dl>
-      <p className="eid-team-note">{copy.retained}</p>
-      <dl className="eid-team-budget-values">
-        <div>
-          <dt>{copy.legacyUsage}</dt>
-          <dd>{view.usage.legacy}</dd>
-        </div>
-        <div>
-          <dt>{copy.improve}</dt>
-          <dd>{view.usage.improveTeamInput}</dd>
-        </div>
-        <div>
-          <dt>{copy.generate}</dt>
-          <dd>{view.usage.generateTeam}</dd>
-        </div>
-        <div>
-          <dt>{copy.total}</dt>
-          <dd>{view.usage.total}</dd>
-        </div>
-      </dl>
+      <p className="eid-team-note">{copy.retainedSummary}</p>
+      <details>
+        <summary>{copy.details}</summary>
+        <p className="eid-team-note">{copy.limitsNote}</p>
+        <dl className="eid-team-budget-values">
+          <div>
+            <dt>{copy.tokens}</dt>
+            <dd>
+              {view.reservedTokens} / {view.limits.totalTokens}
+            </dd>
+          </div>
+        </dl>
+        <p className="eid-team-note">{copy.retained}</p>
+        <dl className="eid-team-budget-values">
+          <div>
+            <dt>{copy.legacyUsage}</dt>
+            <dd>{view.usage.legacy}</dd>
+          </div>
+          <div>
+            <dt>{copy.improve}</dt>
+            <dd>{view.usage.improveTeamInput}</dd>
+          </div>
+          <div>
+            <dt>{copy.generate}</dt>
+            <dd>{view.usage.generateTeam}</dd>
+          </div>
+          <div>
+            <dt>{copy.total}</dt>
+            <dd>{view.usage.total}</dd>
+          </div>
+        </dl>
+        <p className="eid-team-note">{copy.retainedNote}</p>
+      </details>
       <p className="eid-team-note">{copy.remaining}</p>
       <SetupBudgetRemaining
         generate={view.remaining.generationCalls}
@@ -482,7 +490,7 @@ export function TeamSetupBudgetEditor(props: TeamSetupBudgetEditorProps) {
         <p className="eid-team-note">{copy.unsupported}</p>
       ) : (
         <div className="eid-team-budget-body">
-          <p className="eid-team-note">{copy.limitsNote}</p>
+          <p className="eid-team-note">{copy.limitsSummary}</p>
           <Button
             disabled={disabled || !!pending || uncertain || !client.current()}
             onClick={load}
@@ -496,7 +504,6 @@ export function TeamSetupBudgetEditor(props: TeamSetupBudgetEditorProps) {
             <>
               {!state.configuration && <p>{copy.legacy}</p>}
               <BudgetUsage copy={copy} view={state.setupBudget} />
-              <p className="eid-team-note">{copy.retainedNote}</p>
               {state.managed && <p role="status">{common.managed}</p>}
               {!state.available && <p role="status">{copy.unavailable}</p>}
               {waiting && <p role="status">{copy.pending}</p>}
@@ -542,6 +549,13 @@ export function TeamSetupBudgetEditor(props: TeamSetupBudgetEditorProps) {
                   <bdi>{preview.configuration[field]}</bdi>
                 </p>
               ))}
+              <p className="eid-team-note">{copy.remaining}</p>
+              <SetupBudgetRemaining
+                generate={preview.usage.remaining.generationCalls}
+                improve={preview.usage.remaining.improveCalls}
+                total={preview.usage.remaining.totalCalls}
+              />
+              <p className="eid-team-note">{copy.retainedSummary}</p>
               <p className="eid-team-note">{copy.applyNote}</p>
               <p className="eid-team-note">{common.closeNote}</p>
               {!preview.warnings.every(warning => knownWarnings.has(warning)) && <p role="alert">{common.invalid}</p>}
@@ -568,17 +582,20 @@ export function TeamSetupBudgetEditor(props: TeamSetupBudgetEditorProps) {
               className="eid-team-budget-receipt"
             >
               <p>{copy.receipt}</p>
-              <p>
-                {common.generation}: {displayReceipt.policyGeneration}
-              </p>
               {fields.map((field, index) => (
                 <p key={field}>
                   {copy[labels[index]]}: {displayReceipt.configuration[field]}
                 </p>
               ))}
-              <p className="eid-team-note">
-                <bdi>{displayReceipt.idempotencyKey}</bdi>
-              </p>
+              <details>
+                <summary>{copy.details}</summary>
+                <p>
+                  {common.generation}: {displayReceipt.policyGeneration}
+                </p>
+                <p className="eid-team-note">
+                  <bdi>{displayReceipt.idempotencyKey}</bdi>
+                </p>
+              </details>
             </section>
           )}
           {error && <p role="alert">{error}</p>}

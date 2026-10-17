@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { I18nProvider, useI18n } from '@/i18n/context'
 import { ownerPolicyCopy } from '@/i18n/organization-owner-policy'
 import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
+import { setupBudgetCopy } from '@/i18n/organization-team-setup-budget'
 import type { Locale } from '@/i18n/types'
 import { $desktopOnboarding, closeManualOnboarding } from '@/store/onboarding'
 
@@ -176,14 +177,10 @@ it.each([
   const goals = screen.getByLabelText(teamOnboardingCopy.en.goals)
   expect(jobs).toHaveProperty('disabled', false)
   expect(goals).toHaveProperty('disabled', false)
+  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.jobs, description: teamOnboardingCopy.en.jobsHelp })).toBe(jobs)
+  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.goals, description: teamOnboardingCopy.en.goalsHelp })).toBe(goals)
   expect(
-    screen.getByRole('textbox', { name: teamOnboardingCopy.en.jobs, description: /tasks or responsibilities/ })
-  ).toBe(jobs)
-  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.goals, description: /successful result/ })).toBe(
-    goals
-  )
-  expect(
-    screen.getByRole('textbox', { name: teamOnboardingCopy.en.namingStyle, description: /optional/i })
+    screen.getByRole('textbox', { name: teamOnboardingCopy.en.namingStyle, description: teamOnboardingCopy.en.namingHelp })
   ).toBeTruthy()
   fireEvent.change(jobs, { target: { value: 'Research weekly product changes' } })
   expect(jobs).toHaveProperty('value', 'Research weekly product changes')
@@ -918,7 +915,7 @@ it.each(['saved', 'uncertain'] as const)(
     fireEvent.click(screen.getByRole('button', { name: copy.validate }))
     await screen.findByRole('button', { name: copy.create })
     fireEvent.click(screen.getByText('Setup budget'))
-    await screen.findByText('Current effective limits')
+    await screen.findByText(setupBudgetCopy.en.current)
     fireEvent.click(screen.getByRole('button', { name: 'Use suggested limits in draft' }))
     fireEvent.click(screen.getByRole('button', { name: 'Review setup budget' }))
     await screen.findByRole('button', { name: 'Apply setup budget' })
@@ -944,7 +941,7 @@ it.each(['saved', 'uncertain'] as const)(
       expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
       expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', true)
       fireEvent.click(screen.getByRole('button', { name: 'Check original budget change' }))
-      await screen.findByRole('region', { name: 'Saved budget receipt' })
+      await screen.findByRole('region', { name: setupBudgetCopy.en.receipt })
       await waitFor(() => expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', false))
       expect(vi.mocked(h.client.applyBudget).mock.calls[1]).toEqual(vi.mocked(h.client.applyBudget).mock.calls[0])
       expect(screen.getByLabelText(copy.jobs)).toHaveProperty('value', 'My retained job text')
@@ -954,7 +951,7 @@ it.each(['saved', 'uncertain'] as const)(
       return
     }
 
-    await screen.findByRole('region', { name: 'Saved budget receipt' })
+    await screen.findByRole('region', { name: setupBudgetCopy.en.receipt })
     await waitFor(() => expect(screen.getByRole('button', { name: copy.validate })).toHaveProperty('disabled', false))
     expect(screen.queryByRole('button', { name: copy.create })).toBeNull()
     expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'Owner-edited lead')
