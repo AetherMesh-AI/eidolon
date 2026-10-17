@@ -756,6 +756,8 @@ def test_disconnect_publication_fault_never_cleans_before_confirmed_tombstone(sa
     store, binding, vault = sample
     connect(sample)
     old_target = state(store)['target']
+    old_reference = next(iter(vault.values))
+    old_cipher = (store.directory / (old_target + '.enc')).read_bytes()
     old_calls = list(vault.calls)
     original_write = store._write
     def fail(name, data, **kwargs):
@@ -767,8 +769,11 @@ def test_disconnect_publication_fault_never_cleans_before_confirmed_tombstone(sa
     monkeypatch.setattr(store, '_write', fail)
     with pytest.raises(StoreError):
         store.disconnect(expected_revision=1)
-    assert vault.calls == old_calls
+    # Explicit retirement authenticates possible V1 provenance first. No
+    # native put/delete or ciphertext cleanup may precede a durable tombstone.
+    assert vault.calls == old_calls + [('consume', old_reference)]
     assert len(vault.values) == 1
+    assert (store.directory / (old_target + '.enc')).read_bytes() == old_cipher
     current = state(store)
     assert current['revision'] == (2 if after_rename else 1)
     assert current['phase'] == ('disconnected' if after_rename else 'active')
@@ -1000,10 +1005,13 @@ def test_missing_inference_scopes_and_expiry_prevent_lease(sample):
 def test_exact_authenticated_auth_attempt_reconciliation(sample):
     store, binding, vault = sample
     connect_grant(sample)
+    reference = next(iter(vault.values))
     vault.calls.clear()
     assert store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
                                         prior_store_revision=0, granted_scopes=GRANT_SCOPES) == 1
-    assert [verb for verb, _ in vault.calls] == ['consume']
+    # Transition reconciliation authenticates the active envelope, then the
+    # exact auth-attempt check independently decrypts that same current target.
+    assert vault.calls == [('consume', reference), ('consume', reference)]
     for changes in ({'auth_attempt_id': 'wrong-attempt'}, {'prior_store_revision': 1},
                     {'granted_scopes': ('openid',)}):
         args = dict(auth_attempt_id='synthetic-auth-attempt', prior_store_revision=0, granted_scopes=GRANT_SCOPES)
@@ -1674,13 +1682,31 @@ def test_verified_v1_explicit_retirement_permits_fresh_consent(sample):
 
 
 @pytest.mark.parametrize('changes', [{'issuer': 'foreign'}, {'schemaVersion': True}, {'unexpected': 1},
-                                     {'grantedScopes': []}, {'accessToken': '\n'}])
+                                     {'grantedScopes': ['openid', 'openid']}, {'accessToken': '\n'}])
 def test_v1_bootstrap_requires_exact_original_schema(sample, changes):
     store, binding, _ = sample
     store._connect_payload(binding, v1_secret(binding, **changes), 0)
     store.local_disconnect(binding, expected_revision=1, **guarded())
     assert not (store.directory / 'history-v1-bootstrap.json').exists()
     assert store.history_status()['state'] == 'legacy'
+
+
+def test_v1_empty_scopes_only_establish_retirement_provenance(sample):
+    store, binding, vault = sample
+    store._connect_payload(binding, v1_secret(binding, grantedScopes=[]), 0)
+    with pytest.raises(StoreError, match='reauthorization_required'):
+        new_lease(sample)
+    receipt = store.local_disconnect(binding, expected_revision=1, **guarded())
+    assert receipt['localRetired'] is True
+    assert (store.directory / 'history-v1-bootstrap.json').exists()
+    assert store.history_status() == {'state': 'available', 'issuedThrough': '0', 'retiredThrough': '0'}
+    assert vault.values == {}
+    with pytest.raises(StoreError):
+        new_lease(sample)
+    # Provenance permits a separately consented replacement, never reuse of
+    # the retired empty-scope grant or access without fresh authorization.
+    assert connect_grant(sample, expected_revision=2, auth_attempt_id='fresh-consent') == 3
+    assert prepare(sample)['sequence'] == '1'
 
 
 def test_unreadable_v1_still_locally_retires_without_bootstrap(sample, monkeypatch):

@@ -28,15 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: dc3f30290eec8763a0d907d8856183ca1547d211
+          ref: 3c718b9b431bbf46793063b29ba73dcb247fa8cb
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
       - name: Verify exact source
         run: |
-          test "$(git rev-parse HEAD)" = dc3f30290eec8763a0d907d8856183ca1547d211
-          test "$(git rev-parse HEAD^{tree})" = c87f2c7878071b49fa568cb5ba449895bd1768d4
+          test "$(git rev-parse HEAD)" = 3c718b9b431bbf46793063b29ba73dcb247fa8cb
+          test "$(git rev-parse HEAD^{tree})" = fe997dcc015054f4ff2583251b2892a5bf4a2f22
       - name: Record host architecture
         run: |
           uname -m
