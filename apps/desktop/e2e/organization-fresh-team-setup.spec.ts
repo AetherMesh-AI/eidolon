@@ -849,15 +849,23 @@ print(json.dumps(matches))
       await directory.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
       await expect(directory.getByRole('status')).toHaveText('Selected organization verified.', { timeout: 45_000 })
       await directory.getByRole('button', { name: 'Close', exact: true }).click()
+      await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
+      await expect(page).toHaveURL(/#\/organization$/)
+      await expect(
+        page.locator('.eid-roster-surface').getByRole('heading', { name: 'Organization', exact: true })
+      ).toBeVisible()
       await page.reload()
-      await waitForAppReady(fixture)
+      await waitForAppReady(fixture, 60_000, '.eid-roster-surface')
+      await expect(page).toHaveURL(/#\/organization$/)
+      await expect(
+        page.locator('.eid-roster-surface').getByRole('heading', { name: 'Organization', exact: true })
+      ).toBeVisible()
       await expect(trigger).toHaveAccessibleName(`${names[index]} · Organizations`)
       await requireGuard(
         path.join(sandbox.hermesHome, 'profiles', receipts[index].profile),
         receipts[index],
         'after-reload'
       )
-      await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
       await expect(page.getByText(`Reviewed Ash Studio ${index + 1}`, { exact: true }).first()).toBeVisible()
       await expect(page.getByText(`Reviewed Ash Studio ${2 - index}`, { exact: true })).toHaveCount(0)
       expect(snapshot(path.join(sandbox.hermesHome, 'profiles', receipts[index].profile))).toEqual(snapshots[index])
