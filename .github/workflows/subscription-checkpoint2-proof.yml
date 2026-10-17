@@ -1,0 +1,68 @@
+name: Subscription setup checkpoint 2 proof
+on:
+  push:
+    branches: [temp/subscription-setup-checkpoint2]
+permissions:
+  contents: read
+concurrency:
+  group: subscription-setup-checkpoint2-${{ github.run_id }}
+  cancel-in-progress: false
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+jobs:
+  proof:
+    name: Subscription primitives (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, macos-15-intel, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 28270ff4caa6b44caeb01c32eb991cb96a286bbb
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Verify exact source
+        run: |
+          test "$(git rev-parse HEAD)" = 28270ff4caa6b44caeb01c32eb991cb96a286bbb
+          test "$(git rev-parse HEAD^{tree})" = 6ab07f451260c8aae6d8d5e91ea1f04b7e428749
+      - name: Record host architecture
+        run: |
+          uname -m
+          python -c "import platform; print(platform.system(), platform.machine())"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Verify synthetic policy, storage and export contracts
+        run: |
+          set -o pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_host.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_credential_handoff.py tests/tui_gateway/test_organization_credentials.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_store.py tests/eidolon_cli/test_setup_subscription_export_security.py tests/eidolon_cli/test_organization_credential_native.py tests/eidolon_cli/test_profiles.py tests/eidolon_cli/test_backup.py tests/eidolon_cli/test_backup_all_profiles.py 2>&1 | tee checkpoint2-tests.log
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_host.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/tui_gateway/test_organization_setup_subscription.py tests/eidolon_cli/test_organization_credential_native.py tests/eidolon_cli/test_organization_setup_subscription_store.py tests/eidolon_cli/test_organization_setup_subscription_policy.py 2>&1 | tee checkpoint2-tests.log
+          else
+            scripts/run_tests.sh -j 1 tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/tui_gateway/test_organization_setup_subscription.py tests/eidolon_cli/test_organization_credential_native.py 2>&1 | tee checkpoint2-tests.log
+            scripts/run_tests.sh -j 1 tests/eidolon_cli/test_organization_setup_subscription_host.py -k test_windows_production_refuses_before_lock_import 2>&1 | tee -a checkpoint2-tests.log
+            scripts/run_tests.sh -j 1 tests/eidolon_cli/test_organization_setup_subscription_store.py -k 'test_production_platforms_fail_closed_without_native_read or test_darwin_acl_boundary_with_synthetic_c_api' 2>&1 | tee -a checkpoint2-tests.log
+          fi
+      - name: Retain bounded test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: subscription-checkpoint2-${{ matrix.os }}
+          path: checkpoint2-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
