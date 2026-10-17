@@ -1,7 +1,38 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import CachedShikiBlock from '@/components/chat/shiki-block'
+import { highlightCache } from '@/components/chat/shiki-highlight-cache'
 
 import { MarkdownPreview, PreviewModeSwitcher, SourceView } from './preview-file'
+
+// Exercise the real lazy/cache/fallback layers; only the WASM engine boundary
+// is replaced, as in shiki-block.test.tsx. Native tests use real Shiki.
+const { codeToHtml } = vi.hoisted(() => ({ codeToHtml: vi.fn<(code: string) => string | Promise<string>>() }))
+
+vi.mock('shiki', () => ({
+  bundledLanguages: { json: 'json-loader', text: 'text-loader' },
+  getSingletonHighlighter: vi.fn(async () => ({
+    codeToHtml: (code: string) => codeToHtml(code),
+    getLoadedLanguages: () => ['json', 'text'],
+    loadLanguage: vi.fn(async () => undefined),
+    loadTheme: vi.fn(async () => undefined)
+  }))
+}))
+
+vi.mock('shiki/engine/oniguruma', () => ({ createOnigurumaEngine: vi.fn(() => ({}) as never) }))
+
+function highlightedLines(code: string) {
+  // Match Shiki's existing CRLF-to-LF display conversion before making spans.
+  const escaped = code.replace(/\r\n/g, '\n').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  return `<pre class="shiki"><code>${escaped.split('\n').map(line => `<span class="line">${line}</span>`).join('\n')}</code></pre>`
+}
+
+beforeEach(() => {
+  highlightCache.clear()
+  codeToHtml.mockReset().mockImplementation(highlightedLines)
+})
 
 // Behavior tests for the .md file preview renderer: input markdown goes
 // through normalizeFilePreviewMath -> Streamdown (+ KaTeX math plugin) and must
@@ -84,6 +115,100 @@ describe('SourceView reading direction', () => {
   })
 })
 
+describe('SourceView chunk delimiters', () => {
+  afterEach(cleanup)
+
+  it('keeps the real LF at a blank 200-line source seam without adding a final delimiter', () => {
+    const text = `${'// before seam\n'.repeat(199)}\n// بعد الحد: café 🧪\n\n`
+    const { container } = render(<SourceView language="text" text={text} />)
+    const chunks = [...container.querySelectorAll('.preview-source-code')]
+    expect(chunks).toHaveLength(2)
+    expect(chunks.map(chunk => chunk.textContent).join('')).toBe(text)
+  })
+})
+
+describe('SourceView highlighter fallback phases', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('keeps literal source through pending/error/retry and immediately replaces changed source without replacing its host', async () => {
+    const text = `${'// before seam\n'.repeat(199)}\n// بعد الحد: café 🧪\n\n`
+    let rejectHighlight!: (error: Error) => void
+    const pending = new Promise<string>((_resolve, reject) => { rejectHighlight = reject })
+    codeToHtml.mockImplementation(() => pending)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { container, rerender, unmount } = render(<SourceView language="text" text={text} />)
+    const renderedText = () => [...container.querySelectorAll('.preview-source-code')].map(chunk => chunk.textContent).join('')
+
+    expect(renderedText()).toBe(text)
+    expect(container.querySelectorAll('[data-source-fallback]')).toHaveLength(2)
+    // Resolve React.lazy without advancing the highlight debounce.
+    await act(async () => { await import('@/components/chat/shiki-block') })
+    await act(async () => { await vi.advanceTimersByTimeAsync(119) })
+    expect(codeToHtml).not.toHaveBeenCalled()
+    rerender(<SourceView language="text" text={text} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(codeToHtml).toHaveBeenCalledTimes(2)
+    expect(renderedText()).toBe(text)
+    await act(async () => { rejectHighlight(new Error('controlled highlighter failure')) })
+    expect(error).toHaveBeenCalledTimes(2)
+    expect(renderedText()).toBe(text)
+    expect(container.querySelectorAll('[data-source-fallback]')).toHaveLength(2)
+    expect(highlightCache.size).toBe(0)
+    unmount()
+
+    codeToHtml.mockImplementation(highlightedLines)
+    const retry = render(<SourceView language="text" text={text} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(codeToHtml).toHaveBeenCalledTimes(4)
+    expect(retry.container.querySelectorAll('[data-source-fallback]')).toHaveLength(0)
+    expect([...retry.container.querySelectorAll('.preview-source-code')].map(chunk => chunk.textContent).join('')).toBe(text)
+    const host = retry.container.querySelector('.preview-source-code')
+    const scroller = host?.closest('[dir]')
+    const changed = '<tag>& بعد التغيير: café 🧪\r\n\n'
+    retry.rerender(<SourceView language="text" text={changed} />)
+    expect(retry.container.querySelector('.preview-source-code')).toBe(host)
+    expect(host?.closest('[dir]')).toBe(scroller)
+    expect(host?.textContent).toBe(changed)
+    expect(host?.querySelector('[data-source-fallback]')).not.toBeNull()
+    expect(host?.querySelector('tag')).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    // HTML parsing/highlighting normalizes CRLF; only the pending fallback is raw.
+    expect(host?.textContent).toBe(changed.replace(/\r\n/g, '\n'))
+    expect(host?.querySelector('[data-source-fallback]')).toBeNull()
+  })
+
+  it('leaves default pending/error rendering and successful warm-cache reuse unchanged', async () => {
+    const code = '<default>& مرحبا\n\n'
+    codeToHtml.mockRejectedValueOnce(new Error('controlled default failure'))
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const first = render(<CachedShikiBlock code={code} language="text" />)
+    expect(first.container.textContent).toBe('')
+    await act(async () => { await vi.advanceTimersByTimeAsync(119) })
+    expect(first.container.textContent).toBe('')
+    expect(codeToHtml).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(first.container.textContent).toBe(code)
+    expect(first.container.querySelector('default')).toBeNull()
+    expect(first.container.querySelectorAll('.line')).toHaveLength(0)
+    expect(highlightCache.size).toBe(0)
+    first.unmount()
+
+    const retry = render(<CachedShikiBlock code={code} language="text" />)
+    expect(retry.container.textContent).toBe('')
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(codeToHtml).toHaveBeenCalledTimes(2)
+    expect(retry.container.textContent).toBe(code)
+    retry.unmount()
+    const warm = render(<CachedShikiBlock code={code} language="text" />)
+    expect(warm.container.textContent).toBe(code)
+    expect(codeToHtml).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('PreviewModeSwitcher controls', () => {
   afterEach(cleanup)

@@ -2018,6 +2018,12 @@ body.guest-pointer-lock :is(webview, iframe) {
   vertical-align: top;
 }
 
+/* A continuation LF belongs to the source, but its extra Shiki placeholder
+   is not another row. The following chunk owns that row's real line box. */
+.preview-source-code[data-source-continuation='true'] .shiki code .line:last-child:empty {
+  display: none;
+}
+
 /* The github-dark token palette reads candy-bright at our small code size.
    `github-dark-dimmed` only dims the *background* (which we strip), so soften
    the token *foregrounds* directly — a small saturation + brightness pullback,

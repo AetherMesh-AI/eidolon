@@ -49,10 +49,11 @@ async function selectSourceRange(chunks: Locator, from: number, to: number) {
       const owner = elements[0].ownerDocument
 
       const boundary = (offset: number): { node: Node; offset: number } => {
-        for (const element of elements) {
+        for (const [index, element] of elements.entries()) {
           const length = element.textContent!.length
 
-          if (offset <= length) {
+          // At a real seam, use the downstream chunk rather than inventing a byte.
+          if (offset < length || index === elements.length - 1) {
             const walker = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT)
             let node = walker.nextNode()
 
@@ -70,7 +71,7 @@ async function selectSourceRange(chunks: Locator, from: number, to: number) {
             return { node: element, offset: element.childNodes.length }
           }
 
-          offset -= length + 1
+          offset -= length
         }
 
         throw new Error('Source selection is outside the mounted chunks')
@@ -106,8 +107,10 @@ test.afterEach(async () => {
           ipc,
           rpc: fixture.capabilityMethods,
           geometryContext: test.info().title.startsWith('Arabic file source')
-            ? 'Restored sandbox file in one tabbed zone; actual Arabic Source control, 200% and 400px. Full and partial copy of mixed, terminal-only and entirely blank highlighted source, including mounted chunk boundaries; unmounted rows and plain-text highlight fallback are outside this proof.'
-            : 'MCP capability pane; 100%, 200% and 400px. Appearance navigation remounts the route.'
+            ? 'Restored sandbox files in one tabbed zone; exact LF/non-ASCII full and partial copy, real chunk delimiters, terminal cases, 200% and 400px. CRLF is an explicitly existing normalized-display diagnostic, not raw-byte fidelity. Native geometry waits for completed highlighting; the loading/error fallback is covered by component behavior tests. CRLF stays raw in that fallback until Shiki normalizes its completed display.'
+            : test.info().title.startsWith('Arabic preview controls')
+              ? 'Independent preview header focus and unsaved Edit/Cancel proof at 200% and 400px; never Save.'
+              : 'MCP capability pane; 100%, 200% and 400px. Appearance navigation remounts the route.'
         },
         null,
         2
@@ -123,92 +126,110 @@ test.afterEach(async () => {
   }
 })
 
+type SourceSample = { name: string; text: string; displayText?: string }
+
+async function setupSourceGallery(mode: 'dark' | 'light', sourceSamples: SourceSample[]) {
+  const current = (fixture = await setupGallery('ar', false, true, {
+    blockCapabilityMutations: true,
+    blockOrganizationMutations: true
+  }))
+
+  const { page, sandbox } = current
+
+  const samples = sourceSamples.map(sample => ({ ...sample, path: join(sandbox.root, `synthetic-${sample.name}.md`) }))
+
+  for (const sample of samples) {writeFileSync(sample.path, sample.text)}
+  await setGalleryAppearance(current, mode, mode === 'dark' ? 'داكن' : 'فاتح')
+  // Settings fronts the workspace and hides its tab strip. Return to chat
+  // before seeding the layout, and wait for its normal navigation persistence
+  // so reloading cannot restore a previously remembered full-page route.
+  await page.evaluate(() => {
+    location.hash = '/'
+  })
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
+  await waitForAppReady(current)
+  await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('hermes.desktop.lastRoute.profile.default')))
+    .toBe('/')
+  // Restore a supported preview tab in an isolated, single-zone layout.
+  // The real native file reader, mode switcher and SourceView own rendering.
+  const paneId = `preview-tile:file:${samples[0].path}`
+  await page.evaluate(
+    ({ samples, paneId }) => {
+      const id = `file:${samples[0].path}`
+      localStorage.setItem(
+        'hermes.desktop.previewTabs.v2',
+        JSON.stringify(
+          samples.map(sample => ({
+            id: `file:${sample.path}`,
+            target: {
+              kind: 'file',
+              label: `synthetic-${sample.name}.md`,
+              path: sample.path,
+              source: sample.path,
+              url: sample.path,
+              previewKind: 'text',
+              language: 'markdown'
+            }
+          }))
+        )
+      )
+      localStorage.setItem('hermes.desktop.rightRailActiveTab', id)
+      localStorage.setItem(
+        'hermes.desktop.layoutTree.v2',
+        JSON.stringify({
+          type: 'group',
+          id: 'code-direction-source',
+          panes: [
+            'workspace',
+            ...samples.map(sample => `preview-tile:file:${sample.path}`),
+            'sessions',
+            'review',
+            'files',
+            'terminal'
+          ],
+          active: paneId,
+          tabStrip: 'always'
+        })
+      )
+    },
+    { samples: samples.map(({ name, path }) => ({ name, path })), paneId }
+  )
+  await page.reload()
+  await waitForAppReady(current, 60_000, '[data-tree-group="code-direction-source"]')
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
+  // Fresh-draft startup fronts chat once; let it settle before selecting the file.
+  await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
+  const root = page.locator('[data-tree-group="code-direction-source"]')
+
+  return { current, root, samples }
+}
+
+const mixedSource = [
+  `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``,
+  ...Array.from({ length: 194 }, (_, index) => `// synthetic row ${index + 1}`),
+  '',
+  ''
+].join('\n')
+
+const blankSeam = Array.from({ length: 203 }, (_, index) => index === 199 ? '' : `// صف ${index + 1}: café 🧪`).join('\n')
+
+const sourceSamples: SourceSample[] = [
+  { name: 'mixed', text: mixedSource },
+  { name: 'terminal', text: '\n' },
+  { name: 'blank-chunks', text: '\n'.repeat(200) },
+  { name: 'blank-seam', text: blankSeam },
+  { name: 'no-terminal', text: '// آخر صف: café 🧪' },
+  { name: 'one-terminal', text: '// آخر صف: café 🧪\n' },
+  // Shiki already normalizes CRLF. This diagnostic is not a raw-byte copy promise.
+  { name: 'crlf-display-normalization', text: `${blankSeam.replace(/\n/g, '\r\n')}\r\n`, displayText: `${blankSeam}\n` }
+]
+
 for (const mode of ['dark', 'light'] as const) {
   test(`Arabic file source keeps native text, copy and gutter geometry in ${mode}`, async () => {
-    const current = (fixture = await setupGallery('ar', false, true, {
-      blockCapabilityMutations: true,
-      blockOrganizationMutations: true
-    }))
-
-    const { page, app, sandbox } = current
-
-    const source = [
-      `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``,
-      ...Array.from({ length: 194 }, (_, index) => `// synthetic row ${index + 1}`),
-      '',
-      ''
-    ].join('\n')
-
-    const samples = [
-      { name: 'mixed', text: source },
-      { name: 'terminal', text: '\n' },
-      { name: 'blank-chunks', text: '\n'.repeat(200) }
-    ].map(sample => ({ ...sample, path: join(sandbox.root, `synthetic-${sample.name}.md`) }))
-
-    for (const sample of samples) {writeFileSync(sample.path, sample.text)}
-    await setGalleryAppearance(current, mode, mode === 'dark' ? 'داكن' : 'فاتح')
-    // Settings fronts the workspace and hides its tab strip. Return to chat
-    // before seeding the layout, and wait for its normal navigation persistence
-    // so reloading cannot restore a previously remembered full-page route.
-    await page.evaluate(() => {
-      location.hash = '/'
-    })
-    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
-    await waitForAppReady(current)
-    await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('hermes.desktop.lastRoute.profile.default')))
-      .toBe('/')
-    // Restore a supported preview tab in an isolated, single-zone layout.
-    // The real native file reader, mode switcher and SourceView own rendering.
-    const paneId = `preview-tile:file:${samples[0].path}`
-    await page.evaluate(
-      ({ samples, paneId }) => {
-        const id = `file:${samples[0].path}`
-        localStorage.setItem(
-          'hermes.desktop.previewTabs.v2',
-          JSON.stringify(
-            samples.map(sample => ({
-              id: `file:${sample.path}`,
-              target: {
-                kind: 'file',
-                label: `synthetic-${sample.name}.md`,
-                path: sample.path,
-                source: sample.path,
-                url: sample.path,
-                previewKind: 'text',
-                language: 'markdown'
-              }
-            }))
-          )
-        )
-        localStorage.setItem('hermes.desktop.rightRailActiveTab', id)
-        localStorage.setItem(
-          'hermes.desktop.layoutTree.v2',
-          JSON.stringify({
-            type: 'group',
-            id: 'code-direction-source',
-            panes: [
-              'workspace',
-              ...samples.map(sample => `preview-tile:file:${sample.path}`),
-              'sessions',
-              'review',
-              'files',
-              'terminal'
-            ],
-            active: paneId,
-            tabStrip: 'always'
-          })
-        )
-      },
-      { samples: samples.map(({ name, path }) => ({ name, path })), paneId }
-    )
-    await page.reload()
-    await waitForAppReady(current, 60_000, '[data-tree-group="code-direction-source"]')
-    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
-    // Fresh-draft startup fronts chat once; let it settle before selecting the file.
-    await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
-    const root = page.locator('[data-tree-group="code-direction-source"]')
+    const { current, root, samples } = await setupSourceGallery(mode, sourceSamples)
+    const { page, app } = current
 
     for (const sample of samples) {
       const fileTab = page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${sample.path}`)}]`)
@@ -218,11 +239,14 @@ for (const mode of ['dark', 'light'] as const) {
       await expect(sourceButton).toBeVisible({ timeout: 30_000 })
       await sourceButton.click()
       const chunks = root.locator('.preview-source-code:visible')
-      const chunkCount = Math.ceil(sample.text.split('\n').length / 200)
+      const observedCopies: { label: string; text: string }[] = []
+      const displayText = sample.displayText ?? sample.text
+      const chunkCount = Math.ceil(displayText.split('\n').length / 200)
       await expect(chunks).toHaveCount(chunkCount)
-      await expect(chunks.locator('pre.shiki')).toHaveCount(chunkCount)
+      await expect(chunks.locator('[data-source-fallback]')).toHaveCount(0)
+      await expect(chunks.getByTestId('shiki-container')).toHaveCount(chunkCount)
       const code = chunks.first()
-      await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(sample.text)
+      await expect.poll(async () => (await chunks.allTextContents()).join('')).toBe(displayText)
       const originalCode = await code.elementHandle()
       const scroller = code.locator('xpath=ancestor::*[@dir="ltr"][1]')
 
@@ -233,7 +257,7 @@ for (const mode of ['dark', 'light'] as const) {
         await expect(sourceButton).toHaveCSS('direction', 'rtl')
         await expect(code).toHaveCSS('direction', 'ltr')
         await expect(scroller).toHaveCSS('direction', 'ltr')
-        await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(sample.text)
+        await expect.poll(async () => (await chunks.allTextContents()).join('')).toBe(displayText)
         await scroller.evaluate(element => {
           element.scrollLeft = 0
           element.scrollTop = 0
@@ -246,52 +270,56 @@ for (const mode of ['dark', 'light'] as const) {
 
         expect(geometry.gutterRight).toBeLessThanOrEqual(geometry.codeLeft + 1)
 
-        if (chunkCount > 1) {
-          const lastRow = await chunks
-            .first()
-            .locator('.line')
-            .last()
-            .evaluate(element => element.getBoundingClientRect().y)
+        for (let index = 0; index < chunkCount; index++) {
+          const rows = Math.min(200, displayText.split('\n').length - index * 200)
+          const continuation = index < chunkCount - 1
+          const chunk = chunks.nth(index)
 
-          const nextRow = await chunks
-            .nth(1)
-            .locator('.line')
-            .first()
-            .evaluate(element => element.getBoundingClientRect().y)
+          const layout = await chunk.evaluate(element => {
+            const code = element.querySelector('pre.shiki code')!.getBoundingClientRect()
+            const gutter = element.previousElementSibling!.getBoundingClientRect()
 
-          expect(Math.abs(nextRow - lastRow - 20)).toBeLessThanOrEqual(1)
+            return { y: code.y, height: code.height, gutterY: gutter.y, gutterHeight: gutter.height }
+          })
+
+          expect(layout.height).toBe(rows * 20)
+          expect(layout.gutterHeight).toBe(rows * 20)
+          expect(layout.y).toBe(layout.gutterY)
+          await expect(chunk.locator('.line')).toHaveCount(rows + Number(continuation))
+
+          if (continuation) {
+            await expect(chunk.locator('.line').last()).toHaveCSS('display', 'none')
+            const nextY = await chunks.nth(index + 1).locator('pre.shiki code').evaluate(element => element.getBoundingClientRect().y)
+            expect(nextY - layout.y).toBe(rows * 20)
+          }
         }
 
-        const finalLine = await chunks
-          .last()
-          .locator('.line')
-          .last()
-          .evaluate(element => {
+        if (displayText.endsWith('\n')) {
+          const finalLine = await chunks.last().locator('.line').last().evaluate(element => {
             const { y, width, height } = element.getBoundingClientRect()
 
             return { y, width, height }
           })
 
-        expect(finalLine.width).toBe(0)
-        expect(finalLine.height).toBe(20)
-
-        const lastGutter = await chunks
-          .last()
-          .evaluate(element => element.previousElementSibling!.getBoundingClientRect().bottom)
-
-        expect(Math.abs(lastGutter - finalLine.y - 20)).toBeLessThanOrEqual(1)
+          expect(finalLine.width).toBe(0)
+          expect(finalLine.height).toBe(20)
+          const lastGutter = await chunks.last().evaluate(element => element.previousElementSibling!.getBoundingClientRect().bottom)
+          expect(lastGutter - finalLine.y).toBe(20)
+        }
 
         await code.click({ position: { x: 5, y: 5 } })
-        const chunkBoundary = sample.text.split('\n').slice(0, 200).join('\n').length
+        const chunkBoundary = displayText.split('\n').slice(0, 200).join('\n').length
 
         const ranges = [
-          [0, sample.text.length],
-          [Math.max(0, sample.text.length - 2), sample.text.length]
+          [0, displayText.length],
+          [Math.max(0, displayText.length - 2), displayText.length]
         ]
 
-        if (sample.name === 'mixed') {ranges.push([2, sample.text.indexOf('{') + 1])}
+        if (sample.name === 'mixed') {ranges.push([2, displayText.indexOf('{') + 1])}
 
-        if (chunkCount > 1) {ranges.push([chunkBoundary - 2, Math.min(sample.text.length, chunkBoundary + 2)])}
+        if (chunkCount > 1) {
+          ranges.push([chunkBoundary, chunkBoundary + 1], [chunkBoundary - 2, Math.min(displayText.length, chunkBoundary + 2)])
+        }
 
         for (const [from, to] of ranges) {
           await selectSourceRange(chunks, from, to)
@@ -299,7 +327,11 @@ for (const mode of ['dark', 'light'] as const) {
           await page.keyboard.press('Control+c')
           await expect
             .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
-            .toBe(sample.text.slice(from, to))
+            .toBe(displayText.slice(from, to))
+
+          if (sample.displayText !== undefined && from === 0 && to === displayText.length) {
+            observedCopies.push({ label, text: await app.evaluate(({ clipboard }) => clipboard.readText()) })
+          }
         }
 
         if (sample.name === 'mixed') {
@@ -318,10 +350,90 @@ for (const mode of ['dark', 'light'] as const) {
         await captureGallery(current, label, root)
       }
 
+      if (sample.displayText !== undefined) {
+        await test.info().attach('existing-crlf-display-normalization', {
+          body: JSON.stringify({ rawSource: sample.text, observedDisplay: (await chunks.allTextContents()).join(''), observedCopies, rawDiskUnchanged: readFileSync(sample.path, 'utf8') === sample.text }),
+          contentType: 'application/json'
+        })
+      }
+
       expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
     }
+  })
 
-    // Separate from the source identity/copy matrix: edit/cancel remounts SourceView.
+
+  test(`Arabic file source preserves mounted seams while virtualizing in ${mode}`, async () => {
+    const text = `${Array.from({ length: 1201 }, (_, index) => index % 200 === 199 ? '' : `// صف ${index + 1}: café 🧪`).join('\n')}\n`
+    const { current, root, samples } = await setupSourceGallery(mode, [{ name: 'windowed', text }])
+    const { page, app } = current
+    await page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${samples[0].path}`)}]`).click()
+    await root.getByRole('button', { name: 'المصدر', exact: true }).click()
+    const chunks = root.locator('.preview-source-code:visible')
+    const scroller = chunks.first().locator('xpath=ancestor::*[@dir="ltr"][1]')
+    const lines = text.split('\n')
+    const windows: unknown[] = []
+
+    for (const size of sizes.slice(1)) {
+      await resizeGallery(current, size.width, size.height, size.zoom)
+
+      for (const ratio of [0, 0.5, 1]) {
+        await scroller.evaluate((element, ratio) => {
+          element.scrollTop = (element.scrollHeight - element.clientHeight) * ratio
+        }, ratio)
+        await expect.poll(async () => {
+          const start = await chunks.first().evaluate(element => Number(element.previousElementSibling!.firstElementChild!.textContent))
+
+          return ratio === 0 ? start === 1 : start > 1
+        }).toBe(true)
+
+        if (ratio === 1) {
+          await expect.poll(async () => chunks.last().evaluate(element => Number(element.previousElementSibling!.lastElementChild!.textContent))).toBe(lines.length)
+        }
+
+        const count = await chunks.count()
+        expect(count).toBeLessThanOrEqual(6)
+        expect(count).toBeLessThan(Math.ceil(lines.length / 200))
+        await expect(chunks.locator('[data-source-fallback]')).toHaveCount(0)
+        await expect(chunks.getByTestId('shiki-container')).toHaveCount(count)
+
+        const bounds = await chunks.evaluateAll(elements => ({
+          start: Number(elements[0].previousElementSibling!.firstElementChild!.textContent) - 1,
+          end: Number(elements.at(-1)!.previousElementSibling!.lastElementChild!.textContent)
+        }))
+
+        const expected = lines.slice(bounds.start, bounds.end).join('\n') + (bounds.end < lines.length ? '\n' : '')
+        await expect.poll(async () => (await chunks.allTextContents()).join('')).toBe(expected)
+        expect(await scroller.evaluate(element => element.scrollHeight)).toBe(lines.length * 20)
+
+        const layout = await chunks.evaluateAll(elements => elements.map(element => {
+          const code = element.querySelector('pre.shiki code')!.getBoundingClientRect()
+          const gutter = element.previousElementSibling!.getBoundingClientRect()
+
+          return { codeHeight: code.height, gutterHeight: gutter.height, codeY: code.y, gutterY: gutter.y }
+        }))
+
+        for (const chunk of layout) {
+          expect(chunk.codeHeight).toBe(chunk.gutterHeight)
+          expect(chunk.codeY).toBe(chunk.gutterY)
+        }
+
+        await scroller.click({ position: { x: 100, y: 10 } })
+        await selectSourceRange(chunks, 0, expected.length)
+        await app.evaluate(({ clipboard }) => clipboard.writeText('awaiting mounted source copy'))
+        await page.keyboard.press('Control+c')
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(expected)
+        windows.push({ mode, ...size, ratio, ...bounds, mountedChunks: count, layout })
+      }
+    }
+
+    await test.info().attach('mounted-source-window-geometry', { body: JSON.stringify(windows), contentType: 'application/json' })
+    expect(readFileSync(samples[0].path, 'utf8')).toBe(text)
+  })
+
+  test(`Arabic preview controls keep focus and unsaved edits in ${mode}`, async () => {
+    const { current, root, samples } = await setupSourceGallery(mode, [{ name: 'focus', text: mixedSource }])
+    const { page, app } = current
+    // Independent scenario: a failing copy case must not mask header focus proof.
     const sample = samples[0]
     await page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${sample.path}`)}]`).click()
     const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
@@ -330,16 +442,19 @@ for (const mode of ['dark', 'light'] as const) {
     const header = root.locator('.preview-mode-switcher:visible')
     await expect(sourceButton).toBeVisible()
     await sourceButton.click()
+    const readHeaderBottoms = new Map<number, number>()
+    const headerGeometry: { width: number; zoom: number; readBottom: number; editBottom: number }[] = []
 
     for (const size of sizes.slice(1)) {
       await resizeGallery(current, size.width, size.height, size.zoom)
+      const bounds = await header.boundingBox()
+      readHeaderBottoms.set(size.width, bounds!.y + bounds!.height)
 
       for (const [name, button] of [['Source', sourceButton], ['Rendered', renderedButton], ['Edit', editButton]] as const) {
         current.focusChecks.push(await verifyKeyboardFocus(page, button, `preview-${name}-ar-${mode}-${size.width}-${size.zoom * 100}`))
       }
     }
 
-    const readHeader = await header.boundingBox()
     await editButton.click()
     const editor = root.locator('.cm-content[contenteditable="true"]:visible')
     await expect(editor).toBeVisible()
@@ -349,12 +464,15 @@ for (const mode of ['dark', 'light'] as const) {
     const save = root.getByRole('button', { name: 'حفظ', exact: true })
     const cancel = root.getByRole('button', { name: 'إلغاء', exact: true })
     await expect(save).toBeEnabled()
-    const editHeader = await header.boundingBox()
-    expect(editHeader!.y + editHeader!.height).toBe(readHeader!.y + readHeader!.height)
 
     for (const size of sizes.slice(1)) {
       const label = `source-edit-focus-ar-${mode}-${size.width}-${size.zoom * 100}`
       await resizeGallery(current, size.width, size.height, size.zoom)
+      const editHeader = await header.boundingBox()
+      const readBottom = readHeaderBottoms.get(size.width)!
+      const editBottom = editHeader!.y + editHeader!.height
+      expect(editBottom).toBe(readBottom)
+      headerGeometry.push({ width: size.width, zoom: size.zoom, readBottom, editBottom })
       expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true)
       await editor.focus()
       await page.keyboard.press('Control+a')
@@ -368,9 +486,13 @@ for (const mode of ['dark', 'light'] as const) {
       expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
     }
 
+    await test.info().attach(`preview-header-geometry-${mode}`, {
+      body: JSON.stringify(headerGeometry),
+      contentType: 'application/json'
+    })
     await cancel.click()
     await expect(editor).toHaveCount(0)
-    await expect.poll(async () => (await root.locator('.preview-source-code:visible').allTextContents()).join('\n')).toBe(sample.text)
+    await expect.poll(async () => (await root.locator('.preview-source-code:visible').allTextContents()).join('')).toBe(sample.text)
     expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
   })
 }
