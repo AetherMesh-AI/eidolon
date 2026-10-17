@@ -1,0 +1,254 @@
+"""Fail-closed native fixture transport; no provider or physical socket is used."""
+import ast
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import socket
+import sqlite3
+
+import httpx
+import psutil
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+HELPER = ROOT / 'apps/desktop/e2e/fresh-team-provider-guard.py'
+
+
+def run_synchronous_mock_coroutine(coroutine):
+    # The canonical synthetic branch performs no asynchronous I/O. Running it
+    # directly avoids Windows event-loop socketpair fallback under the separate
+    # physical-network backstop, without allowing any physical connection.
+    try:
+        coroutine.send(None)
+    except StopIteration as result:
+        return result.value
+    raise AssertionError('Synthetic transport unexpectedly attempted asynchronous I/O')
+
+
+def test_identity_guard_matches_reviewed_creation_guard():
+    source = (HELPER.parent / 'organization-creation.spec.ts').read_text()
+    original = source.split('const providerSendGuard = String.raw`', 1)[1].split('\n`', 1)[0]
+    names = {'_fixture_identity_matches', '_fixture_live_identity'}
+    functions = lambda text: {node.name: ast.dump(node, include_attributes=False)
+        for node in ast.parse(text).body if isinstance(node, ast.FunctionDef) and node.name in names}
+    assert functions(HELPER.read_text()) == functions(original)
+    assert set(functions(original)) == names
+
+
+@pytest.fixture
+def guarded(tmp_path, monkeypatch):
+    root = tmp_path / 'home'
+    home = root / 'profiles' / 'fresh'
+    (home / 'organization').mkdir(parents=True)
+    evidence = tmp_path / 'guard'
+    evidence.mkdir()
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    monkeypatch.setenv('EIDOLON_FRESH_TEAM_ROOT_HOME', str(root))
+    monkeypatch.setenv('EIDOLON_FRESH_TEAM_GUARD_DIR', str(evidence))
+    # Independent backstop under every function the helper wraps. A broken
+    # fixture cannot turn a regression into a real external request.
+    physical = []
+    def no_physical(*args, **kwargs):
+        physical.append(True)
+        raise RuntimeError('unexpected physical transport')
+    for name in ('connect', 'connect_ex', 'sendto', 'sendmsg'):
+        if not hasattr(socket.socket, name):
+            continue
+        monkeypatch.setattr(socket.socket, name, no_physical)
+    for name in ('getaddrinfo', 'gethostbyname', 'gethostbyname_ex', 'gethostbyaddr', 'getnameinfo'):
+        monkeypatch.setattr(socket, name, no_physical)
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', no_physical)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', no_physical)
+    spec = importlib.util.spec_from_file_location('fresh_team_guard', HELPER)
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    identity = {'organizationId': 'org-one', 'ownerId': 'owner-one', 'profile': 'fresh'}
+    isolation = {**identity, 'isolationVersion': 1, 'credentialMode': 'profile-local-openai-api',
+        'executionMode': 'tool-free-organization', 'supportedProviders': ['openai-api']}
+    inputs = {'jobs': 'Review café drafts', 'goals': 'Keep original text', 'namingStyle': 'Ash names'}
+    request = {'expectedOrganizationId': identity['organizationId'], 'sourceRevision': 'revision-one',
+        'idempotencyKey': 'generation-one', **inputs}
+    expected = {**identity, 'open': True, 'host': '127.0.0.1', 'port': 12345, 'home': str(home),
+        'pid': os.getpid(), 'create_time': psutil.Process().create_time(),
+        'descriptor': {'capabilityVersion': 1, 'state': 'ready',
+            'scope': {'kind': 'served-profile', 'profile': 'fresh'}, 'isolation': isolation,
+            'metadata': {'organizationId': 'org-one', 'owner': {'ownerId': 'owner-one'}}},
+        'model': 'synthetic-model', 'key': 'synthetic-fresh-team-key-one-never-real',
+        'inputs': inputs, 'request': request, 'team': {'executive': {'name': 'Ash'}, 'members': []}}
+    entry = {'pid': expected['pid'], 'create_time': expected['create_time'],
+        'purpose': 'serve', 'home': str(home), 'profile': '', 'host': expected['host'], 'port': expected['port']}
+    (root / 'spawn-ledger.json').write_text(json.dumps([entry]))
+    (home / '.organization-isolation.json').write_text(json.dumps(isolation))
+    (home / '.env').write_text('OPENAI_API_KEY=' + expected['key'] + '\n')
+    (home / 'config.yaml').write_text('model:\n  provider: openai-api\n  default: synthetic-model\n')
+    permit = evidence / 'permit.json'
+    permit.write_text(json.dumps(expected))
+    path = home / 'organization' / 'state.db'
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute('CREATE TABLE organization_team_generations (idempotency_key TEXT, organization_id TEXT, '
+            'input_hash TEXT, source_revision TEXT, status TEXT, dispatched INTEGER, reserved_tokens INTEGER, reserved_cost TEXT)')
+        digest = hashlib.sha256(json.dumps({'operation': 'generateTeam', 'input': request},
+            sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        conn.execute('INSERT INTO organization_team_generations VALUES (?,?,?,?,?,?,?,?)',
+            ('generation-one', 'org-one', digest, 'revision-one', 'running', 1, 24000, None))
+        for table in ('organization_team_setup', 'objectives', 'requests', 'organization_model_calls'):
+            conn.execute('CREATE TABLE ' + table + '(id TEXT)')
+    # Live listener verification is exercised by the native proof; this unit
+    # seam avoids binding a socket in restricted local executors.
+    monkeypatch.setattr(guard, '_fixture_live_identity', lambda pid: {'pid': pid,
+        'create_time': expected['create_time'], 'alive': True, 'listeners': [['127.0.0.1', 12345]]})
+    body = {'model': expected['model'], 'stream': False, 'messages': [
+        {'role': 'system', 'content': 'EIDOLON_STARTER_TEAM_V1'},
+        {'role': 'user', 'content': json.dumps(inputs)}]}
+    def make_request(**changes):
+        return httpx.Request(changes.pop('method', 'POST'), changes.pop('url', guard.CANONICAL_URL),
+            headers={'Authorization': changes.pop('authorization', 'Bearer ' + expected['key'])},
+            json={**body, **changes})
+    yield guard, expected, permit, path, make_request, physical
+    assert physical == []
+
+
+@pytest.mark.parametrize('asynchronous', [False, True])
+def test_only_reserved_synthetic_completion_and_no_repeat(guarded, asynchronous):
+    guard, expected, permit, path, make_request, physical = guarded
+    request = make_request()
+    if asynchronous:
+        response = run_synchronous_mock_coroutine(guard._guarded_async(None, request))
+    else:
+        response = guard._guarded_sync(None, request)
+    assert response.status_code == 200
+    assert json.loads(response.json()['choices'][0]['message']['content']) == expected['team']
+    sent = [json.loads(line) for line in guard.SENDS.read_text().splitlines()]
+    assert len(sent) == 1
+    assert sent[0]['reservation']['dispatched'] == 1
+    assert sent[0]['reservation']['reserved_tokens'] == 24000
+    assert sent[0]['keySha256'] == hashlib.sha256(expected['key'].encode()).hexdigest()
+    assert sent[0]['physicalNetworkSend'] is False
+    with pytest.raises(AssertionError, match='denied'):
+        guard._guarded_sync(None, request)
+    assert len(guard.SENDS.read_text().splitlines()) == 1
+    assert len(guard.ATTEMPTS.read_text().splitlines()) == 1
+
+
+@pytest.mark.parametrize('change', ['missing-permit', 'foreign-home', 'foreign-owner', 'closed', 'pid',
+    'restart', 'ledger-home', 'unconfigured-model', 'foreign-key', 'wrong-model', 'tools', 'wrong-inputs',
+    'missing-reservation', 'unreserved', 'wrong-key', 'wrong-revision', 'wrong-hash', 'premature-team', 'hidden-work'])
+def test_invalid_send_fails_before_any_response_or_network(guarded, change):
+    guard, expected, permit, path, make_request, physical = guarded
+    request = make_request()
+    if change == 'missing-permit':
+        permit.unlink()
+    elif change in {'foreign-home', 'foreign-owner', 'closed', 'pid', 'restart'}:
+        key, value = {'foreign-home': ('home', str(path.parent)), 'foreign-owner': ('ownerId', 'other'),
+            'closed': ('open', False), 'pid': ('pid', os.getpid() + 1),
+            'restart': ('create_time', expected['create_time'] + 1)}[change]
+        expected[key] = value
+        permit.write_text(json.dumps(expected))
+    elif change == 'ledger-home':
+        (guard.ROOT_HOME / 'spawn-ledger.json').write_text('[]')
+    elif change == 'unconfigured-model':
+        (path.parent.parent / 'config.yaml').write_text('model: {}')
+    elif change == 'foreign-key':
+        request = make_request(authorization='Bearer synthetic-fresh-team-key-other-never-real')
+    elif change == 'wrong-model':
+        request = make_request(model='other-model')
+    elif change == 'tools':
+        request = make_request(tools=[{'type': 'function'}])
+    elif change == 'wrong-inputs':
+        request = make_request(messages=[{'role': 'system', 'content': 'EIDOLON_STARTER_TEAM_V1'},
+            {'role': 'user', 'content': '{}'}])
+    else:
+        sql = {'missing-reservation': 'DELETE FROM organization_team_generations',
+            'unreserved': 'UPDATE organization_team_generations SET dispatched=0',
+            'wrong-key': "UPDATE organization_team_generations SET idempotency_key='other'",
+            'wrong-revision': "UPDATE organization_team_generations SET source_revision='other'",
+            'wrong-hash': "UPDATE organization_team_generations SET input_hash='other'",
+            'premature-team': "INSERT INTO organization_team_setup VALUES ('other')",
+            'hidden-work': "INSERT INTO requests VALUES ('other')"}[change]
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.execute(sql)
+    with pytest.raises(AssertionError, match='denied'):
+        guard._guarded_sync(None, request)
+    assert not guard.SENDS.exists()
+    assert len(guard.ATTEMPTS.read_text().splitlines()) == 1
+
+
+@pytest.mark.parametrize('url', ['https://example.invalid/', 'http://localhost/',
+    'https://api.openai.com/v1/models', 'http://api.openai.com/v1/chat/completions',
+    'https://api.openai.com/v1/chat/completions?unexpected=1'])
+def test_external_httpx_sync_and_async_fail_closed(guarded, url):
+    guard, _, _, _, make_request, _ = guarded
+    with pytest.raises(AssertionError, match='denied'):
+        guard._guarded_sync(None, make_request(url=url))
+    with pytest.raises(AssertionError, match='denied'):
+        run_synchronous_mock_coroutine(guard._guarded_async(None, make_request(url=url)))
+    assert len(guard.ATTEMPTS.read_text().splitlines()) == 2
+
+
+def test_socket_dns_backstop_rejects_external_and_hostname_loopback(guarded):
+    guard, *_ = guarded
+    checks = 0
+    for host in ('api.openai.com', 'example.invalid', 'localhost', '198.51.100.1'):
+        with socket.socket() as sock:
+            with pytest.raises(AssertionError, match='denied'):
+                sock.connect((host, 443))
+            with pytest.raises(AssertionError, match='denied'):
+                sock.connect_ex((host, 443))
+        checks += 2
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            with pytest.raises(AssertionError, match='denied'):
+                sock.sendto(b'synthetic', (host, 443))
+            checks += 1
+            if hasattr(sock, 'sendmsg'):
+                with pytest.raises(AssertionError, match='denied'):
+                    sock.sendmsg([b'synthetic'], [], 0, (host, 443))
+                checks += 1
+        with pytest.raises(AssertionError, match='denied'):
+            socket.getaddrinfo(host, 443)
+        checks += 1
+        with pytest.raises(AssertionError, match='denied'):
+            socket.getnameinfo((host, 443), 0)
+        checks += 1
+        for lookup in (socket.gethostbyname, socket.gethostbyname_ex, socket.gethostbyaddr):
+            with pytest.raises(AssertionError, match='denied'):
+                lookup(host)
+            checks += 1
+    assert len(guard.ATTEMPTS.read_text().splitlines()) == checks
+    assert guard._loopback('127.0.0.1') and guard._loopback('::1')
+    assert guard._loopback(b'127.0.0.1')
+    assert socket.gethostbyname('127.0.0.1') == '127.0.0.1'
+    assert socket.gethostbyname_ex('127.0.0.1') == ('127.0.0.1', [], ['127.0.0.1'])
+    assert socket.gethostbyaddr('::1') == ('::1', [], ['::1'])
+    assert socket.getnameinfo(('127.0.0.1', 443), 0) == ('127.0.0.1', '443')
+
+
+def test_effective_home_override_cannot_borrow_environment_identity(guarded):
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
+    guard, _, _, path, make_request, _ = guarded
+    token = set_eidolon_home_override(path.parent)
+    try:
+        with pytest.raises(AssertionError, match='denied'):
+            guard._guarded_sync(None, make_request())
+    finally:
+        reset_eidolon_home_override(token)
+    assert not guard.SENDS.exists()
+
+
+def test_concurrent_repeated_calls_claim_exactly_once(guarded):
+    guard, _, _, _, make_request, _ = guarded
+    def send(_):
+        try:
+            return guard._guarded_sync(None, make_request()).status_code
+        except AssertionError:
+            return 'denied'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(send, range(2)))
+    assert results.count(200) == 1
+    assert results.count('denied') == 1
+    assert len(guard.SENDS.read_text().splitlines()) == 1
+    assert len(guard.ATTEMPTS.read_text().splitlines()) == 1
