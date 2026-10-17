@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 8c79596753c004bae125a60a635c23995f0cf89e
+          ref: 89a3f96a09b68a4f777f97264f9ea11cc58582bb
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "8c79596753c004bae125a60a635c23995f0cf89e"
-          test "$(git rev-parse HEAD^{tree})" = "8b3bc29c39a18b6dfd16095941bfb82804247544"
-          printf '%s\n' '{"source":"8c79596753c004bae125a60a635c23995f0cf89e","tree":"8b3bc29c39a18b6dfd16095941bfb82804247544"}' > team-setup-source.json
+          test "$(git rev-parse HEAD)" = "89a3f96a09b68a4f777f97264f9ea11cc58582bb"
+          test "$(git rev-parse HEAD^{tree})" = "2697fcc2c997ec612093ec2fab3db9fb5a286920"
+          printf '%s\n' '{"source":"89a3f96a09b68a4f777f97264f9ea11cc58582bb","tree":"2697fcc2c997ec612093ec2fab3db9fb5a286920"}' > team-setup-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -47,7 +47,7 @@ jobs:
           npx tsc -p tsconfig.e2e.json --noEmit
       - name: Verify focused setup components
         working-directory: apps/desktop
-        run: npx vitest run src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-onboarding.test.tsx --project ui --maxWorkers 1
+        run: npx vitest run src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/home-keyboard-focus.test.ts --project ui --maxWorkers 1
       - name: Build desktop
         id: desktop-build
         working-directory: apps/desktop

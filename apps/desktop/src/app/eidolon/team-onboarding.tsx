@@ -1,7 +1,7 @@
 import './team-onboarding.css'
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { teamOnboardingCopy, type TeamOnboardingCopy } from '@/i18n/organization
 import { $gateway } from '@/store/gateway'
 import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
 
+import { queueKeyboardReveal } from './home-keyboard-focus'
 import { subscribeOrganizationDirectorySource } from './organization-directory-runtime'
 import { OrganizationOwnerEditor } from './organization-owner-editor'
 import {
@@ -646,7 +647,7 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     hasGenerated,
     allowanceUnverified,
     modelBlocked,
-    close,
+    close: closeDraft,
     update,
     changeInput,
     improve,
@@ -666,6 +667,24 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
   } = useTeamOnboardingDraft(props)
 
   const readinessId = useId()
+  const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)
+  useLayoutEffect(
+    () => () => cancelKeyboardReveal.current?.(),
+    [
+      props.client,
+      profile,
+      props.setup.organizationId,
+      props.setup.sourceRevision,
+      setup.organizationId,
+      setup.sourceRevision,
+      providerSetup.manual
+    ]
+  )
+
+  const close = () => {
+    cancelKeyboardReveal.current?.()
+    closeDraft()
+  }
 
   return (
     <Dialog
@@ -693,7 +712,16 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
       >
         <DialogTitle>{receipt ? copy.ready : copy.title}</DialogTitle>
         <DialogDescription>{receipt ? copy.readyNote : copy.intro}</DialogDescription>
-        <div className="eid-team-body">
+        <div
+          className="eid-team-body"
+          onKeyDownCapture={event => {
+            cancelKeyboardReveal.current?.()
+
+            if (event.key === 'Tab' && props.client.current()) {
+              cancelKeyboardReveal.current = queueKeyboardReveal(event.currentTarget, event.currentTarget)
+            }
+          }}
+        >
           {receipt ? (
             <>
               <p className="eid-team-note">{copy.inherited}</p>

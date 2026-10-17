@@ -79,22 +79,31 @@ function harness(initialSetup = setup, locale: Locale = 'en') {
     onCreated = vi.fn(),
     onReturnFocus = vi.fn()
 
-  const view = render(
+  const element = (currentSetup = initialSetup, currentProfile = 'default', currentClient = client) => (
     <MemoryRouter>
       <I18nProvider configClient={null} initialLocale={locale}>
         <TeamOnboardingDialog
-          client={client}
+          client={currentClient}
           onClose={onClose}
           onCreated={onCreated}
           onReturnFocus={onReturnFocus}
-          profile="default"
-          setup={initialSetup}
+          profile={currentProfile}
+          setup={currentSetup}
         />
       </I18nProvider>
     </MemoryRouter>
   )
 
-  return { client, onClose, onCreated, view }
+  const view = render(element())
+
+  return {
+    client,
+    onClose,
+    onCreated,
+    view,
+    rerender: (nextSetup = initialSetup, nextProfile = 'default', nextClient = client) =>
+      view.rerender(element(nextSetup, nextProfile, nextClient))
+  }
 }
 
 it('requires explicit generation and explicit creation; edits revoke the validated preview', async () => {
@@ -574,5 +583,129 @@ it('ignores a model-return check after the dialog is dismissed', async () => {
   } finally {
     h.view.unmount()
     act(() => $desktopOnboarding.set(original))
+  }
+})
+
+function keyboardRevealHarness(top = 40, height = 64) {
+  const h = harness()
+  const field = screen.getByLabelText('Work to delegate') as HTMLTextAreaElement
+  const body = field.closest<HTMLElement>('.eid-team-body')!
+  const shell = screen.getByRole('dialog')
+  field.value = 'My retained description'
+  field.style.outlineWidth = '3px'
+  field.style.outlineOffset = '3px'
+  Object.defineProperty(body, 'clientHeight', { value: 200 })
+  body.scrollTop = 500
+  shell.scrollTop = 17
+  vi.spyOn(body, 'getBoundingClientRect').mockReturnValue({ top: 47 } as DOMRect)
+  vi.spyOn(field, 'getBoundingClientRect').mockReturnValue({ top, bottom: top + height, height } as DOMRect)
+  let frame: FrameRequestCallback | undefined
+
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+    frame = callback
+
+    return 1
+  })
+
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+
+  return {
+    ...h,
+    field,
+    body,
+    shell,
+    start: () => {
+      fireEvent.keyDown(body, { key: 'Tab' })
+      field.focus()
+    },
+    finish: () => {
+      expect(frame).toBeDefined()
+      frame!(0)
+    },
+    cleanup: () => {
+      h.view.unmount()
+      requestFrame.mockRestore()
+      cancelFrame.mockRestore()
+    }
+  }
+}
+
+it.each([
+  { top: 40, height: 64, expected: 486 },
+  { top: 240, height: 64, expected: 564 },
+  { top: 100, height: 64, expected: 500 },
+  { top: 40, height: 300, expected: 500 }
+])(
+  'reveals only the current Tab-focused control inside its team scroller ($top, $height)',
+  ({ top, height, expected }) => {
+    const h = keyboardRevealHarness(top, height)
+
+    try {
+      h.start()
+      h.finish()
+      expect(h.body.scrollTop).toBe(expected)
+      expect(h.shell.scrollTop).toBe(17)
+      expect(globalThis.document.activeElement).toBe(h.field)
+      expect(h.field.value).toBe('My retained description')
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it.each(['pointerdown', 'keydown', 'wheel', 'input', 'touchstart'])(
+  'retires Team keyboard reveal after later %s',
+  type => {
+    const h = keyboardRevealHarness()
+
+    try {
+      h.start()
+      globalThis.document.dispatchEvent(new Event(type))
+      h.finish()
+      expect(h.body.scrollTop).toBe(500)
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it.each(['owner', 'profile', 'client', 'close', 'unmount', 'new focus'])(
+  'retires Team keyboard reveal after %s changes',
+  change => {
+    const h = keyboardRevealHarness()
+
+    try {
+      h.start()
+
+      if (change === 'owner') {h.rerender({ ...setup, organizationId: 'new-owner' })}
+
+      if (change === 'profile') {h.rerender(setup, 'new-profile')}
+
+      if (change === 'client') {h.rerender(setup, 'default', { ...h.client })}
+
+      if (change === 'close') {fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))}
+
+      if (change === 'unmount') {h.view.unmount()}
+
+      if (change === 'new focus') {screen.getByLabelText('What success looks like').focus()}
+      h.finish()
+      expect(h.body.scrollTop).toBe(500)
+      expect(h.shell.scrollTop).toBe(17)
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it('does not schedule Team reveal for programmatic focus or a non-Tab key', () => {
+  const h = keyboardRevealHarness()
+
+  try {
+    h.field.focus()
+    fireEvent.keyDown(h.field, { key: 'ArrowDown' })
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
+    expect(h.body.scrollTop).toBe(500)
+  } finally {
+    h.cleanup()
   }
 })
