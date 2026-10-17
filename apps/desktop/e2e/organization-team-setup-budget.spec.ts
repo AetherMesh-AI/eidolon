@@ -482,7 +482,7 @@ test('owner explicitly adopts split setup limits while legacy debt, text and key
       {
         name: 'explicit-apply',
         target: budget.getByRole('button', { name: 'Apply setup budget', exact: true }),
-        context: [budget.locator('.eid-team-budget-review > p.eid-team-note').first()]
+        context: [budget.getByText('Applying changes setup limits only. It does not call a model, grant access or start work. Review any existing team proposal again afterward.', { exact: true })]
       }
     ],
     'setup-budget-reviewed',
