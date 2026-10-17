@@ -76,8 +76,9 @@ export function queueKeyboardReveal(
       const bounds = context.getBoundingClientRect()
 
       if (bounds.height <= 0) {continue}
-      contextTop = Math.min(contextTop, bounds.top)
-      contextBottom = Math.max(contextBottom, bounds.bottom)
+      // Match the outline's clearance for native scrollTop rounding at fractional edges.
+      contextTop = Math.min(contextTop, bounds.top - 1)
+      contextBottom = Math.max(contextBottom, bounds.bottom + 1)
     }
 
     // Context is opt-in; oversized descriptions must not displace the focused ring.
