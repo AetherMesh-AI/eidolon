@@ -2379,6 +2379,28 @@ describe('verified organization cold restoration', () => {
     await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile })
   })
 
+  it.each(['installId', 'key-order', 'material', 'removed'] as const)('fences trailing config refresh against %s registry changes', async change => {
+    const { registry } = setup()
+    const held = deferred<void>()
+    let shouldPublish: (() => boolean) | undefined
+    const refresh = vi.fn(async (_force?: boolean, current?: () => boolean) => { shouldPublish = current; await held.promise })
+    render(<Harness refreshHermesConfig={refresh} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(shouldPublish?.()).toBe(true)
+    const route = registry.connections[0]
+    const changed = change === 'installId' ? { ...route, installId: 'display-only-probed-installation' } :
+      change === 'key-order' ? Object.fromEntries(Object.entries(route).reverse()) as typeof route : { ...route, tokenPreview: 'synthetic-changed' }
+    act(() => { setConnectionsRegistry({ ...registry, connections: change === 'removed' ? [] : [changed] }) })
+    const allowed = change === 'installId' || change === 'key-order'
+    expect(shouldPublish?.()).toBe(allowed)
+    await act(async () => { held.resolve(); await vi.advanceTimersByTimeAsync(1) })
+    expect($desktopBoot.get().running).toBe(!allowed)
+    expect($connection.get()?.profile).toBe(owner.profile)
+    if (allowed) { await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile }) }
+    else { await expect(getHermesConfigRecord()).rejects.toThrow('verified selected owner') }
+  })
+
   it('revokes a trailing configuration refresh when another source intent supersedes the restored owner', async () => {
     setup()
     const held = deferred<void>()

@@ -28,7 +28,14 @@ interface SelectionProof {
   pending: OrganizationSelectionRecord | null
 }
 const proofs = new WeakMap<GatewayActivationVerifier, SelectionProof>()
-const routeSignature = (route: DesktopRegistryConnection | undefined) => route ? JSON.stringify(route) : ''
+/** Post-commit authority: installId is a display-only inventory hint, not routing. */
+export function organizationRegistryRouteSignature(route: DesktopRegistryConnection | undefined): string {
+  if (!route) { return '' }
+
+  // Keep every other field, including unknown future auth/routing fields. Only
+  // top-level key ordering is canonical; pre-reset registry fences stay exact.
+  return JSON.stringify(Object.fromEntries(Object.entries(route).filter(([key]) => key !== 'installId').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))
+}
 const registeredRoute = (connectionId: string) => $connectionsRegistry.get()?.connections.find(item => item.id === connectionId)
 
 function descriptorIdentity(value: unknown, connection: HermesConnection): OrganizationSelectionIdentity | null {
@@ -80,19 +87,13 @@ export function persistedOrganizationVerifier(
       throw new Error('Organization selection changed before confirmation')
     }
     const pending = identity ? stageOrganizationSelection(identity) : stageLegacyOrganizationDeparture(connection.connectionId ?? null, connection.profile ?? 'default')
-    const proof: SelectionProof = { committed: false, gateway, connection, generation: generation!, registryRoute: routeSignature(route), intent, identity, pending }
+    const proof: SelectionProof = { committed: false, gateway, connection, generation: generation!, registryRoute: organizationRegistryRouteSignature(route), intent, identity, pending }
     proofs.set(verifier, proof)
     authorizeOrganizationApi(pending, () => (proof.committed ? !$pendingConnectionId.get() && !$gatewaySwapTarget.get() : isCurrentSourceSwitchIntent(intent)) && $gateway.get() === gateway &&
       matchesOrganizationPresentation($connection.get(), connection) && gateway.connectionState === 'open' && gatewayTransportGeneration(gateway) === generation &&
-      routeSignature(registeredRoute(connection.connectionId!)) === proof.registryRoute, () => $connection.get())
+      organizationRegistryRouteSignature(registeredRoute(connection.connectionId!)) === proof.registryRoute, () => $connection.get())
 
     return () => {
-      console.info('[organization-selection-diagnostic]', JSON.stringify({
-        checkpoint: 'proof-fence', sourceCurrent: Boolean(sourceCurrent()), signalAborted: signal.aborted,
-        intentCurrent: isCurrentSourceSwitchIntent(intent), socketOpen: gateway.connectionState === 'open',
-        generationMatches: gatewayTransportGeneration(gateway) === generation, registryMatches: $connectionsRegistry.get() === registry,
-        hasPending: pending !== null, identityPresent: identity !== null, ownsPending: ownsPendingOrganizationSelection(pending)
-      }))
       if (!current() || !ownsPendingOrganizationSelection(pending)) { return false }
       // The caller owns cancellation/disposal too. Repeat only its pure proof
       // validation, never the pending write, immediately around the reset.
@@ -116,20 +117,9 @@ export async function selectRuntimeOrganizationConnection(connectionId: string, 
   const current = () => isCurrentSourceSwitchIntent(proof.intent) && $gateway.get() === proof.gateway &&
     matchesOrganizationPresentation($connection.get(), proof.connection) && proof.gateway.connectionState === 'open' &&
     gatewayTransportGeneration(proof.gateway) === proof.generation &&
-    routeSignature(registeredRoute(connectionId)) === proof.registryRoute &&
+    organizationRegistryRouteSignature(registeredRoute(connectionId)) === proof.registryRoute &&
     proof.connection.connectionId === connectionId && proof.connection.profile === profile
 
-  console.info('[organization-selection-diagnostic]', JSON.stringify({
-    checkpoint: 'completion', status: outcome.status, reason: outcome.reason, phase: outcome.phase ?? null,
-    resetStarted: outcome.resetStarted, published: outcome.published, hasError: Boolean(outcome.error),
-    proofIntent: proof.intent, currentIntent: currentSourceSwitchIntent(), intentCurrent: isCurrentSourceSwitchIntent(proof.intent),
-    gatewayMatches: $gateway.get() === proof.gateway, connectionMatches: $connection.get() === proof.connection,
-    presentationMatches: matchesOrganizationPresentation($connection.get(), proof.connection),
-    socketOpen: proof.gateway.connectionState === 'open', generationMatches: gatewayTransportGeneration(proof.gateway) === proof.generation,
-    registryRouteMatches: routeSignature(registeredRoute(connectionId)) === proof.registryRoute,
-    connectionIdMatches: proof.connection.connectionId === connectionId, profileMatches: proof.connection.profile === profile,
-    hasPending: proof.pending !== null, identityPresent: proof.identity !== null, ownsPending: ownsPendingOrganizationSelection(proof.pending)
-  }))
   if (outcome.status !== 'committed' || !current()) {
     if (ownsPendingOrganizationSelection(proof.pending)) { showOrganizationSelectionRecovery('pending', proof.identity) }
 

@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ecca1215ec5e6c01bb7f8cfa15b0e0ce01c9871b
+          ref: b96c1f75975ecdd200ba3ed23447410aba0d24b2
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "ecca1215ec5e6c01bb7f8cfa15b0e0ce01c9871b"
-          test "$(git rev-parse HEAD^{tree})" = "8f766d45713eae007547550db67aa71d09d2a781"
-          printf '%s\n' '{"source":"ecca1215ec5e6c01bb7f8cfa15b0e0ce01c9871b","tree":"8f766d45713eae007547550db67aa71d09d2a781"}' > organization-creation-source.json
+          test "$(git rev-parse HEAD)" = "b96c1f75975ecdd200ba3ed23447410aba0d24b2"
+          test "$(git rev-parse HEAD^{tree})" = "cf29992286baf148c60a65a3e3b1dd813ae3b8a9"
+          printf '%s\n' '{"source":"b96c1f75975ecdd200ba3ed23447410aba0d24b2","tree":"cf29992286baf148c60a65a3e3b1dd813ae3b8a9"}' > organization-creation-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -57,7 +57,7 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
           PLAYWRIGHT_JSON_OUTPUT_NAME: organization-creation-report/results.json
-        run: xvfb-run -a npx playwright test e2e/directory-selection.spec.ts --workers=1 --retries=0 --output organization-creation-test-results --reporter list,json
+        run: xvfb-run -a npx playwright test e2e/directory-selection.spec.ts e2e/organization-creation.spec.ts --workers=1 --retries=0 --output organization-creation-test-results --reporter list,json
       - name: Retain focused organization screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
