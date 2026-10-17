@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { TRANSLATIONS } from '@/i18n/catalog'
 import { I18nProvider } from '@/i18n/context'
+import { observationCopy } from '@/i18n/organization-observation'
 
 import { ObjectiveProgress } from './objective-progress'
 import { objectiveWorkData } from './objective-work-data'
@@ -88,7 +89,7 @@ it('keeps work overview scoped to open objectives and labels retained data after
   expect(within(card).getAllByRole('list', { name: 'Recorded task states' })).toHaveLength(1)
   expect(within(card).getByRole('link', { name: 'View objective →' }).getAttribute('href')).toBe('/objectives/objective')
   expect(screen.queryByRole('region', { name: 'Closed work' })).toBeNull()
-  expect(screen.getByText('Last known records · reconnect to refresh')).toBeTruthy()
+  expect(screen.getByText(observationCopy.en.stale).getAttribute('role')).toBe('status')
 })
 
 
