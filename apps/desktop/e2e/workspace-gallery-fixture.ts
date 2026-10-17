@@ -5,12 +5,14 @@ import { writeFileSync } from 'node:fs'
 import type { Locator } from '@playwright/test'
 
 import type { OrganizationAttentionItem, OrganizationAttentionQuery } from '../src/app/eidolon/runtime-attention-types'
+
 import { setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
 import { galleryAttentionPage } from './organization-attention-gallery-fixture'
 import { snapshot } from './organization-visual-fixture'
 import { RealSessionBuilder } from './real-session-builder'
 import { expect, test } from './test'
+import { createGalleryEvidenceControl } from './workspace-evidence-control'
 import { createGalleryObservationControl } from './workspace-observation-control'
 import { galleryPaintReadiness } from './workspace-paint-readiness'
 
@@ -36,6 +38,7 @@ interface ForeignContentFixture {
   blockOrganizationMutations?: boolean
   emptyHistory?: boolean
   longPreview?: boolean
+  syntheticEvidence?: boolean
 }
 
 const organizationReadMethods = new Set(['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention', 'organization.observe', 'organization.observeRead', 'organization.intake.list'])
@@ -62,6 +65,8 @@ export async function setupGallery(locale: string, seedHistory = false, populate
     const methods: string[] = []
     const observationReads: string[] = []
     const state = { snapshot: structuredClone(snapshot), observationError: null as string | null, attention: null as { items: OrganizationAttentionItem[]; error: string | null } | null }
+    const evidenceControl = foreignContent.syntheticEvidence ? createGalleryEvidenceControl('default') : undefined
+    const allowedOrganizationReads = new Set([...organizationReadMethods, ...(evidenceControl ? ['organization.evidence'] : [])])
     const observationControl = createGalleryObservationControl()
     const attentionControl = createGalleryObservationControl()
     const attentionReads: OrganizationAttentionQuery[] = []
@@ -74,17 +79,18 @@ export async function setupGallery(locale: string, seedHistory = false, populate
       socket.onClose((code, reason) => { connected = false; return server.close({ code, reason }) })
       server.onClose((code, reason) => { connected = false; return socket.close({ code, reason }) })
       socket.onMessage(message => {
-        const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: OrganizationAttentionQuery & { method?: string; id?: string; params?: OrganizationAttentionQuery } }
+        const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: OrganizationAttentionQuery & { method?: string; id?: string; params?: OrganizationAttentionQuery & { id?: string } } }
         if (foreignContent.blockCapabilityMutations && (request.method === 'reload.mcp' || request.method?.startsWith('mcp.servers.'))) {
           capabilityMethods.push(request.method)
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic capabilities are read-only: unexpected MCP action.' } }))
           return
         }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
-        if (foreignContent.blockOrganizationMutations && request.method?.startsWith('organization.') && !organizationReadMethods.has(request.method)) {
+        if ((foreignContent.blockOrganizationMutations || evidenceControl) && request.method?.startsWith('organization.') && !allowedOrganizationReads.has(request.method)) {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic organization gallery is read-only: unexpected action.' } }))
           return
         }
+        if (evidenceControl?.handle(request, value => socket.send(JSON.stringify(value)), () => connected)) { return }
         const replyAttention = (query: OrganizationAttentionQuery) => {
           attentionReads.push({ ...query })
           attentionControl.respond(() => {
@@ -148,7 +154,7 @@ export async function setupGallery(locale: string, seedHistory = false, populate
     const focusChecks: object[] = []
     const thumbChecks: object[] = []
     const failures: { label: string; error: string }[] = []
-    return { ...fixture, cleanup: async () => { observationControl.discard(); attentionControl.discard(); await fixture.cleanup() }, locale, sessionId, methods, observationReads, attentionReads, foreignMethods, capabilityMethods, state, observationControl, attentionControl, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
+    return { ...fixture, cleanup: async () => { evidenceControl?.control.discard(); observationControl.discard(); attentionControl.discard(); await fixture.cleanup() }, locale, sessionId, methods, observationReads, attentionReads, foreignMethods, capabilityMethods, state, evidenceControl, allowedOrganizationReads, observationControl, attentionControl, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
   } catch (error) {
     await fixture.cleanup()
     throw error
@@ -330,7 +336,7 @@ export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
     scenario: `synthetic-workspace-${group}-gallery`, locale: fixture.locale,
     seedProviderCalls: fixture.seedProviderCalls, galleryProviderCalls: fixture.mock.receivedPrompts.length - fixture.seedProviderCalls,
-    foreignMethods: fixture.foreignMethods, organizationMethods: [...new Set(fixture.methods)], observationReads: [...new Set(fixture.observationReads)], attentionReads: fixture.attentionReads, captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
+    foreignMethods: fixture.foreignMethods, organizationMethods: [...new Set(fixture.methods)], observationReads: [...new Set(fixture.observationReads)], attentionReads: fixture.attentionReads, evidenceReads: fixture.evidenceControl?.reads, rejectedEvidenceMethods: fixture.evidenceControl?.rejected, captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
   }, null, 2))
 }
 
@@ -338,7 +344,8 @@ export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
   persistGalleryEvidence(fixture, group)
   expect(fixture.foreignMethods.every(method => ['session.foreign.list', 'session.foreign.preview'].includes(method))).toBe(true)
   expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
-  expect(fixture.methods.every(method => organizationReadMethods.has(method))).toBe(true)
-  expect(fixture.observationReads.every(method => ['organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
+  expect(fixture.methods.every(method => fixture.allowedOrganizationReads.has(method))).toBe(true)
+  expect(fixture.observationReads.every(method => ['organization.outcomes', 'organization.attention', ...(fixture.evidenceControl ? ['organization.evidence'] : [])].includes(method))).toBe(true)
+  expect(fixture.evidenceControl?.rejected ?? []).toEqual([])
   expect(fixture.failures, 'Every destination must pass its original assertions').toEqual([])
 }

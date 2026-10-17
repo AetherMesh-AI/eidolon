@@ -321,7 +321,7 @@ export function RuntimeHistoryObjectiveDetail({ adapter, snapshot, objectiveId }
   const copy = t.organizationWork
   const [params] = useSearchParams()
   const returnTo = objectiveReturnTarget(params, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
-  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables }
+  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables, '/activity': t.organizationHome.activity, '/organization': t.organizationSurfaces.organization }
   const [retained, setRetained] = useState<OrganizationSnapshot | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)

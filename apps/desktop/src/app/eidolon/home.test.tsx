@@ -409,3 +409,27 @@ it('retires a queued keyboard reveal when Home changes owner while its summary r
     cancelFrame.mockRestore()
   }
 })
+
+it('ignores nested intake toggles without stealing restored outcome focus or changing its route', () => {
+  const current: OrganizationSnapshot = {
+    ...snapshot, connection: { scope: 'nested-toggle', ownerScope: 'nested-toggle', state: 'ready' },
+    outcomes: { generation: '1', total: 1, unread: 0, hasMore: false, nextCursor: null, items: [outcome] }
+  }
+  const adapter = { mode: 'runtime', getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  function Location() {
+    const location = useLocation()
+    return <output aria-label="Current route">{location.pathname + location.search + location.hash}</output>
+  }
+  const view = render(<MemoryRouter initialEntries={['/home?view=accepted']}><Home adapter={adapter} snapshot={current} /><Location /></MemoryRouter>)
+  const link = screen.getByRole('heading', { name: outcome.title }).closest('article')!.querySelector('a')!
+  const outer = view.container.querySelector<HTMLDetailsElement>('#eid-home-intake')!
+  const nested = view.container.querySelector<HTMLDetailsElement>('#eid-assisted-intake')!
+  link.focus()
+  expect(outer.open).toBe(false)
+  fireEvent(nested, new Event('toggle'))
+  expect(document.activeElement).toBe(link)
+  expect(screen.getByLabelText('Current route').textContent).toBe('/home?view=accepted')
+  // An outer close toggle still returns to its visible action.
+  fireEvent(outer, new Event('toggle'))
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Describe a request' }))
+})

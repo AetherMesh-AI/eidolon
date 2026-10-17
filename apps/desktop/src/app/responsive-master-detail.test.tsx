@@ -116,8 +116,8 @@ it.each(['pressed', 'current'] as const)(
       return (
         <ResponsiveMasterDetail detailOpen={open} onDetailOpenChange={setOpen}>
           <button
-            aria-pressed={state === 'pressed' ? true : undefined}
             aria-current={state === 'current' ? true : undefined}
+            aria-pressed={state === 'pressed' ? true : undefined}
           >
             Selected member
           </button>
@@ -136,3 +136,24 @@ it.each(['pressed', 'current'] as const)(
     expect(window.document.activeElement).toBe(screen.getByRole('button', { name: 'Selected member' }))
   }
 )
+
+it('publishes initial measurement readiness with the compact layout and keeps it through later resizes', () => {
+  observeWidth()
+  const { container } = render(<Fixture />)
+  const layout = container.querySelector('.eid-responsive-detail')!
+  expect(layout.getAttribute('data-layout-ready')).toBe('false')
+  act(() => resize(0))
+  expect(layout.getAttribute('data-layout-ready')).toBe('false')
+  act(() => resize(500))
+  expect(layout.getAttribute('data-layout-ready')).toBe('true')
+  expect(layout.getAttribute('data-compact')).toBe('true')
+  act(() => resize(1000))
+  expect(layout.getAttribute('data-layout-ready')).toBe('true')
+  expect(layout.getAttribute('data-compact')).toBe('false')
+})
+
+it('does not wait for an unavailable resize observer', () => {
+  vi.stubGlobal('ResizeObserver', undefined)
+  const { container } = render(<Fixture />)
+  expect(container.querySelector('.eid-responsive-detail')?.getAttribute('data-layout-ready')).toBe('true')
+})

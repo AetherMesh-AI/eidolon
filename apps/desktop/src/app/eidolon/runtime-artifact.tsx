@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
-import { Inspector } from './inspector'
+import { Inspector, type InspectorOrigin } from './inspector'
 import { LocalizedTime } from './localized-time'
 import { RuntimeDeliverableHandoff, verifyDeliverable } from './runtime-deliverable-handoff'
 import { RuntimeEditProposal } from './runtime-edit-proposal'
@@ -16,16 +16,18 @@ interface RuntimeArtifactProps {
   snapshot: OrganizationSnapshot
   evidenceId: string
   title: string
+  origin?: InspectorOrigin | null
   onClose(): void
 }
 
-export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose }: RuntimeArtifactProps) {
+export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose, origin }: RuntimeArtifactProps) {
   const { t } = useI18n()
   const copy = t.organizationRuntime
   const [artifact, setArtifact] = useState<OrganizationArtifact | null>(null)
   const [loadedVersion, setLoadedVersion] = useState('')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [pending, setPending] = useState(true)
 
   // Full evidence is read on demand. Refresh while open when authoritative work
   // state changes so approved, applied and stale revisions are never inferred
@@ -43,6 +45,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
 
   useEffect(() => {
     let current = true
+    setPending(true)
     setArtifact(null)
     setError('')
     void adapter
@@ -53,11 +56,14 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
         if (current) {
           setArtifact(value)
           setLoadedVersion(evidenceVersion)
+          setPending(false)
         }
       })
       .catch(reason => {
         if (current) {
           setError(reason instanceof Error ? reason.message : copy.artifactError)
+          setLoadedVersion(evidenceVersion)
+          setPending(false)
         }
       })
 
@@ -66,22 +72,21 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
     }
   }, [adapter, evidenceId, evidenceVersion, attempt, copy.artifactError])
 
+  const busy = pending || loadedVersion !== evidenceVersion
+
   return (
-    <Inspector kind="artifact" onClose={onClose} title={title}>
-      {!artifact && !error && <Loader label={copy.artifactLoading} />}
-      {error && (
+    <Inspector kind="artifact" onClose={onClose} origin={origin} title={title}>
+      <Button aria-busy={busy} aria-disabled={busy} onClick={() => {
+        if (busy) { return }
+        setPending(true)
+        setAttempt(value => value + 1)
+      }} size="sm" variant="secondary">
+        {busy ? copy.artifactLoading : error ? copy.artifactRetry : copy.artifactRefresh}
+      </Button>
+      {busy && <Loader label={copy.artifactLoading} />}
+      {!busy && error && <p className="eid-artifact-error" role="alert">{error}</p>}
+      {!busy && artifact && loadedVersion === evidenceVersion && (
         <>
-          <p role="alert">{error}</p>
-          <Button onClick={() => setAttempt(value => value + 1)} size="sm" variant="secondary">
-            {copy.artifactRetry}
-          </Button>
-        </>
-      )}
-      {artifact && loadedVersion === evidenceVersion && (
-        <>
-          <Button onClick={() => setAttempt(value => value + 1)} size="sm" variant="secondary">
-            {copy.artifactRefresh}
-          </Button>
           {artifact.kind === 'project_execution' && <h3>{t.organizationWork.projectExecutionEvidence}</h3>}
           {artifact.kind === 'source_integration' && <h3>{t.organizationWork.sourceIntegrationEvidence}</h3>}
           {artifact.editProposal && (

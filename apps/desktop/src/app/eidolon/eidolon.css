@@ -184,6 +184,7 @@
 .eid-inspector dd { margin: 0; overflow-wrap: anywhere; }
 .eid-status-idle { color: var(--text-secondary); }
 .eid-inspector h3 { margin-top: 28px; }
+.eid-inspector > h2, .eid-inspector > .eid-artifact-error { overflow-wrap: anywhere; }
 .eid-plan { display: grid; gap: 12px; }
 .eid-plan article { padding: 18px; border: 1px solid var(--eidolon-border-subtle); border-radius: 10px; background: var(--eidolon-surface-1); }
 .eid-plan h3 { margin: 8px 0; }
@@ -531,6 +532,8 @@
 
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
+/* Keep the six-pixel focus outset inside the objective tab strip at either scroll edge. */
+.eid-page:has(> .eid-objective-hero) .eid-tabs[role=tablist] { padding: 8px; scroll-padding: 8px; }
 
 /* Keep retained-read recovery alongside its error without displacing composing. */
 .eid-messages-view .eid-owner-chat-panel:has(> .eid-owner-chat-recovery) { gap: 6px; }
