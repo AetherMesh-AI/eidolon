@@ -125,7 +125,7 @@ def _fixture_live_identity(pid):
 // This regression has an independent socket backstop: a broken guard cannot
 // turn the canonical-URL denial check into an actual external request.
 const providerGuardRegression = String.raw`
-import asyncio,copy,json,os,socket
+import asyncio,copy,json,os,socket,sys
 import httpx,sitecustomize
 loop=asyncio.new_event_loop()
 physical=[]
@@ -162,11 +162,7 @@ assert len(sitecustomize.attempts.read_text().splitlines())==6
 marker=json.loads((sitecustomize.guard_root/('installed-'+str(os.getpid())+'.json')).read_text())
 assert marker['bootstrapHome']==sitecustomize.bootstrap_home and marker['pid']==os.getpid() and marker['sync'] and marker['async']
 assert marker['create_time']==sitecustomize.psutil.Process().create_time()
-expected={'open':True,'host':'127.0.0.1','port':12345,'home':'/fixture/profiles/fresh','profile':'fresh','organizationId':'org','ownerId':'owner','descriptor':{
- 'capabilityVersion':1,'state':'ready','scope':{'kind':'served-profile','profile':'fresh'},
- 'metadata':{'organizationId':'org','owner':{'ownerId':'owner'}},
- 'isolation':{'organizationId':'org','ownerId':'owner','profile':'fresh','isolationVersion':1,'credentialMode':'profile-local-openai-api','executionMode':'tool-free-organization','supportedProviders':['openai-api']}
-}}
+expected=json.loads(sys.argv[1])
 entry={'pid':marker['pid'],'create_time':marker['create_time'],'purpose':'serve','home':expected['home'],'profile':'','host':expected['host'],'port':expected['port']}
 live={'pid':marker['pid'],'create_time':marker['create_time'],'alive':True,'listeners':[[expected['host'],expected['port']]]}
 assert sitecustomize._fixture_identity_matches(marker,entry,live,expected)
@@ -181,11 +177,66 @@ with socket.socket() as listener:
  assert sitecustomize._fixture_identity_matches(marker,entry,sitecustomize._fixture_live_identity(os.getpid()),expected)
 assert not sitecustomize._fixture_identity_matches(marker,entry,sitecustomize._fixture_live_identity(os.getpid()),expected)
 assert physical==[]
-print(json.dumps({'syncDenied':3,'asyncDenied':3,'physicalSocketAttempts':0,'numericLoopbackAllowed':2,'identityRefusals':len(cases),'emptyDisplayRouteAcceptedWithExactServedHome':True,'liveListenerVerifiedAndRevoked':True,'installation':marker}))
+print(json.dumps({'syncDenied':3,'asyncDenied':3,'physicalSocketAttempts':0,'numericLoopbackAllowed':2,'identityRefusals':len(cases),'receiptMetadataCannotReplaceLiveDescriptor':True,'emptyDisplayRouteAcceptedWithExactServedHome':True,'liveListenerVerifiedAndRevoked':True,'installation':marker}))
 `
 
 type WorkspaceReceipt = { profile: string; organizationId: string; ownerId: string }
 type ObservedDescriptor = { open: boolean; host: string; port: number; descriptor?: unknown }
+
+function guardExpectation(observed: ObservedDescriptor, home: string, receipt?: WorkspaceReceipt) {
+  const profile = receipt?.profile ?? 'default'
+
+  return {
+    ...observed,
+    home,
+    profile,
+    organizationId: receipt?.organizationId,
+    ownerId: receipt?.ownerId
+  }
+}
+
+function guardRegressionExpected() {
+  // The real creation result has a metadata-only descriptor. It must never
+  // overwrite the live transport descriptor when projecting receipt identity.
+  const receipt = {
+    capabilityVersion: 1,
+    state: 'created',
+    idempotencyKey: 'fixture-operation',
+    profile: 'fresh',
+    organizationId: 'org',
+    ownerId: 'owner',
+    isolationVersion: 1,
+    credentialMode: 'profile-local-openai-api',
+    executionMode: 'tool-free-organization',
+    descriptor: { organizationId: 'org', displayName: 'Fresh fixture', owner: { ownerId: 'owner' } },
+    activated: false
+  }
+
+  return guardExpectation(
+    {
+      open: true,
+      host: '127.0.0.1',
+      port: 12345,
+      descriptor: {
+        capabilityVersion: 1,
+        state: 'ready',
+        scope: { kind: 'served-profile', profile: receipt.profile },
+        metadata: receipt.descriptor,
+        isolation: {
+          organizationId: receipt.organizationId,
+          ownerId: receipt.ownerId,
+          profile: receipt.profile,
+          isolationVersion: 1,
+          credentialMode: 'profile-local-openai-api',
+          executionMode: 'tool-free-organization',
+          supportedProviders: ['openai-api']
+        }
+      }
+    },
+    '/fixture/profiles/fresh',
+    receipt
+  )
+}
 
 async function setupCreationFixture() {
   const sandbox = createSandbox('fresh-organization')
@@ -217,7 +268,7 @@ async function setupCreationFixture() {
     const env = buildAppEnv(sandbox, { PYTHONPATH: observer, EIDOLON_NATIVE_PROVIDER_GUARD_DIR: guardRoot })
 
     const regression = JSON.parse(
-      execFileSync(switchPython, ['-c', providerGuardRegression, 'serve'], {
+      execFileSync(switchPython, ['-c', providerGuardRegression, JSON.stringify(guardRegressionExpected())], {
         env: { ...env, EIDOLON_NATIVE_PROVIDER_GUARD_DIR: regressionRoot },
         encoding: 'utf8'
       })
@@ -252,7 +303,7 @@ async function setupCreationFixture() {
             return false
           }
 
-          const expected = { ...observed, home: realpathSync(home), profile, ...receipt }
+          const expected = guardExpectation(observed, realpathSync(home), receipt)
 
           const matches = JSON.parse(
             execFileSync(
