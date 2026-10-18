@@ -8,46 +8,67 @@ export interface SubscriptionRecovery {
   sourceRevision: string
 }
 
-/** An advisory about one old attempt, never authority for the next request. */
-export function readSubscriptionRecovery(
-  failure: unknown,
-  expected: Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'>
-): SubscriptionRecovery | null {
-  const error = failure as {
-    code?: unknown
-    data?: { recovery?: unknown }
-  } | null
+export interface SubscriptionPendingRequest extends Omit<SubscriptionRecovery, 'disposition'> {
+  disposition: 'reconcile_unsent'
+}
 
-  const value = error?.data?.recovery
-
-  if (error?.code !== 5076 || !value || typeof value !== 'object' || Array.isArray(value)) {
+function readSubscriptionRequest<T extends 'retry_unsent' | 'reconcile_unsent'>(
+  value: unknown,
+  disposition: T,
+  expected: Pick<SubscriptionRecovery, 'operation' | 'sourceRevision'> & { idempotencyKey?: string }
+): (Omit<SubscriptionRecovery, 'disposition'> & { disposition: T }) | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null
   }
 
-  const recovery = value as Record<string, unknown>
+  const request = value as Record<string, unknown>
 
   if (
-    Object.keys(recovery).sort().join(',') !== 'disposition,idempotencyKey,operation,sourceRevision,version' ||
-    recovery.version !== 1 ||
-    recovery.disposition !== 'retry_unsent' ||
-    !text(recovery.idempotencyKey) ||
-    !hash(recovery.sourceRevision) ||
-    typeof recovery.operation !== 'string' ||
-    !['improve_jobs', 'improve_goals', 'generate'].includes(recovery.operation) ||
-    recovery.idempotencyKey !== expected.idempotencyKey ||
-    recovery.operation !== expected.operation ||
-    recovery.sourceRevision !== expected.sourceRevision
+    Object.keys(request).sort().join(',') !== 'disposition,idempotencyKey,operation,sourceRevision,version' ||
+    request.version !== 1 ||
+    request.disposition !== disposition ||
+    !text(request.idempotencyKey, 128) ||
+    !hash(request.sourceRevision) ||
+    typeof request.operation !== 'string' ||
+    !['improve_jobs', 'improve_goals', 'generate'].includes(request.operation) ||
+    (expected.idempotencyKey !== undefined && request.idempotencyKey !== expected.idempotencyKey) ||
+    request.operation !== expected.operation ||
+    request.sourceRevision !== expected.sourceRevision
   ) {
     return null
   }
 
   return {
     version: 1,
-    disposition: 'retry_unsent',
-    idempotencyKey: expected.idempotencyKey,
+    disposition,
+    idempotencyKey: request.idempotencyKey,
     operation: expected.operation,
     sourceRevision: expected.sourceRevision
   }
+}
+
+/** An advisory about one old attempt, never authority for the next request. */
+export function readSubscriptionRecovery(
+  failure: unknown,
+  expected: Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'>
+): SubscriptionRecovery | null {
+  const error = failure as { code?: unknown; data?: { recovery?: unknown } } | null
+
+  return error?.code === 5076 ? readSubscriptionRequest(error.data?.recovery, 'retry_unsent', expected) : null
+}
+
+export function readSubscriptionPendingRequest(
+  value: unknown,
+  expected: Pick<SubscriptionRecovery, 'operation' | 'sourceRevision'>
+): SubscriptionPendingRequest | null {
+  return readSubscriptionRequest(value, 'reconcile_unsent', expected)
+}
+
+export function readSubscriptionReconciledRequest(
+  value: unknown,
+  expected: Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'>
+): SubscriptionRecovery | null {
+  return readSubscriptionRequest(value, 'retry_unsent', expected)
 }
 
 export interface SubscriptionPolicy {

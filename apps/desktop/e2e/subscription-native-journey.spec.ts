@@ -143,13 +143,25 @@ test.describe('host-native subscription setup', () => {
 
   for (const legacy of [false, true]) {
     test(`${legacy ? 'legacy-empty' : 'fresh'} profile consents, chooses policy, reviews Improve, generates and explicitly creates`, async () => {
-      fixture = await setupNativeSubscription({ legacy })
+      fixture = await setupNativeSubscription({
+        legacy,
+        availabilityProbe: legacy ? 'scheduler_writer_once' : 'ancestor_churn_once'
+      })
       const dialog = await openSetup(legacy)
       const before = await activate(dialog, legacy)
       await completeInference(
         dialog.getByRole('button', { name: 'Improve work description', exact: true }),
         'improveTeamInput'
       )
+      const probes = fixture.events().filter(row => row.kind === 'availability-probe')
+      expect(probes).toHaveLength(1)
+      expect(probes[0]).toMatchObject({
+        probe: legacy ? 'scheduler_writer_once' : 'ancestor_churn_once',
+        triggered: true,
+        restored: true,
+        renewed: !legacy,
+        queued: legacy
+      })
       const suggestion = dialog.getByRole('region', { name: 'Review suggested wording', exact: true })
       await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedJobs)
       await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(jobs)
@@ -380,6 +392,104 @@ test.describe('host-native subscription setup', () => {
     await test.info().attach('subscription-unsent-recovery-proof', {
       contentType: 'application/json',
       body: JSON.stringify({ before, failed, after, events: fixture.events() })
+    })
+  })
+
+  test('stranded unsent inference reconciles locally before one explicit retry', async () => {
+    allowErrorBanners()
+    fixture = await setupNativeSubscription({ legacy: true, availabilityProbe: 'scheduler_cleanup_once' })
+    const dialog = await openSetup(true)
+    const before = await activate(dialog, true)
+    const improve = dialog.getByRole('button', { name: 'Improve work description', exact: true })
+    await completeInference(improve, 'improveTeamInput', 'unavailable')
+    const check = dialog.getByRole('button', { name: 'Check unsent request', exact: true })
+    const retry = dialog.getByRole('button', { name: 'Retry unsent request', exact: true })
+    await expect(check).toBeEnabled({ timeout: 20_000 })
+    await expect(retry).toHaveCount(0)
+    // The actual retained cleanup worker uses a 5s accounting deadline. This
+    // concrete checkpoint is emitted only after its refusal and holder unwind.
+    await expect
+      .poll(() => fixture!.events().filter(row => row.kind === 'availability-probe').length, {
+        timeout: 10_000
+      })
+      .toBe(1)
+    const probe = fixture.events().find(row => row.kind === 'availability-probe')!
+    expect(probe).toMatchObject({
+      probe: 'scheduler_cleanup_once',
+      triggered: true,
+      queued: true,
+      cleanupRefused: true,
+      restored: true
+    })
+    const running = fixture.snapshot()
+    const unsent = running.generations.filter(row => row.idempotency_key !== 'synthetic-legacy')
+    expect(unsent).toHaveLength(1)
+    expect(unsent[0]).toMatchObject({ status: 'running', dispatched: 0, result_json: null })
+    expect(running.dispatches).toEqual([])
+    expect(running.outcomes).toEqual([])
+    expect(running.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+    fixture.assertQuiet(0)
+
+    const eventCounts = () =>
+      Object.fromEntries(
+        ['oauth-exchange', 'jwks', 'models', 'responses'].map(kind => [
+          kind,
+          fixture!.events().filter(row => row.kind === kind).length
+        ])
+      )
+
+    const beforeCheck = eventCounts()
+    await check.click()
+    // One explicit local Check and its passive setup refresh: 2 x 15s + 5s UI.
+    await expect(retry).toBeEnabled({ timeout: 35_000 })
+    const checked = fixture.snapshot()
+    const expected = structuredClone(running)
+    expected.generations.find(row => row.idempotency_key === unsent[0].idempotency_key)!.status = 'failed'
+    expect(checked).toEqual(expected)
+    expect(eventCounts()).toEqual(beforeCheck)
+    const checkpoints = fixture.events().filter(row => row.kind === 'reconciliation-checkpoint')
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      nativePutCount: probe.nativePutCount,
+      nativeDeleteCount: probe.nativeDeleteCount
+    })
+    fixture.assertQuiet(0)
+    await completeInference(retry, 'improveTeamInput')
+    await expect(
+      dialog
+        .getByRole('region', { name: 'Review suggested wording', exact: true })
+        .getByLabel('Suggested text', { exact: true })
+    ).toHaveValue(suggestedJobs)
+    await expect(retry).toHaveCount(0)
+    const after = fixture.snapshot()
+    expect(after.generations).toHaveLength(3)
+    expect(after.generations.find(row => row.idempotency_key === unsent[0].idempotency_key)).toEqual({
+      ...unsent[0],
+      status: 'failed'
+    })
+    expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+    const completed = after.generations.filter(row => row.status === 'completed')
+    expect(completed).toHaveLength(1)
+    expect(completed[0].idempotency_key).not.toBe(unsent[0].idempotency_key)
+    expect(completed[0].dispatched).toBe(1)
+    expect(after.dispatches).toHaveLength(1)
+    expect(after.outcomes).toHaveLength(1)
+    expect(after.model).toEqual(before.model)
+    expect(after.executionPolicy).toEqual(checked.executionPolicy)
+    expect(after.subscriptionPolicy).toEqual(checked.subscriptionPolicy)
+    expect(after.teams).toEqual([])
+    expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
+    fixture.assertQuiet(1)
+    await completeInference(improve, 'improveTeamInput')
+    expect(fixture.snapshot()).toEqual(after)
+    fixture.assertQuiet(1)
+    await test.info().attach('subscription-stranded-unsent-reconciled', {
+      contentType: 'image/png',
+      body: await dialog.screenshot()
+    })
+    await test.info().attach('subscription-stranded-unsent-proof', {
+      contentType: 'application/json',
+      body: JSON.stringify({ before, running, checked, after, events: fixture.events() })
     })
   })
 

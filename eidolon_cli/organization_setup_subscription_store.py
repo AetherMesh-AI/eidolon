@@ -18,15 +18,12 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from functools import wraps
-import ctypes
-import errno
 import json
 import inspect
 import hashlib
 import math
 import os
 from pathlib import Path
-import platform
 import stat
 import sys
 import threading
@@ -36,6 +33,7 @@ import uuid
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from eidolon_cli import organization_setup_subscription_filesystem as filesystem
 from eidolon_cli.organization_credential_native import binding_reference, native_backend
 from eidolon_cli.organization_credential_security import ValueBinding
 
@@ -109,127 +107,6 @@ def _pairs(pairs):
         result[key] = value
     return result
 
-
-class _DarwinTimespec(ctypes.Structure):
-    _fields_ = [('tv_sec', ctypes.c_int64), ('tv_nsec', ctypes.c_int64)]
-
-
-class _DarwinStat64(ctypes.Structure):
-    # Apple xnu bsd/sys/stat.h __DARWIN_STRUCT_STAT64, 64-bit macOS only.
-    _fields_ = [
-        ('st_dev', ctypes.c_int32), ('st_mode', ctypes.c_uint16),
-        ('st_nlink', ctypes.c_uint16), ('st_ino', ctypes.c_uint64),
-        ('st_uid', ctypes.c_uint32), ('st_gid', ctypes.c_uint32),
-        ('st_rdev', ctypes.c_int32), ('st_atimespec', _DarwinTimespec),
-        ('st_mtimespec', _DarwinTimespec), ('st_ctimespec', _DarwinTimespec),
-        ('st_birthtimespec', _DarwinTimespec), ('st_size', ctypes.c_int64),
-        ('st_blocks', ctypes.c_int64), ('st_blksize', ctypes.c_int32),
-        ('st_flags', ctypes.c_uint32), ('st_gen', ctypes.c_uint32),
-        ('st_lspare', ctypes.c_int32), ('st_qspare', ctypes.c_int64 * 2),
-    ]
-
-    @property
-    def st_ctime_ns(self):
-        return self.st_ctimespec.tv_sec * 1_000_000_000 + self.st_ctimespec.tv_nsec
-
-
-def _file_identity(info):
-    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-            info.st_nlink, info.st_ctime_ns)
-
-
-@contextmanager
-def _checked_acl_descriptor(path):
-    before = Path(path).lstat()
-    if not (stat.S_ISREG(before.st_mode) or stat.S_ISDIR(before.st_mode)):
-        raise StoreError('unsafe_filesystem')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    try:
-        if _file_identity(os.fstat(fd)) != _file_identity(before):
-            raise StoreError('unsafe_filesystem')
-        yield fd, before
-        if (_file_identity(os.fstat(fd)) != _file_identity(before)
-                or _file_identity(Path(path).lstat()) != _file_identity(before)):
-            raise StoreError('unsafe_filesystem')
-    finally:
-        os.close(fd)
-
-
-def _check_darwin_acl(path):
-    """Read-only, descriptor-bound ACL inspection; never accept arbitrary NULL.
-
-    Apple Libc sys/statx_np.c populates FILESEC_ACL only when an ACL exists;
-    gen/filesec.c exposes this through filesec_query_property. Absence is valid
-    ONLY after successful fstatx and explicit successful property-presence query.
-    xnu bsd/sys/stat.h and cdefs.h define the stat64 ABI and symbol suffixes.
-    """
-    architecture = platform.machine().lower()
-    if (architecture not in {'arm64', 'x86_64'} or ctypes.sizeof(ctypes.c_void_p) != 8
-            or ctypes.sizeof(_DarwinStat64) != 144 or ctypes.alignment(_DarwinStat64) != 8):
-        raise StoreError('filesystem_protection_unavailable')
-    api = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
-    symbol = 'fstatx_np$INODE64' if architecture == 'x86_64' else 'fstatx_np'
-    try:
-        fstatx = getattr(api, symbol)  # Never fall back to an incompatible ABI.
-        fstatx.argtypes = [ctypes.c_int, ctypes.POINTER(_DarwinStat64), ctypes.c_void_p]
-        fstatx.restype = ctypes.c_int
-        api.filesec_init.argtypes = []
-        api.filesec_init.restype = ctypes.c_void_p
-        api.filesec_free.argtypes = [ctypes.c_void_p]
-        api.filesec_free.restype = None
-        api.filesec_query_property.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
-        api.filesec_query_property.restype = ctypes.c_int
-        api.filesec_get_property.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
-        api.filesec_get_property.restype = ctypes.c_int
-        api.acl_valid.argtypes = [ctypes.c_void_p]
-        api.acl_valid.restype = ctypes.c_int
-        api.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
-        api.acl_get_entry.restype = ctypes.c_int
-        api.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
-        api.acl_get_tag_type.restype = ctypes.c_int
-        api.acl_free.argtypes = [ctypes.c_void_p]
-        api.acl_free.restype = ctypes.c_int
-    except AttributeError:
-        raise StoreError('filesystem_protection_unavailable') from None
-    with _checked_acl_descriptor(path) as (fd, before):
-        fsec = api.filesec_init()
-        if not fsec:
-            raise StoreError('filesystem_protection_unavailable')
-        acl = ctypes.c_void_p()
-        try:
-            native_stat = _DarwinStat64()
-            if fstatx(fd, ctypes.byref(native_stat), fsec) != 0:
-                raise StoreError('filesystem_protection_unavailable')
-            if _file_identity(native_stat) != _file_identity(before):
-                raise StoreError('unsafe_filesystem')
-            present = ctypes.c_int(-1)
-            if api.filesec_query_property(fsec, 5, ctypes.byref(present)) != 0 or present.value < 0:
-                raise StoreError('filesystem_protection_unavailable')
-            if present.value == 0:  # FILESEC_ACL explicitly absent in this snapshot.
-                return
-            if api.filesec_get_property(fsec, 5, ctypes.byref(acl)) != 0 or not acl.value or acl.value == 1:
-                raise StoreError('filesystem_protection_unavailable')
-            if api.acl_valid(acl) != 0:
-                raise StoreError('filesystem_protection_unavailable')
-            entry, index = ctypes.c_void_p(), 0  # ACL_FIRST_ENTRY
-            for _ in range(129):  # Darwin ACL_MAX_ENTRIES is 128.
-                ctypes.set_errno(0)
-                result = api.acl_get_entry(acl, index, ctypes.byref(entry))
-                if result == -1 and ctypes.get_errno() == errno.EINVAL:
-                    return
-                if result != 0:
-                    raise StoreError('filesystem_protection_unavailable')
-                tag = ctypes.c_int()
-                if api.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
-                    raise StoreError('filesystem_protection_unavailable')
-                if tag.value != 2:  # Only ACL_EXTENDED_DENY is harmless.
-                    raise StoreError('unsafe_filesystem')
-                index = -1  # ACL_NEXT_ENTRY
-            raise StoreError('filesystem_protection_unavailable')
-        finally:
-            if acl.value and acl.value != 1:
-                api.acl_free(acl)
-            api.filesec_free(fsec)
 
 
 def _guarded(method):
@@ -767,7 +644,7 @@ class SubscriptionStore:
                         or (stat.S_IMODE(info.st_mode) & 0o022 and not info.st_mode & stat.S_ISVTX)):
                     raise StoreError('unsafe_filesystem')
             if not self._synthetic:
-                _check_darwin_acl(ancestor)
+                filesystem.check_darwin_acl(ancestor, ancestor=ancestor != path)
         info = path.lstat()
         if directory != stat.S_ISDIR(info.st_mode) or (not directory and not stat.S_ISREG(info.st_mode)):
             raise StoreError('unsafe_filesystem')
@@ -1737,7 +1614,7 @@ class SubscriptionStore:
                 or info.st_size > MAX_TRANSITION_BYTES):
             raise StoreError('unsafe_filesystem')
         if not self._synthetic:
-            _check_darwin_acl(path)
+            filesystem.check_darwin_acl(path)
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd, 'rb') as stream:
             actual = os.fstat(stream.fileno())

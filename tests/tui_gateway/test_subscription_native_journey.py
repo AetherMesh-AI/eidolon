@@ -52,7 +52,8 @@ def native(tmp_path, monkeypatch, request):
     options = options if type(options) is dict else {'legacy': options}
     identity = seed_profile(home, legacy=options.get('legacy', False))
     transport = Transport()
-    edges = SyntheticEdges(home, recovery_fault=options.get('recovery_fault')).install()
+    edges = SyntheticEdges(home, recovery_fault=options.get('recovery_fault'),
+                           availability_probe=options.get('availability_probe')).install()
     try:
         from tui_gateway import server
         from eidolon_cli import banner
@@ -154,13 +155,20 @@ def inference(native, key, *, field=None):
 
 
 @pytest.mark.macos_only
-@pytest.mark.parametrize('native', [False, True], ids=['fresh', 'legacy-empty'], indirect=True)
+@pytest.mark.parametrize('native', [
+    {'legacy': False, 'availability_probe': 'ancestor_churn_once'},
+    {'legacy': True, 'availability_probe': 'scheduler_writer_once'},
+], ids=['fresh', 'legacy-empty'], indirect=True)
 def test_registered_native_subscription_full_journey(native):
     home, identity, transport, edges = native
     before = activate(native)
     first = inference(native, 'synthetic-improve', field='jobs')
     improved = ok(transport, 'improveTeamInput', first)
     assert improved['suggestion'] == SUGGESTIONS['jobs']
+    probes = [event for event in edges.events if event['kind'] == 'availability-probe']
+    assert len(probes) == 1 and probes[0]['triggered'] is True and probes[0]['restored'] is True
+    assert probes[0]['renewed'] is (edges.availability_probe.kind == 'ancestor_churn_once')
+    assert probes[0]['queued'] is (edges.availability_probe.kind == 'scheduler_writer_once')
     assert improved['generationAllowance']['setupUsage']['costUsd'] is None
     assert ok(transport, 'improveTeamInput', first) == improved
     assert sum(event['kind'] == 'responses' for event in edges.events) == 1
@@ -395,3 +403,58 @@ def test_synthetic_fixture_denies_nonlocal_sdk_socket_and_dns_paths(tmp_path):
         assert all(event['kind'] == 'denied-network' and not event['physicalNetworkSend'] for event in edges.events)
     finally:
         edges.close()
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('native', [{'legacy': True, 'availability_probe': 'scheduler_cleanup_once'}], indirect=True)
+def test_native_stranded_unsent_request_reconciles_before_explicit_retry(native):
+    home, _, transport, edges = native
+    before = activate(native)
+    first = inference(native, 'synthetic-stranded-unsent', field='jobs')
+    refused = call(transport, 'improveTeamInput', first)
+    assert refused['error']['code'] == 5076
+    assert refused['error']['data']['reason'] == 'unavailable'
+    assert 'recovery' not in refused['error']['data']
+    # Real cleanup has its own 5-second accounting deadline after the original
+    # RPC can return. Wait for that exact refusal/unwind, not elapsed time proof.
+    assert edges.availability_probe.finished.wait(10)
+    probes = [event for event in edges.events if event['kind'] == 'availability-probe']
+    assert len(probes) == 1
+    assert all(probes[0][field] is True for field in ('triggered', 'queued', 'cleanupRefused', 'restored'))
+    running = snapshot(home)
+    old = next(row for row in running['generations'] if row['idempotency_key'] == first['idempotencyKey'])
+    assert old['status'] == 'running' and old['dispatched'] == 0 and old['result_json'] is None
+    assert running['dispatches'] == running['outcomes'] == []
+    assert next(row for row in running['generations'] if row['idempotency_key'] == 'synthetic-legacy') == before['generations'][0]
+    assert not any(event['kind'] == 'responses' for event in edges.events)
+    counts = {kind: sum(event['kind'] == kind for event in edges.events)
+              for kind in ('oauth-exchange', 'jwks', 'models', 'responses')}
+    puts, deletes = edges.vault.put_count, edges.vault.delete_count
+    check = {key: value for key, value in first.items() if key != 'field'}
+    check.update(operation='improve_jobs', confirmed=True)
+    recovery = {'version': 1, 'disposition': 'retry_unsent', 'operation': 'improve_jobs',
+                'sourceRevision': first['sourceRevision'], 'idempotencyKey': first['idempotencyKey']}
+    assert ok(transport, 'reconcileSetupSubscriptionRequest', check)['recovery'] == recovery
+    checked = snapshot(home)
+    expected = deepcopy(running)
+    next(row for row in expected['generations'] if row['idempotency_key'] == first['idempotencyKey'])['status'] = 'failed'
+    assert checked == expected  # Includes exact nonce, typed binding, debt/history.
+    assert ok(transport, 'reconcileSetupSubscriptionRequest', check)['recovery'] == recovery
+    assert snapshot(home) == checked
+    assert (edges.vault.put_count, edges.vault.delete_count) == (puts, deletes)
+    assert {kind: sum(event['kind'] == kind for event in edges.events) for kind in counts} == counts
+    second = {**first, 'idempotencyKey': 'synthetic-explicit-reconciled-retry'}
+    improved = ok(transport, 'improveTeamInput', second)
+    assert improved['suggestion'] == SUGGESTIONS['jobs']
+    assert improved['generationAllowance']['remainingCalls'] == 5
+    assert improved['generationAllowance']['setupUsage']['subscriptionCalls'] == 1
+    after = snapshot(home)
+    assert len(after['generations']) == 3 and len(after['dispatches']) == len(after['outcomes']) == 1
+    assert next(row for row in after['generations'] if row['idempotency_key'] == first['idempotencyKey']) == {**old, 'status': 'failed'}
+    assert next(row for row in after['generations'] if row['idempotency_key'] == 'synthetic-legacy') == before['generations'][0]
+    assert after['teams'] == [] and not any(after['counts'].values())
+    assert ok(transport, 'improveTeamInput', second) == improved
+    assert call(transport, 'improveTeamInput', first)['error']['code'] == 5076
+    assert snapshot(home) == after
+    assert sum(event['kind'] == 'responses' for event in edges.events) == 1
+    assert not any(event['kind'].startswith('denied') for event in edges.events)

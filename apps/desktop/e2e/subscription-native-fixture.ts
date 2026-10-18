@@ -87,6 +87,12 @@ function boundaryDiagnostic(rows: Row[]) {
     'darwin_acl',
     'filesystem_check',
     'filesystem_identity',
+    'native_acl_read',
+    'ancestor_acl',
+    'ledger_writer',
+    'ledger_writer_acquire',
+    'ledger_writer_wait',
+    'ledger_writer_release',
     'subscription_preflight',
     'subscription_release',
     'prepare_send',
@@ -131,6 +137,7 @@ function boundaryDiagnostic(rows: Row[]) {
     'FileNotFoundError',
     'TimeoutError',
     'OperationalError',
+    'LedgerWriterUnavailable',
     'OrganizationExecutionError',
     'OwnerPolicyError',
     'BoundaryError',
@@ -155,6 +162,7 @@ function boundaryDiagnostic(rows: Row[]) {
     'stale_owner',
     'stale_attempt',
     'setup_unavailable',
+    'subscription_reconciliation_unavailable',
     'owner_generation_changed',
     'lease_cancelled',
     'lease_used',
@@ -173,6 +181,9 @@ function boundaryDiagnostic(rows: Row[]) {
     'identity_conflict',
     'unconfigured',
     'cancelled',
+    'deadline',
+    'reentrant',
+    'queue_full',
     'stale_binding',
     'accounting_failed',
     'admission_denied',
@@ -299,7 +310,9 @@ async function observeSubscriptionRpc(page: Page) {
       'executeSetupSubscriptionOperation',
       'reconcileSetupSubscriptionOperation',
       'cancelSetupSubscriptionOperation',
-      'recoverSetupSubscriptionOperation'
+      'recoverSetupSubscriptionOperation',
+      'reconcileSetupSubscriptionRequest',
+      'inspectSetupSubscriptionRequest'
     ].map(name => 'organization.' + name)
   )
 
@@ -319,6 +332,7 @@ async function observeSubscriptionRpc(page: Page) {
     'subscription_attempt_conflict',
     'subscription_outcome_conflict',
     'subscription_completion_unavailable',
+    'subscription_reconciliation_unavailable',
     'subscription_local_owner_required',
     'subscription_ledger_corrupt',
     'subscription_schema_unsupported',
@@ -679,6 +693,7 @@ export async function setupNativeSubscription(
     legacy?: boolean
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once'
+    availabilityProbe?: 'ancestor_churn_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
   } = {}
 ) {
   const sandbox = createSandbox('subscription-native')
@@ -756,7 +771,7 @@ export async function setupNativeSubscription(
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -826,6 +841,8 @@ export async function setupNativeSubscription(
               'responses',
               'recovery-fault',
               'recovery-checkpoint',
+              'availability-probe',
+              'reconciliation-checkpoint',
               'denied-tls',
               'denied-network'
             ].map(kind => [kind, rows.filter(row => row.kind === kind).length])

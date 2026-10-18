@@ -1,9 +1,12 @@
 """Explicit recovery against real private store/ledger; synthetic network and vault only."""
 from contextlib import nullcontext
 from dataclasses import replace
+from functools import wraps
 import json
 import os
 from queue import Queue
+import sqlite3
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -202,6 +205,102 @@ def recovery_ledger(ledger, monkeypatch, request):
     return request.getfixturevalue('activated')
 
 
+def _retry_error_category(error):
+    """Fixed test diagnostics only; never format errors or inspect unknown types."""
+    from eidolon_cli.organization_owner_policy import OwnerPolicyError
+    from eidolon_cli.organization_setup_subscription_transport import TransportError
+    from eidolon_cli.organization_setup_subscription_usage import SAFE_ERRORS
+    classes = {StoreError: 'StoreError', OwnerPolicyError: 'OwnerPolicyError',
+        TransportError: 'TransportError', sqlite3.OperationalError: 'OperationalError',
+        RuntimeError: 'RuntimeError', OSError: 'OSError', ValueError: 'ValueError'}
+    category = {'class': classes.get(type(error), 'other'), 'code': 'other'}
+    if type(error) is sqlite3.OperationalError:
+        attributes = vars(error)
+        code = attributes.get('sqlite_errorcode') if type(attributes) is dict else None
+        if type(code) is int:
+            category['code'] = {sqlite3.SQLITE_BUSY: 'SQLITE_BUSY', sqlite3.SQLITE_LOCKED: 'SQLITE_LOCKED',
+                sqlite3.SQLITE_CANTOPEN: 'SQLITE_CANTOPEN', sqlite3.SQLITE_READONLY: 'SQLITE_READONLY',
+                sqlite3.SQLITE_IOERR: 'SQLITE_IOERR', sqlite3.SQLITE_FULL: 'SQLITE_FULL'}.get(code & 255, 'other')
+    elif type(error) in {StoreError, OwnerPolicyError, TransportError}:
+        attributes = vars(error)
+        code = attributes.get('code' if type(error) is TransportError else 'reason') if type(attributes) is dict else None
+        allowed = SAFE_ERRORS if type(error) is TransportError else {
+            'connection_unavailable', 'unsafe_filesystem', 'operation_failed', 'grant_expired',
+            'lease_cancelled', 'owner_generation_changed', 'stale_revision', 'invalid_binding',
+            'source_conflict', 'locked', 'unreadable', 'corrupt', 'subscription_attempt_conflict'}
+        if type(code) is str and code in allowed:
+            category['code'] = code
+    return category
+
+
+def _capture_retry_boundaries(monkeypatch):
+    """Observe the existing one-shot call, without changing a gate or retrying."""
+    from eidolon_cli import organization_setup_subscription_transport as sender
+    from eidolon_cli.organization_setup_subscription_usage import SAFE_ERRORS, TransportResult
+    events, lock = [], threading.Lock()
+    def emit(value):
+        try:
+            with lock:
+                if len(events) < 32:
+                    events.append(value)
+        except BaseException:
+            pass  # An observer failure must not change the original call.
+    def wrap(module, name, stage):
+        original = getattr(module, name)
+        @wraps(original)
+        def observed(*args, **kwargs):
+            try:
+                result = original(*args, **kwargs)
+            except BaseException as error:
+                try:
+                    emit({'stage': stage, 'result': 'exception', 'error': _retry_error_category(error)})
+                except BaseException:
+                    emit({'stage': stage, 'result': 'diagnostic_error'})
+                raise
+            try:
+                if stage == 'transport' and type(result) is TransportResult:
+                    observation = result.observation
+                    emit({'stage': stage, 'result': 'returned',
+                        'dispatch': observation.dispatch_state if observation.dispatch_state in {'not_sent', 'possible_send'} else 'other',
+                        'terminal': observation.terminal_kind if observation.terminal_kind in {'none', 'unknown', 'completed', 'failed', 'incomplete'} else 'other',
+                        'error': result.delivery_error_code if result.delivery_error_code in SAFE_ERRORS else 'none' if result.delivery_error_code is None else 'other',
+                        'accounted': result.accounting_committed is True})
+                else:
+                    value = 'true' if result is True else 'false' if result is False else (
+                        result if type(result) is str and result in {'committed', 'not_committed', 'unknown'} else 'returned')
+                    emit({'stage': stage, 'result': value})
+            except BaseException:
+                emit({'stage': stage, 'result': 'diagnostic_error'})
+            return result
+        monkeypatch.setattr(module, name, observed)
+    for name, stage in (('_dispatch_job', 'dispatch'), ('_outcome_job', 'outcome'),
+                        ('_failed_job', 'failure'), ('_persist', 'persistence'),
+                        ('infer_subscription', 'inference')):
+        wrap(admission, name, stage)
+    wrap(sender, 'send_once', 'transport')
+    def snapshot(conn, keys, socket):
+        with lock:
+            result = {'boundaries': list(events), 'postWriteObserved': bool(socket.sent)}
+        try:
+            rows = []
+            for key in keys:
+                row = conn.execute('SELECT status,dispatched FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
+                counts = [conn.execute('SELECT count(*) FROM ' + table + ' WHERE idempotency_key=?', (key,)).fetchone()[0]
+                    for table in ('organization_setup_subscription_attempts', 'organization_setup_subscription_dispatches',
+                                  'organization_setup_subscription_outcomes')]
+                outcome = conn.execute('SELECT outcome_json FROM organization_setup_subscription_outcomes WHERE idempotency_key=?', (key,)).fetchone()
+                terminal = json.loads(outcome[0]).get('terminal_kind') if outcome is not None else None
+                rows.append({'phase': 'absent' if row is None else row['status'] if row['status'] in {'running', 'failed', 'uncertain', 'completed'} else 'other',
+                    'dispatched': 'absent' if row is None else 'yes' if row['dispatched'] == 1 else 'no' if row['dispatched'] == 0 else 'other',
+                    'counts': [min(2, count) for count in counts],
+                    'terminal': 'absent' if outcome is None else terminal if type(terminal) is str and terminal in {'completed', 'failed', 'incomplete'} else 'other'})
+            result['attempts'] = rows  # Original failed intent first, new explicit intent second; no IDs.
+        except BaseException as error:
+            result['snapshotError'] = _retry_error_category(error)
+        return result
+    return snapshot
+
+
 @pytest.mark.parametrize('improve', [True, False])
 def test_registered_retry_offer_preserves_failed_row_and_allows_only_explicit_new_intent(
         recovery_ledger, monkeypatch, improve):
@@ -234,10 +333,90 @@ def test_registered_retry_offer_preserves_failed_row_and_allows_only_explicit_ne
     if improve:
         content = None
     socket, new_connects = install(monkeypatch, wire(event(response=response() if improve else response(content))))
-    assert 'result' in call(method, {**value, 'idempotencyKey': 'explicit-new-intent'}, rig.transport)
+    diagnostic = _capture_retry_boundaries(monkeypatch)
+    result = call(method, {**value, 'idempotencyKey': 'explicit-new-intent'}, rig.transport)
+    assert 'result' in result, diagnostic(rig.conn, (value['idempotencyKey'], 'explicit-new-intent'), socket)
     assert state(rig)[1] == old  # Keys sort explicit-new-intent before inference.
     assert len(new_connects) == 1 and socket.sent
     assert budget.operation_counts(rig.conn)['total'] == 1
+
+
+def test_retry_diagnostics_export_only_closed_error_categories():
+    private = 'synthetic-private-error-text'
+    class UnknownError(RuntimeError):
+        @property
+        def reason(self):
+            pytest.fail('Unknown error attributes must not be inspected')
+        def __str__(self):
+            pytest.fail('Error text must not be formatted')
+    assert _retry_error_category(UnknownError(private)) == {'class': 'other', 'code': 'other'}
+    error = StoreError('operation_failed')
+    error.reason = private
+    assert _retry_error_category(error) == {'class': 'StoreError', 'code': 'other'}
+    error = sqlite3.OperationalError(private)
+    error.sqlite_errorcode = sqlite3.SQLITE_BUSY | (1 << 8)
+    assert _retry_error_category(error) == {'class': 'OperationalError', 'code': 'SQLITE_BUSY'}
+    accesses = []
+    class HostileDict(dict):
+        def get(self, *args):
+            accesses.append(True)
+            raise RuntimeError(private)
+    error.__dict__ = HostileDict(sqlite_errorcode=sqlite3.SQLITE_BUSY)
+    assert _retry_error_category(error) == {'class': 'OperationalError', 'code': 'other'}
+    error = StoreError('operation_failed')
+    error.__dict__ = HostileDict(reason='operation_failed')
+    assert _retry_error_category(error) == {'class': 'StoreError', 'code': 'other'}
+    assert accesses == []
+
+
+def test_retry_diagnostic_failure_preserves_original_return_and_exception(monkeypatch):
+    from eidolon_cli import organization_setup_subscription_transport as sender
+    from eidolon_cli.organization_setup_subscription_usage import TransportResult
+    broken = object.__new__(TransportResult)  # Deliberately invalid synthetic return, no fields.
+    monkeypatch.setattr(sender, 'send_once', lambda *args: broken)
+    error = RuntimeError('synthetic-private-error-text')
+    def fail(*args):
+        raise error
+    monkeypatch.setattr(admission, '_dispatch_job', fail)
+    monkeypatch.setattr(__import__(__name__, fromlist=['_retry_error_category']), '_retry_error_category',
+        lambda *args: (_ for _ in ()).throw(RuntimeError('synthetic observer failure')))
+    diagnostic = _capture_retry_boundaries(monkeypatch)
+    assert sender.send_once(None) is broken
+    with pytest.raises(RuntimeError) as caught:
+        admission._dispatch_job()
+    assert caught.value is error
+    observed = diagnostic(None, (), SimpleNamespace(sent=[]))
+    assert observed['boundaries'] == [
+        {'stage': 'transport', 'result': 'diagnostic_error'},
+        {'stage': 'dispatch', 'result': 'diagnostic_error'}]
+
+
+def test_retry_diagnostics_observe_failed_dispatch_without_replay(recovery_ledger, monkeypatch):
+    rig = recovery_ledger
+    private = 'synthetic-private-error-text'
+    calls = []
+    def fail(*args):
+        calls.append(True)
+        error = sqlite3.OperationalError(private)
+        error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        raise error
+    monkeypatch.setattr(admission, '_dispatch_job', fail)
+    socket, connects = install(monkeypatch, wire(event(response=response())))
+    diagnostic = _capture_retry_boundaries(monkeypatch)
+    value = request(rig, key='synthetic-private-original-id')
+    with pytest.raises(Exception):
+        infer(rig, value)
+    observed = diagnostic(rig.conn, (value['idempotencyKey'], 'missing'), socket)
+    assert observed['postWriteObserved'] is False and not socket.sent
+    assert len(calls) == len(connects) == 1
+    assert observed['attempts'] == [
+        {'phase': 'uncertain', 'dispatched': 'no', 'counts': [1, 0, 0], 'terminal': 'absent'},
+        {'phase': 'absent', 'dispatched': 'absent', 'counts': [0, 0, 0], 'terminal': 'absent'}]
+    assert {'stage': 'dispatch', 'result': 'exception',
+            'error': {'class': 'OperationalError', 'code': 'SQLITE_BUSY'}} in observed['boundaries']
+    encoded = json.dumps(observed)
+    assert private not in encoded and str(rig.home) not in encoded
+    assert value['idempotencyKey'] not in encoded and rig.identity['organizationId'] not in encoded
 
 
 @pytest.mark.parametrize('hostile', ['changed_input', 'changed_source', 'unknown_operation', 'uncertain', 'running', 'missing_attempt', 'owner', 'proof_exception'])

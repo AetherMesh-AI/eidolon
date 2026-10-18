@@ -8,6 +8,7 @@ import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscripti
 
 import { TeamOnboardingDialog } from './team-onboarding'
 import type { TeamOnboardingClient, TeamSetup } from './team-onboarding-client'
+import type { SubscriptionPendingRequest, SubscriptionRecovery } from './team-setup-subscription-client'
 import {
   subscriptionCatalog,
   subscriptionPolicy,
@@ -70,6 +71,8 @@ function harness(
   const client = {
     current: () => current,
     setup: vi.fn(async () => setup),
+    inspectSubscriptionRequest: vi.fn(async () => null),
+    reconcileSubscriptionRequest: vi.fn(),
     subscriptionStatus: vi.fn(async () => connection),
     subscriptionPolicy: vi.fn(async () => policyState),
     beginSubscription: vi.fn(async () => {
@@ -602,4 +605,353 @@ it.each([
   }
 
   expect(h.client.create).not.toHaveBeenCalled()
+})
+
+it.each(['jobs', 'goals', 'generate', 'regenerate'] as const)(
+  'locally checks a retained %s request without sending, then retries only on a separate click',
+  async kind => {
+    const initial = readySubscription()
+    const h = harness(initial)
+    enterInputs()
+    const method = kind === 'jobs' || kind === 'goals' ? vi.mocked(h.client.improve) : vi.mocked(h.client.generate)
+
+    if (kind === 'regenerate') {
+      fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+      await screen.findByRole('button', { name: teamCopy.create })
+    }
+
+    const before = method.mock.calls.length
+    method.mockRejectedValueOnce(new Error('lost original reply'))
+    h.updateSetup({ ...initial, generationAllowance: { ...initial.generationAllowance!, status: 'running' } })
+    fireEvent.click(
+      screen.getByRole('button', {
+        name:
+          kind === 'jobs'
+            ? teamCopy.improveJobs
+            : kind === 'goals'
+              ? teamCopy.improveGoals
+              : kind === 'regenerate'
+                ? teamCopy.regenerate
+                : teamCopy.generate
+      })
+    )
+    const check = await screen.findByRole('button', { name: 'Check unsent request' })
+    await waitFor(() => expect(check).toHaveProperty('disabled', false))
+    const [sentSetup, sentInput] = method.mock.calls[before]!
+    const operation = kind === 'jobs' || kind === 'goals' ? `improve_${kind}` : 'generate'
+    const recovery = recoveryFailure(sentSetup, sentInput).data.recovery
+    vi.mocked(h.client.reconcileSubscriptionRequest).mockRejectedValueOnce(new Error('storage unavailable'))
+    fireEvent.click(check)
+    await screen.findByText(copy.checkUnsentBlocked)
+    expect(method).toHaveBeenCalledTimes(before + 1)
+    expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+    await waitFor(() => expect(check).toHaveProperty('disabled', false))
+    vi.mocked(h.client.reconcileSubscriptionRequest).mockImplementationOnce(async () => {
+      h.updateSetup(initial)
+
+      return recovery as never
+    })
+    fireEvent.click(check)
+    fireEvent.click(check)
+    const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
+    await waitFor(() => expect(retry).toHaveProperty('disabled', false))
+    expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(h.client.reconcileSubscriptionRequest).mock.calls[1]).toEqual([
+      expect.objectContaining({ organizationId: sentSetup.organizationId, sourceRevision: sentSetup.sourceRevision }),
+      {
+        jobs: sentInput.jobs,
+        goals: sentInput.goals,
+        namingStyle: sentInput.namingStyle,
+        idempotencyKey: sentInput.idempotencyKey,
+        operation
+      }
+    ])
+    expect(method).toHaveBeenCalledTimes(before + 1)
+    fireEvent.click(retry)
+    fireEvent.click(retry)
+    await waitFor(() => expect(method).toHaveBeenCalledTimes(before + 2))
+    expect(method.mock.calls[before + 1]![1].idempotencyKey).not.toBe(sentInput.idempotencyKey)
+    expect({ ...method.mock.calls[before + 1]![1], idempotencyKey: sentInput.idempotencyKey }).toEqual(sentInput)
+    expect(h.client.create).not.toHaveBeenCalled()
+  }
+)
+
+it.each(['improve_jobs', 'improve_goals', 'generate'] as const)(
+  'recovers a restarted %s request only after exact input discovery, local check, and separate retry',
+  async operation => {
+    const initial = readySubscription()
+    initial.generationAllowance!.status = 'running'
+    const h = harness(initial)
+    enterInputs()
+
+    const found = {
+      version: 1 as const,
+      disposition: 'reconcile_unsent' as const,
+      idempotencyKey: 'saved-original-key',
+      operation,
+      sourceRevision: initial.sourceRevision!
+    }
+
+    vi.mocked(h.client.inspectSubscriptionRequest).mockResolvedValueOnce(null).mockResolvedValueOnce(found)
+    fireEvent.click(screen.getByText(copy.findUnsent, { selector: 'summary' }))
+    fireEvent.change(screen.getByLabelText(copy.unsentOperation), { target: { value: operation } })
+    fireEvent.change(screen.getByLabelText(teamCopy.jobs), { target: { value: 'Wrong original input' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Find unsent request' }))
+    await screen.findByText(copy.unsentNotFound)
+    fireEvent.change(screen.getByLabelText(teamCopy.jobs), { target: { value: 'Research changes' } })
+    expect(screen.queryByRole('button', { name: 'Check unsent request' })).toBeNull()
+    expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Find unsent request' })).toHaveProperty('disabled', false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Find unsent request' }))
+    const check = await screen.findByRole('button', { name: 'Check unsent request' })
+    await waitFor(() => expect(check).toHaveProperty('disabled', false))
+    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.improve).not.toHaveBeenCalled()
+    expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
+    expect(h.client.inspectSubscriptionRequest).toHaveBeenLastCalledWith(
+      expect.objectContaining({ organizationId: initial.organizationId, sourceRevision: initial.sourceRevision }),
+      { jobs: 'Research changes', goals: 'Reliable weekly summary', namingStyle: '', operation }
+    )
+    // A lost Check reply never enables Retry; the same saved key remains checkable.
+    vi.mocked(h.client.reconcileSubscriptionRequest)
+      .mockRejectedValueOnce(new Error('lost check reply'))
+      .mockImplementationOnce(async () => {
+        h.updateSetup(readySubscription())
+
+        return { ...found, disposition: 'retry_unsent' }
+      })
+    fireEvent.click(check)
+    await screen.findByText(copy.checkUnsentBlocked)
+    expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+    await waitFor(() => expect(check).toHaveProperty('disabled', false))
+    fireEvent.click(check)
+    const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
+    await waitFor(() => expect(retry).toHaveProperty('disabled', false))
+    const checks = vi.mocked(h.client.reconcileSubscriptionRequest).mock.calls
+    expect(checks[1]).toEqual(checks[0])
+    expect(checks[0]![1].idempotencyKey).toBe(found.idempotencyKey)
+    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.improve).not.toHaveBeenCalled()
+    fireEvent.click(retry)
+    const method = operation === 'generate' ? h.client.generate : h.client.improve
+    await waitFor(() => expect(method).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(method).mock.calls[0]![1].idempotencyKey).not.toBe(found.idempotencyKey)
+  }
+)
+
+it.each(['input', 'operation', 'scope', 'close'] as const)(
+  'discards late discovery after %s changes without adopting a key or checking it',
+  async change => {
+    const initial = readySubscription()
+    initial.generationAllowance!.status = 'running'
+    const h = harness(initial)
+    enterInputs()
+    let finish!: (value: unknown) => void
+    vi.mocked(h.client.inspectSubscriptionRequest).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = value => resolve(value as SubscriptionPendingRequest | null)
+        })
+    )
+    fireEvent.click(screen.getByText(copy.findUnsent, { selector: 'summary' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.findUnsent }))
+
+    if (change === 'input') {
+      fireEvent.change(screen.getByLabelText(teamCopy.jobs), { target: { value: 'Changed inputs' } })
+    }
+
+    if (change === 'operation') {
+      fireEvent.change(screen.getByLabelText(copy.unsentOperation), { target: { value: 'improve_jobs' } })
+    }
+
+    if (change === 'scope') {
+      h.depart()
+    }
+
+    if (change === 'close') {
+      h.view.unmount()
+    }
+
+    await act(async () => {
+      finish({
+        version: 1,
+        disposition: 'reconcile_unsent',
+        idempotencyKey: 'saved-key',
+        operation: 'generate',
+        sourceRevision: initial.sourceRevision
+      })
+    })
+    expect(screen.queryByRole('button', { name: copy.checkUnsent })).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
+    expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
+    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.improve).not.toHaveBeenCalled()
+  }
+)
+
+it.each([
+  'input',
+  'scope',
+  'close',
+  'wrong_key',
+  'wrong_source',
+  'wrong_operation',
+  'dispatch_won',
+  'running',
+  'api',
+  'source_changed'
+] as const)('never offers a retry for a local check after %s', async change => {
+  const initial = readySubscription()
+  const h = harness(initial)
+  enterInputs()
+  vi.mocked(h.client.improve).mockRejectedValueOnce(new Error('lost reply'))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  const check = await screen.findByRole('button', { name: copy.checkUnsent })
+  await waitFor(() => expect(check).toHaveProperty('disabled', false))
+  const [setup, input] = vi.mocked(h.client.improve).mock.calls[0]!
+  let finish!: (value: unknown) => void, reject!: (value: unknown) => void
+  vi.mocked(h.client.reconcileSubscriptionRequest).mockImplementationOnce(
+    () =>
+      new Promise((resolve, failure) => {
+        finish = value => resolve(value as SubscriptionRecovery)
+        reject = failure
+      })
+  )
+  fireEvent.click(check)
+  const result = recoveryFailure(setup, input).data.recovery
+
+  if (change === 'input') {
+    fireEvent.change(screen.getByLabelText(teamCopy.goals), { target: { value: 'New goal' } })
+  }
+
+  if (change === 'scope') {
+    h.depart()
+  }
+
+  if (change === 'close') {
+    h.view.unmount()
+  }
+
+  if (change === 'wrong_key') {
+    result.idempotencyKey = 'another-key'
+  }
+
+  if (change === 'wrong_source') {
+    result.sourceRevision = 'b'.repeat(64)
+  }
+
+  if (change === 'wrong_operation') {
+    result.operation = 'generate'
+  }
+
+  if (change === 'running') {
+    h.updateSetup({ ...initial, generationAllowance: { ...initial.generationAllowance!, status: 'running' } })
+  }
+
+  if (change === 'api') {
+    h.updateSetup({ ...initial, generationAllowance: { status: 'available', remainingCalls: 3 } })
+  }
+
+  if (change === 'source_changed') {
+    h.updateSetup({ ...initial, sourceRevision: 'c'.repeat(64) })
+  }
+
+  await act(async () => {
+    if (change === 'dispatch_won') {
+      reject({ code: 5076, data: { reason: 'request_uncertain' } })
+    } else {
+      finish(result)
+    }
+  })
+  expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
+  expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(1)
+  expect(h.client.improve).toHaveBeenCalledTimes(1)
+  expect(h.client.generate).not.toHaveBeenCalled()
+})
+
+it('retires a discovered key on source change and does not rediscover or reconcile from passive checks', async () => {
+  const initial = readySubscription()
+  initial.generationAllowance!.status = 'running'
+  const h = harness(initial)
+  enterInputs()
+  vi.mocked(h.client.inspectSubscriptionRequest).mockResolvedValueOnce({
+    version: 1,
+    disposition: 'reconcile_unsent',
+    idempotencyKey: 'saved-key',
+    operation: 'generate',
+    sourceRevision: initial.sourceRevision!
+  })
+  expect(h.client.inspectSubscriptionRequest).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText(copy.findUnsent, { selector: 'summary' }))
+  fireEvent.click(screen.getByRole('button', { name: copy.findUnsent }))
+  const oldCheck = await screen.findByRole('button', { name: copy.checkUnsent })
+  await waitFor(() => expect(oldCheck).toHaveProperty('disabled', false))
+  h.updateSetup({ ...initial, sourceRevision: 'd'.repeat(64) })
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: copy.checkUnsent })).toBeNull())
+  fireEvent.click(oldCheck)
+  expect(h.client.inspectSubscriptionRequest).toHaveBeenCalledTimes(1)
+  expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
+  expect(h.client.generate).not.toHaveBeenCalled()
+})
+
+it('lets a restarted no-catalog request be checked locally before explicit model loading and a new ordinary request', async () => {
+  const initial = readySubscription()
+  initial.generationAllowance!.status = 'running'
+  initial.readiness = { ...initial.readiness, status: 'blocked', blockers: ['subscription_models_required'] }
+  const h = harness(initial)
+  enterInputs()
+
+  const saved = {
+    version: 1 as const,
+    disposition: 'reconcile_unsent' as const,
+    idempotencyKey: 'old-process-key',
+    operation: 'generate' as const,
+    sourceRevision: initial.sourceRevision!
+  }
+
+  vi.mocked(h.client.inspectSubscriptionRequest).mockResolvedValueOnce(saved)
+  vi.mocked(h.client.reconcileSubscriptionRequest).mockImplementationOnce(async () => {
+    h.updateSetup({ ...initial, generationAllowance: { ...initial.generationAllowance!, status: 'available' } })
+
+    return { ...saved, disposition: 'retry_unsent' }
+  })
+  vi.mocked(h.client.subscriptionStatus).mockResolvedValue({
+    ...subscriptionStatus,
+    connectionState: 'active',
+    connectionRevision: 1
+  })
+  vi.mocked(h.client.subscriptionPolicy).mockResolvedValue({
+    ...subscriptionPolicyState,
+    policyVersion: 3,
+    configuration: subscriptionPolicy
+  })
+  vi.mocked(h.client.subscriptionModels).mockImplementationOnce(async () => {
+    h.updateSetup(readySubscription())
+
+    return subscriptionCatalog
+  })
+  fireEvent.click(screen.getByText(copy.findUnsent, { selector: 'summary' }))
+  fireEvent.click(screen.getByRole('button', { name: copy.findUnsent }))
+  const check = await screen.findByRole('button', { name: copy.checkUnsent })
+  await waitFor(() => expect(check).toHaveProperty('disabled', false))
+  fireEvent.click(check)
+  await screen.findByText(copy.unsentVerified.replace('{setup}', copy.inspect).replace('{models}', copy.loadModels))
+  expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.subscriptionModels).not.toHaveBeenCalled()
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.inspect })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+  const models = await screen.findByRole('button', { name: copy.loadModels })
+  await waitFor(() => expect(models).toHaveProperty('disabled', false))
+  fireEvent.click(models)
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.improve).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+  await waitFor(() => expect(h.client.generate).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(h.client.generate).mock.calls[0]![1].idempotencyKey).not.toBe(saved.idempotencyKey)
+  expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(1)
 })

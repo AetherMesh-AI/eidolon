@@ -276,6 +276,11 @@ def test_boundary_trace_flushes_registered_rebound_handlers_before_cleanup(tmp_p
             impostor = FunctionType(handler.__code__, {'__name__': 'tui_gateway.server'})
             assert impostor(None, None) == {'ok': False}
             assert diagnostics.count == before  # Same name/code, wrong globals: ignored.
+            cloned_code = handler.__code__.replace()
+            assert cloned_code == handler.__code__ and cloned_code is not handler.__code__
+            cloned = FunctionType(cloned_code, vars(server))
+            assert cloned(None, None) == {'ok': False}
+            assert diagnostics.count == before  # Primed cache + exact server globals still requires identity.
         finally:
             diagnostics.close()
     assert sys.modules.get('tui_gateway.server') is previous_server
@@ -288,6 +293,7 @@ def test_identity_diagnostic_observes_real_metadata_change_without_weakening_gua
     import os
     import stat
     from eidolon_cli import organization_setup_subscription_store as store
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
 
     ancestor = tmp_path / 'synthetic-private-ancestor-name'
     home = ancestor / 'profile'
@@ -318,7 +324,7 @@ def test_identity_diagnostic_observes_real_metadata_change_without_weakening_gua
         diagnostics.install()
         try:
             with pytest.raises(store.StoreError) as error:
-                with store._checked_acl_descriptor(ancestor):
+                with filesystem._checked_acl_descriptor(ancestor):
                     pytest.fail('A mismatched descriptor must never be yielded')
             assert error.value.reason == 'unsafe_filesystem'
         finally:
@@ -326,7 +332,7 @@ def test_identity_diagnostic_observes_real_metadata_change_without_weakening_gua
     after = ancestor.lstat()
     changed_fields = dict(zip(
         ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'),
-        (a != b for a, b in zip(store._file_identity(before), store._file_identity(after)))))
+        (a != b for a, b in zip(filesystem._file_identity(before), filesystem._file_identity(after)))))
     assert not any(changed_fields[name] for name in ('device', 'inode', 'owner', 'group'))
     assert changed_fields['mode'] is (change_kind == 'permissions')
     assert changed_fields['links'] is (change_kind == 'directory')
@@ -342,6 +348,7 @@ def test_identity_diagnostic_observes_real_metadata_change_without_weakening_gua
 def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects(tmp_path):
     import os
     from eidolon_cli import organization_setup_subscription_store as store
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
 
     accesses = []
 
@@ -353,12 +360,12 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
     home = tmp_path / 'synthetic-private-path'
     home.mkdir(mode=0o700)
     before = home.lstat()
-    original = store._file_identity(before)
+    original = filesystem._file_identity(before)
     assert type(before) is os.stat_result and all(type(value) is int for value in original)
-    parent = SimpleNamespace(f_code=store._checked_acl_descriptor.__wrapped__.__code__,
-        f_globals=vars(store), f_lineno=148, f_locals={'before': before, 'path': home})
-    frame = SimpleNamespace(f_code=store._file_identity.__code__, f_globals=vars(store),
-                            f_lineno=137, f_back=parent)
+    parent = SimpleNamespace(f_code=filesystem._checked_acl_descriptor.__wrapped__.__code__,
+        f_globals=vars(filesystem), f_lineno=52, f_locals={'before': before, 'path': home})
+    frame = SimpleNamespace(f_code=filesystem._file_identity.__code__, f_globals=vars(filesystem),
+                            f_lineno=39, f_back=parent)
     diagnostics = BoundaryDiagnostics(tmp_path, home=home)
     diagnostics.install()
     try:
@@ -377,22 +384,22 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
         diagnostics.trace(frame, 'return', (*original[:6], Uninspectable()))
         parent.f_locals = {'before': Uninspectable(), 'path': Uninspectable()}
         diagnostics.trace(frame, 'return', tuple(changed))
-        parent.f_lineno = 147
+        parent.f_lineno = 51
         parent.f_locals = Uninspectable()
         diagnostics.trace(frame, 'return', tuple(changed))
         parent.f_code = (lambda: None).__code__
-        parent.f_lineno = 148
+        parent.f_lineno = 52
         diagnostics.trace(frame, 'return', tuple(changed))
         assert diagnostics.count == count
-        parent.f_code = store._checked_acl_descriptor.__wrapped__.__code__
+        parent.f_code = filesystem._checked_acl_descriptor.__wrapped__.__code__
         parent.f_locals = {'before': before, 'path': Uninspectable()}
         diagnostics.trace(frame, 'return', tuple(changed))
         assert diagnostics.rows[-1]['identity']['targetScope'] == 'other'
         parent.f_locals = {'before': before, 'path': home}
         for code, line, comparison in [
-                (store._checked_acl_descriptor.__wrapped__.__code__, 151, 'final_fd'),
-                (store._checked_acl_descriptor.__wrapped__.__code__, 152, 'final_path'),
-                (store._check_darwin_acl.__code__, 203, 'native_acl')]:
+                (filesystem._checked_acl_descriptor.__wrapped__.__code__, 55, 'final_fd'),
+                (filesystem._checked_acl_descriptor.__wrapped__.__code__, 56, 'final_path'),
+                (filesystem._read_darwin_acl.__code__, 143, 'native_acl')]:
             parent.f_code, parent.f_lineno = code, line
             diagnostics.trace(frame, 'return', tuple(changed))
             assert diagnostics.rows[-1]['identity']['comparison'] == comparison
@@ -410,7 +417,7 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
     assert str(home) not in encoded
 
 
-def test_real_ledger_writer_blocks_dispatch_before_body_and_records_safe_primary_code(tmp_path, monkeypatch):
+def test_real_coordinated_writer_deadline_blocks_dispatch_body_and_records_safe_primary_code(tmp_path, monkeypatch):
     from contextlib import contextmanager
     import time
     from eidolon_cli import organization_setup_subscription_admission as admission
@@ -462,9 +469,9 @@ def test_real_ledger_writer_blocks_dispatch_before_body_and_records_safe_primary
             diagnostics.close()
     rows = read_trace(evidence)
     errors = [row for row in rows if row.get('stage') == 'ledger_connection'
-              and row.get('errorClass') == 'OperationalError']
+              and row.get('errorClass') == 'LedgerWriterUnavailable']
     assert len(errors) == 1 and errors[0]['sqlitePrimaryCode'] == 'SQLITE_BUSY'
-    assert errors[0]['line'] == 194  # BEGIN IMMEDIATE, before the context yields.
+    assert errors[0]['reason'] == 'deadline'  # Queue refused before any BEGIN/body.
     assert len(errors[0]['ledgerHolders']) == 1
     assert errors[0]['ledgerHolders'][0]['lane'] != errors[0]['lane']
     assert any(row['stage'] == 'dispatch_job' and row['event'] == 'returned_false' for row in rows)
@@ -570,3 +577,186 @@ def test_ledger_holder_observer_requires_acquired_exact_code_and_clears_on_exit(
         diagnostics.close()
     encoded = json.dumps(read_trace(tmp_path))
     assert 'synthetic-private-' not in encoded
+
+
+def test_extracted_identity_source_sites_and_selected_stat_locals_are_exact(tmp_path):
+    import ast
+    import inspect
+    import os
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+
+    # These are deliberate closed source sites, not automatic discovery of new
+    # locals. Any production refactor must explicitly review this observer map.
+    sites = {
+        52: ('acl_descriptor', 'initial_fd', 'before'),
+        55: ('acl_descriptor', 'final_fd', 'before'),
+        56: ('acl_descriptor', 'final_path', 'before'),
+        143: ('native_acl_read', 'native_acl', 'before'),
+        77: ('ancestor_acl', 'initial_fd', 'before'),
+        87: ('ancestor_acl', 'final_path', 'final_fd'),
+        93: ('ancestor_acl', 'native_acl', 'before'),
+        96: ('ancestor_acl', 'final_fd', 'before'),
+        102: ('ancestor_acl', 'final_fd', 'final_fd'),
+        103: ('ancestor_acl', 'final_path', 'final_fd'),
+    }
+    observer_tree = ast.parse(inspect.getsource(BoundaryDiagnostics))
+    assignment = next(node for node in ast.walk(observer_tree)
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'sites'
+                                               for target in node.targets))
+    actual = ast.literal_eval(assignment.value)
+    assert actual == {(stage, line): (comparison, baseline)
+        for line, (stage, comparison, baseline) in sites.items()}
+    source = ast.parse(inspect.getsource(filesystem))
+    calls = {node.lineno for node in ast.walk(source) if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name) and node.func.id == '_file_identity'}
+    assert set(sites) <= calls
+    codes = {'acl_descriptor': filesystem._checked_acl_descriptor.__wrapped__.__code__,
+             'native_acl_read': filesystem._read_darwin_acl.__code__,
+             'ancestor_acl': filesystem._check_ancestor_acl.__code__}
+    accesses = []
+    class Private:
+        def __getattribute__(self, name):
+            accesses.append(name)
+            raise AssertionError('Unapproved local access')
+    home = tmp_path / 'synthetic-private-home'
+    home.mkdir(mode=0o700)
+    before = home.lstat()
+    value = list(filesystem._file_identity(before))
+    value[-1] += 1
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
+    frame = SimpleNamespace(f_code=filesystem._file_identity.__code__, f_globals=vars(filesystem),
+        f_back=None, f_lineno=39)
+    diagnostics.install()
+    try:
+        for line, (stage, comparison, baseline) in sites.items():
+            parent = SimpleNamespace(f_code=codes[stage], f_globals=vars(filesystem), f_lineno=line,
+                f_locals={'before': Private(), 'final_fd': Private(), 'path': home})
+            parent.f_locals[baseline] = before
+            if stage == 'native_acl_read':
+                parent.f_locals.pop('path')  # No caller-stack path lookup is allowed.
+            frame.f_back = parent
+            diagnostics.trace(frame, 'return', tuple(value))
+            row = diagnostics.rows[-1]['identity']
+            assert row['comparison'] == comparison
+            assert row['targetScope'] == ('other' if stage == 'native_acl_read' else 'profile')
+            count = diagnostics.count
+            parent.f_locals[baseline] = Private()
+            diagnostics.trace(frame, 'return', tuple(value))
+            assert diagnostics.count == count
+            parent.f_locals[baseline] = before
+            parent.f_globals = {'__name__': filesystem.__name__}
+            diagnostics.trace(frame, 'return', tuple(value))
+            assert diagnostics.count == count
+            parent.f_globals = vars(filesystem)
+            parent.f_lineno = 1
+            diagnostics.trace(frame, 'return', tuple(value))
+            assert diagnostics.count == count
+    finally:
+        diagnostics.close()
+    assert accesses == [] and type(before) is os.stat_result
+    diagnostics.close()
+    assert 'synthetic-private-home' not in json.dumps(read_trace(tmp_path))
+
+
+def test_real_uncoordinated_sqlite_writer_still_refuses_before_ledger_body(tmp_path):
+    from contextlib import closing
+    import sqlite3
+    from eidolon_cli import organization_setup_subscription_admission as admission
+
+    home = tmp_path / 'profile'
+    (home / 'organization').mkdir(parents=True)
+    path = home / 'organization' / 'state.db'
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
+    with closing(sqlite3.connect(path, isolation_level=None)) as writer:
+        writer.execute('CREATE TABLE probe(value INTEGER)')
+        writer.execute('BEGIN IMMEDIATE')  # Deliberately outside the coordinator.
+        diagnostics.install()
+        try:
+            with pytest.raises(sqlite3.OperationalError) as error:
+                with admission._ledger_connection(home, write=True):
+                    pytest.fail('External writer must exclude transaction body')
+            assert type(error.value) is sqlite3.OperationalError
+            assert error.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+        finally:
+            writer.rollback()
+            diagnostics.close()
+    rows = [row for row in read_trace(tmp_path) if row['event'] == 'exception'
+            and row['stage'] == 'ledger_connection']
+    assert rows and rows[-1]['errorClass'] == 'OperationalError'
+    assert rows[-1]['sqlitePrimaryCode'] == 'SQLITE_BUSY'
+    with admission._ledger_connection(home, write=True) as connection:
+        connection.execute('INSERT INTO probe VALUES (1)')
+
+
+def test_writer_error_observer_accepts_only_exact_class_plain_attributes_and_closed_reasons(tmp_path, monkeypatch):
+    from eidolon_cli import organization_ledger_writer as writers
+    accesses = []
+    class AttributeMap(dict):
+        def get(self, *args):
+            accesses.append('get')
+            raise AssertionError('No overridden attribute getter')
+    class Unknown(writers.LedgerWriterUnavailable):
+        def __getattribute__(self, name):
+            if name in {'reason', 'sqlite_errorcode', '__dict__'}:
+                accesses.append(name)
+                raise AssertionError('No subclass attribute access')
+            return super().__getattribute__(name)
+    def observed(error):
+        raise error
+    monkeypatch.setattr(BoundaryDiagnostics, '_STAGES', {__name__: {observed.__qualname__: 'ledger_writer_wait'}})
+    diagnostics = BoundaryDiagnostics(tmp_path)
+    diagnostics.install()
+    try:
+        for reason in ['cancelled', 'deadline', 'reentrant', 'queue_full', 'synthetic-private-reason']:
+            with pytest.raises(writers.LedgerWriterUnavailable):
+                observed(writers.LedgerWriterUnavailable(reason))
+        error = writers.LedgerWriterUnavailable('deadline')
+        error.__dict__ = AttributeMap(reason='deadline', sqlite_errorcode=5)
+        with pytest.raises(writers.LedgerWriterUnavailable):
+            observed(error)
+        with pytest.raises(Unknown):
+            observed(Unknown('synthetic-private-reason'))
+    finally:
+        diagnostics.close()
+    rows = [row for row in read_trace(tmp_path) if row['event'] == 'exception']
+    assert [row['reason'] for row in rows] == ['cancelled', 'deadline', 'reentrant', 'queue_full', 'other', 'other', 'other']
+    assert [row['sqlitePrimaryCode'] for row in rows] == ['SQLITE_BUSY'] * 5 + ['other', 'other']
+    assert rows[-1]['errorClass'] == 'other' and accesses == []
+    assert 'synthetic-private-reason' not in json.dumps(rows)
+
+
+def test_observer_code_cache_rejects_equal_but_distinct_identity_and_caller_code(tmp_path):
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+    home = tmp_path / 'synthetic-private-home'
+    home.mkdir(mode=0o700)
+    before = home.lstat()
+    value = list(filesystem._file_identity(before))
+    value[-1] += 1
+    identity_code = filesystem._file_identity.__code__
+    caller_code = filesystem._checked_acl_descriptor.__wrapped__.__code__
+    cloned_identity, cloned_caller = identity_code.replace(), caller_code.replace()
+    assert cloned_identity == identity_code and cloned_identity is not identity_code
+    assert cloned_caller == caller_code and cloned_caller is not caller_code
+    parent = SimpleNamespace(f_code=caller_code, f_globals=vars(filesystem), f_lineno=52,
+                             f_locals={'before': before, 'path': home})
+    frame = SimpleNamespace(f_code=identity_code, f_globals=vars(filesystem), f_lineno=39, f_back=parent)
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
+    diagnostics.install()
+    try:
+        diagnostics.trace(frame, 'return', tuple(value))
+        assert diagnostics.rows[-1]['event'] == 'identity_mismatch'
+        count = diagnostics.count
+        # Both original code identities are now cached. Structural equality must
+        # not let a distinct executable code object inherit either authority.
+        frame.f_code = cloned_identity
+        assert diagnostics.stage(frame) is None
+        diagnostics.trace(frame, 'return', tuple(value))
+        assert diagnostics.count == count
+        frame.f_code, parent.f_code = identity_code, cloned_caller
+        assert diagnostics.stage(parent) is None
+        diagnostics.trace(frame, 'return', tuple(value))
+        assert diagnostics.count == count
+        assert len(diagnostics.codes) <= 128
+    finally:
+        diagnostics.close()
+    assert 'synthetic-private-home' not in json.dumps(read_trace(tmp_path))

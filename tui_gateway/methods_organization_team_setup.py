@@ -55,6 +55,9 @@ def _team_method(name, operation, fields):
                     elif operation == 'team_setup':
                         result = setup.team_setup(home, params['expectedOrganizationId'],
                                                   subscription_transport=transport)
+                    elif operation in {'inspect_unsent_request', 'reconcile_unsent_request'}:
+                        from eidolon_cli import organization_setup_subscription_reconciliation as reconciliation
+                        result = getattr(reconciliation, operation)(home, params, transport=transport)
                     elif operation in {'readiness_subscription_policy', 'preview_subscription_policy',
                                        'apply_subscription_policy'}:
                         from eidolon_cli import organization_setup_subscription_policy as subscription
@@ -93,6 +96,10 @@ _team_method('previewTeam', 'preview_team', {'sourceRevision', 'team'})
 _team_method('createTeam', 'create_team', {'sourceRevision', 'team', 'previewVersion', 'idempotencyKey', 'confirmed'})
 _team_method('generateTeam', 'generate_team', {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
 _team_method('improveTeamInput', 'improve_team_input', {'sourceRevision', 'field', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
+_team_method('inspectSetupSubscriptionRequest', 'inspect_unsent_request',
+             {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'operation'})
+_team_method('reconcileSetupSubscriptionRequest', 'reconcile_unsent_request',
+             {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'operation', 'idempotencyKey', 'confirmed'})
 
 _team_method('setupSubscriptionPolicy', 'readiness_subscription_policy', set())
 _team_method('previewSetupSubscriptionPolicy', 'preview_subscription_policy',

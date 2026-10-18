@@ -127,7 +127,7 @@ class Vault:
 
 
 class BoundaryDiagnostics:
-    """Bounded test-only observation. Never inspect frame locals or stringify errors."""
+    """Bounded observation; only approved fixed-site identity locals, never error text."""
     _STAGES = {
         'tui_gateway.methods_organization_setup_subscription': {
             '_method.<locals>.handler': 'gateway_rpc',
@@ -148,8 +148,6 @@ class BoundaryDiagnostics:
             'SubscriptionAuthService.release_lease': 'auth_release'},
         'eidolon_cli.organization_setup_subscription_store': {
             'SubscriptionStore._locked': 'store_lock', 'SubscriptionStore.status': 'store_status',
-            '_file_identity': 'filesystem_identity',
-            '_checked_acl_descriptor': 'acl_descriptor', '_check_darwin_acl': 'darwin_acl',
             'SubscriptionStore._check': 'filesystem_check',
             'SubscriptionStore.connection_descriptor': 'store_descriptor',
             'SubscriptionStore.grant_descriptor': 'store_grant', 'SubscriptionStore._decrypt': 'store_decrypt',
@@ -157,6 +155,13 @@ class BoundaryDiagnostics:
             'TokenLease._check_locked': 'lease_fence', 'TokenLease.run': 'lease_run',
             'TokenLease.run_nonblocking': 'lease_run_nonblocking',
             'TokenLease.try_send_allowed': 'lease_send_gate', 'TokenLease.close': 'lease_close'},
+        'eidolon_cli.organization_setup_subscription_filesystem': {
+            '_file_identity': 'filesystem_identity', '_checked_acl_descriptor': 'acl_descriptor',
+            'check_darwin_acl': 'darwin_acl', '_read_darwin_acl': 'native_acl_read',
+            '_check_ancestor_acl': 'ancestor_acl'},
+        'eidolon_cli.organization_ledger_writer': {
+            'ledger_writer': 'ledger_writer', '_Gate.acquire': 'ledger_writer_acquire',
+            '_Gate._wait_for_turn': 'ledger_writer_wait', '_Gate.release': 'ledger_writer_release'},
         'eidolon_cli.organization_setup_subscription_http': {
             'request': 'catalog_http', 'request.<locals>.GuardedConnection.send': 'catalog_http_send'},
         'eidolon_cli.organization_setup_subscription_transport': {
@@ -188,6 +193,7 @@ class BoundaryDiagnostics:
     _ERRORS = {'builtins': {'BlockingIOError', 'OSError', 'ValueError', 'TypeError', 'AssertionError',
                               'KeyError', 'FileNotFoundError', 'TimeoutError'},
         'sqlite3': {'OperationalError'},
+        'eidolon_cli.organization_ledger_writer': {'LedgerWriterUnavailable'},
         'eidolon_cli.organization_executor': {'OrganizationExecutionError'},
         'eidolon_cli.organization_owner_policy': {'OwnerPolicyError'},
         'tui_gateway.methods_organization_setup_subscription': {'BoundaryError'},
@@ -199,10 +205,10 @@ class BoundaryDiagnostics:
     _REASONS = frozenset({'connection_unavailable', 'recursive_use', 'unsafe_filesystem',
         'filesystem_protection_unavailable', 'backend_unavailable', 'corrupt_store', 'recovery_required',
         'storage_recovery_required', 'operation_failed', 'stale_revision', 'stale_owner', 'stale_attempt',
-        'setup_unavailable', 'owner_generation_changed', 'lease_cancelled', 'lease_used', 'grant_expired',
+        'setup_unavailable', 'subscription_reconciliation_unavailable', 'owner_generation_changed', 'lease_cancelled', 'lease_used', 'grant_expired',
         'invalid_grant', 'invalid_binding', 'scope_denied', 'scope_not_authorized', 'invalid_lease_result',
         'invalid_request', 'request_failed', 'locked', 'corrupt', 'unreadable', 'source_conflict',
-        'identity_conflict', 'unconfigured', 'cancelled', 'stale_binding', 'accounting_failed',
+        'identity_conflict', 'unconfigured', 'cancelled', 'deadline', 'reentrant', 'queue_full', 'stale_binding', 'accounting_failed',
         'admission_denied', 'connect_failed', 'incomplete_stream', 'invalid_headers', 'resource_limit',
                 'access_denied', 'attempt_expired', 'attempt_pending', 'auth_attempt_mismatch',
         'authentication_failed', 'browser_unavailable', 'disconnect_required', 'exchange_failed',
@@ -246,8 +252,9 @@ class BoundaryDiagnostics:
                 if (label not in {'gateway_rpc', 'team_rpc'} or server is None
                         or frame.f_globals is not vars(server)):
                     continue
-            if code in self.codes:
-                return self.codes[code]
+            cached = self.codes.get(id(code))
+            if cached is not None and cached[0] is code:
+                return cached[1]
             target = vars(module).get(code.co_qualname.split('.')[0])
             if isinstance(target, type):
                 target = vars(target).get(code.co_qualname.split('.')[1])
@@ -263,7 +270,7 @@ class BoundaryDiagnostics:
                 candidate = candidates.pop()
                 if candidate is code:
                     if len(self.codes) < 128:
-                        self.codes[code] = label
+                        self.codes[id(code)] = (code, label)
                     return label
                 candidates.extend(value for value in candidate.co_consts if isinstance(value, CodeType))
         return None
@@ -284,18 +291,25 @@ class BoundaryDiagnostics:
 
     def observe_identity(self, frame, value, lane):
         parent = frame.f_back
-        sites = {('acl_descriptor', 148): 'initial_fd',
-                 ('acl_descriptor', 151): 'final_fd',
-                 ('acl_descriptor', 152): 'final_path',
-                 ('darwin_acl', 203): 'native_acl'}
-        site = sites.get((self.stage(parent), parent.f_lineno)) if parent else None
+        sites = {('acl_descriptor', 52): ('initial_fd', 'before'),
+                 ('acl_descriptor', 55): ('final_fd', 'before'),
+                 ('acl_descriptor', 56): ('final_path', 'before'),
+                 ('native_acl_read', 143): ('native_acl', 'before'),
+                 ('ancestor_acl', 77): ('initial_fd', 'before'),
+                 ('ancestor_acl', 87): ('final_path', 'final_fd'),
+                 ('ancestor_acl', 93): ('native_acl', 'before'),
+                 ('ancestor_acl', 96): ('final_fd', 'before'),
+                 ('ancestor_acl', 102): ('final_fd', 'final_fd'),
+                 ('ancestor_acl', 103): ('final_path', 'final_fd')}
+        selected = sites.get((self.stage(parent), parent.f_lineno)) if parent else None
+        site, baseline_name = selected if selected is not None else (None, None)
         if (site is None or not lane or type(value) is not tuple or len(value) != 7
                 or not all(type(part) is int for part in value)):
             return
-        # Renewed diagnostic scope: exactly two locals from this verified caller.
+        # Fixed site selects one exact stat_result baseline plus the path local.
         # Exact stat_result prevents arbitrary getters; all comparison data dies
         # in this callback. No filesystem call, path coercion or tuple retention.
-        before = parent.f_locals.get('before')
+        before = parent.f_locals.get(baseline_name)
         if type(before) is not os.stat_result:
             return
         baseline = (before.st_dev, before.st_ino, before.st_mode, before.st_uid,
@@ -315,7 +329,9 @@ class BoundaryDiagnostics:
 
     @staticmethod
     def sqlite_primary_code(error):
-        if type(error) is not sqlite3.OperationalError:
+        module = sys.modules.get('eidolon_cli.organization_ledger_writer')
+        writer_error = vars(module).get('LedgerWriterUnavailable') if module is not None else None
+        if type(error) is not sqlite3.OperationalError and type(error) is not writer_error:
             return 'other'
         attributes = vars(error)
         code = attributes.get('sqlite_errorcode') if type(attributes) is dict else None
@@ -535,10 +551,12 @@ class RecoveryFaults:
             patch(generation, 'complete_subscription', complete)
             return
 
+        from eidolon_cli import organization_setup_subscription_filesystem as filesystem
         original_connect = store.SubscriptionStore._connect_ticket_grant
         original_decrypt = store.SubscriptionStore._decrypt
         original_open = os.open
-        descriptor_code = store._checked_acl_descriptor.__wrapped__.__code__
+        descriptor_codes = (filesystem._checked_acl_descriptor.__wrapped__.__code__,
+                            filesystem._check_ancestor_acl.__code__)
 
         @wraps(original_connect)
         def connect(instance, binding, secret, state):
@@ -570,9 +588,10 @@ class RecoveryFaults:
         @wraps(original_open)
         def opened(path, flags, *args, **kwargs):
             fd = original_open(path, flags, *args, **kwargs)
+            caller_code = sys._getframe(1).f_code
             selected = (type(path) in {str, type(self.home)} and path in {self.home, str(self.home)}
                 and getattr(self._local, 'decrypt_store', None) is not None
-                and sys._getframe(1).f_code is descriptor_code)
+                and any(caller_code is code for code in descriptor_codes))
             if not selected:
                 return fd
             with self._lock:
@@ -581,7 +600,7 @@ class RecoveryFaults:
                 try:
                     info, current = os.fstat(fd), self.home.lstat()
                     assert (info.st_dev, info.st_ino) == self.identity
-                    assert store._file_identity(info) == store._file_identity(current)
+                    assert filesystem._file_identity(info) == filesystem._file_identity(current)
                     assert stat.S_IMODE(info.st_mode) == 0o700
                     self._restore_fd = os.dup(fd)
                     os.fchmod(self._restore_fd, 0o500)
@@ -600,8 +619,233 @@ class RecoveryFaults:
         self._restore_mode()
 
 
+class AvailabilityProbe:
+    """Causal, one-shot local interference without replacing safety decisions."""
+    def __init__(self, home, kind):
+        if kind not in {'ancestor_churn_once', 'scheduler_writer_once', 'scheduler_cleanup_once'}:
+            raise ValueError('Unknown synthetic availability probe')
+        self.home = Path(home).resolve(strict=True)
+        self.kind = kind
+        self.triggered = self.renewed = self.queued = self.restored = False
+        self._local = threading.local()
+        self._lock = threading.Lock()
+        self._claimed = False
+        self._release = threading.Event()
+        self._holder = None
+        self._gate = None
+        self._child = None
+        self._failures = []
+        self.operation_thread = None
+        self.cleanup_refused = False
+        self.finished = threading.Event()
+        self.on_finished = None
+        self._binding = None
+        self._cleanup_finished = self._operation_finished = self._notified = False
+
+    def install(self, patch):
+        if self.kind == 'ancestor_churn_once':
+            self._install_ancestor(patch)
+        else:
+            self._install_scheduler(patch)
+
+    def _install_ancestor(self, patch):
+        from eidolon_cli import organization_setup_subscription_store as store
+        from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+        ancestor = self.home.parent
+        pinned = ancestor.lstat()
+        assert stat.S_ISDIR(pinned.st_mode) and pinned.st_uid == os.geteuid()
+        assert not stat.S_IMODE(pinned.st_mode) & 0o022
+        self._child = ancestor / 'synthetic-subscription-sibling'
+        assert not self._child.exists()
+        original_connect = store.SubscriptionStore._connect_ticket_grant
+        original_decrypt = store.SubscriptionStore._decrypt
+        original_read = filesystem._read_darwin_acl
+        ancestor_code = filesystem._check_ancestor_acl.__code__
+
+        @wraps(original_connect)
+        def connect(instance, binding, secret, state):
+            selected = (type(instance) is store.SubscriptionStore and instance.profile == self.home
+                and type(state) is dict and state.get('phase') == 'disconnected'
+                and state.get('revision') == 0)
+            previous = getattr(self._local, 'consent_store', None)
+            if selected:
+                self._local.consent_store = instance
+            try:
+                return original_connect(instance, binding, secret, state)
+            finally:
+                self._local.consent_store = previous
+
+        @wraps(original_decrypt)
+        def decrypt(instance, state):
+            selected = (type(instance) is store.SubscriptionStore and instance.profile == self.home
+                and getattr(self._local, 'consent_store', None) is instance)
+            previous = getattr(self._local, 'decrypt_store', None)
+            if selected:
+                self._local.decrypt_store = instance
+            try:
+                return original_decrypt(instance, state)
+            finally:
+                self._local.decrypt_store = previous
+
+        @wraps(original_read)
+        def read(api, fstatx, fd, before, *, allow_directory_churn=False):
+            result = original_read(api, fstatx, fd, before, allow_directory_churn=allow_directory_churn)
+            selected = (getattr(self._local, 'decrypt_store', None) is not None
+                and sys._getframe(1).f_code is ancestor_code and type(before) is os.stat_result)
+            if not selected:
+                return result
+            current = os.fstat(fd)
+            if (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino):
+                return result
+            with self._lock:
+                if self.triggered:
+                    if not allow_directory_churn:
+                        self.renewed = True
+                    return result
+                if not allow_directory_churn:
+                    return result
+                assert filesystem._file_identity(current) == filesystem._file_identity(before)
+                assert filesystem._directory_identity(current) == filesystem._directory_identity(pinned)
+                self._child.mkdir(mode=0o700)
+                self.triggered = True
+                after = os.fstat(fd)
+                assert filesystem._directory_identity(after) == filesystem._directory_identity(before)
+                assert after.st_nlink != before.st_nlink
+            return result
+
+        patch(store.SubscriptionStore, '_connect_ticket_grant', connect)
+        patch(store.SubscriptionStore, '_decrypt', decrypt)
+        patch(filesystem, '_read_darwin_acl', read)
+
+    def _install_scheduler(self, patch):
+        from eidolon_cli import organization_setup_subscription_admission as admission
+        from eidolon_cli import organization_setup_subscription_transport as transport
+        from eidolon_cli import organization_team_generation as generation
+        from eidolon_cli import organization_ledger_writer as writers
+        from eidolon_cli.organization_store import OrganizationStore
+        ledger = self.home / 'organization' / 'state.db'
+        assert ledger.is_file()  # Never provision a fresh profile through this probe.
+        store = OrganizationStore(ledger)
+        original_complete = generation.complete_subscription
+        original_dispatch = admission._dispatch_job
+        original_wait = writers._Gate._wait_for_turn
+        original_failed = admission._failed_job
+
+        @wraps(original_dispatch)
+        def dispatch(home, *args, **kwargs):
+            previous = getattr(self._local, 'dispatch', False)
+            self._local.dispatch = Path(home) == self.home
+            try:
+                return original_dispatch(home, *args, **kwargs)
+            finally:
+                self._local.dispatch = previous
+
+        @wraps(original_wait)
+        def wait(gate, ticket, deadline, cancelled):
+            if (type(gate) is writers._Gate and gate is self._gate
+                    and getattr(self._local, 'dispatch', False)
+                    and self._holder is not None and gate.owner == self._holder.ident
+                    and ticket in gate.waiters):
+                # acquire() still holds this exact condition. The holder cannot
+                # release its gate until original_wait really waits/unlocks it.
+                self.queued = True
+                if self.kind == 'scheduler_writer_once':
+                    self._release.set()
+            return original_wait(gate, ticket, deadline, cancelled)
+
+        def hold(acquired):
+            try:
+                with store._write() as conn:
+                    conn.execute('SELECT 1')
+                    with writers._registry_lock:
+                        self._gate = writers._gates[str(ledger.resolve())]
+                    self.triggered = True
+                    acquired.set()
+                    assert self._release.wait(30), 'Synthetic coordinated writer was not released'
+                self.restored = True
+            except BaseException as error:
+                self._failures.append(error)
+                acquired.set()
+
+        @wraps(original_complete)
+        def complete(prepared):
+            selected = (type(prepared) is transport.PreparedSubscriptionSend
+                and type(prepared._admission) is admission._Admission
+                and prepared._admission.home == self.home)
+            with self._lock:
+                inject = selected and not self._claimed
+                if inject:
+                    self._claimed = True
+            if not inject:
+                return original_complete(prepared)
+            self.operation_thread = threading.get_ident()
+            self._binding = prepared._admission.binding if self.kind == 'scheduler_cleanup_once' else None
+            acquired = threading.Event()
+            self._holder = threading.Thread(target=hold, args=(acquired,), name='synthetic-scheduler-writer')
+            self._holder.start()
+            try:
+                assert acquired.wait(5) and not self._failures and self.triggered
+                return original_complete(prepared)
+            finally:
+                if self.kind == 'scheduler_writer_once' or not self.triggered:
+                    self._release.set()
+                    self._holder.join(5)
+                    assert not self._holder.is_alive() and not self._failures
+
+        @wraps(original_failed)
+        def failed(home, binding, nonce_digest, attempted):
+            selected = (self.kind == 'scheduler_cleanup_once' and Path(home) == self.home
+                and binding is self._binding and self._holder is not None
+                and self._gate is not None and self._gate.owner == self._holder.ident)
+            try:
+                return original_failed(home, binding, nonce_digest, attempted)
+            except BaseException as error:
+                if selected and type(error) is writers.LedgerWriterUnavailable and error.reason == 'deadline':
+                    self.cleanup_refused = True
+                raise
+            finally:
+                if selected:
+                    # The real accounting call has fully unwound its gate/SQLite
+                    # contexts. Release only now, never at the earlier RPC return.
+                    self._release.set()
+                    self._holder.join(5)
+                    assert not self._holder.is_alive() and not self._failures
+                    self._cleanup_finished = True
+                    self._notify_finished()
+
+        patch(admission, '_failed_job', failed)
+        patch(admission, '_dispatch_job', dispatch)
+        patch(writers._Gate, '_wait_for_turn', wait)
+        patch(generation, 'complete_subscription', complete)
+
+    def finish_operation(self):
+        self._operation_finished = True
+        self._notify_finished()
+
+    def _notify_finished(self):
+        with self._lock:
+            ready = (self.kind == 'scheduler_cleanup_once' and self._operation_finished
+                and self._cleanup_finished and not self._notified)
+            if ready:
+                self._notified = True
+        if ready:
+            assert self.cleanup_refused and self.queued and self.restored
+            if self.on_finished is not None:
+                self.on_finished()
+            self.finished.set()
+
+    def close(self):
+        self._release.set()
+        if self._holder is not None:
+            self._holder.join(5)
+            assert not self._holder.is_alive() and not self._failures
+        if self._child is not None and self.triggered and not self.restored:
+            self._child.rmdir()  # After the complete callback, outside ACL snapshots.
+            self.restored = True
+
+
 class SyntheticEdges:
-    def __init__(self, home, *, evidence=None, mode='complete', recovery_fault=None):
+    def __init__(self, home, *, evidence=None, mode='complete', recovery_fault=None, availability_probe=None):
         self.home = Path(home).resolve(strict=True)
         self.evidence = Path(evidence) if evidence else None
         self.mode = mode
@@ -613,6 +857,8 @@ class SyntheticEdges:
         self.restores = []
         self.recovery_fault = RecoveryFaults(self.home, recovery_fault) if recovery_fault else None
         self._fault_reported = False
+        self.availability_probe = AvailabilityProbe(self.home, availability_probe) if availability_probe else None
+        self._availability_reported = False
         self.boundary_diagnostics = BoundaryDiagnostics(self.evidence, home=self.home) if self.evidence else None
 
     def record(self, kind, **detail):
@@ -634,6 +880,25 @@ class SyntheticEdges:
             nativePutCount=self.vault.put_count, nativeDeleteCount=self.vault.delete_count)
         if not checkpoint:
             self._fault_reported = True
+
+    def report_availability_probe(self):
+        probe = self.availability_probe
+        with self.lock:
+            if probe is None or self._availability_reported or not probe.triggered:
+                return
+            if probe.kind == 'scheduler_cleanup_once' and not (probe._operation_finished and probe._cleanup_finished):
+                return
+            self._availability_reported = True
+        probe.close()
+        extra = ({'cleanupRefused': probe.cleanup_refused, **self.native_checkpoint_counts()}
+                 if probe.kind == 'scheduler_cleanup_once' else {})
+        self.record('availability-probe', probe=probe.kind, triggered=probe.triggered,
+                    renewed=probe.renewed, queued=probe.queued, restored=probe.restored, **extra)
+
+    def native_checkpoint_counts(self):
+        assert all(type(value) is int and 0 <= value <= 1000
+                   for value in (self.vault.put_count, self.vault.delete_count))
+        return {'nativePutCount': self.vault.put_count, 'nativeDeleteCount': self.vault.delete_count}
 
     def record_denial(self, kind, operation, destination):
         # Function names locate cold-import/background callers without recording
@@ -694,6 +959,42 @@ class SyntheticEdges:
                     return result
 
                 self.patch(SubscriptionAuthService, 'recover_operation_current', recover)
+        if self.availability_probe is not None:
+            before_probe = snapshot(self.home) if self.availability_probe.kind.startswith('scheduler_') else None
+            self.availability_probe.on_finished = self.report_availability_probe
+            self.availability_probe.install(self.patch)
+            if before_probe is not None:
+                assert snapshot(self.home) == before_probe
+            if self.availability_probe.kind in {'scheduler_writer_once', 'scheduler_cleanup_once'}:
+                from eidolon_cli import organization_setup_subscription_admission as admission
+                original_infer = admission.infer_subscription
+
+                @wraps(original_infer)
+                def infer(*args, **kwargs):
+                    try:
+                        return original_infer(*args, **kwargs)
+                    finally:
+                        if self.availability_probe.operation_thread == threading.get_ident():
+                            self.availability_probe.finish_operation()
+                            self.report_availability_probe()
+
+                self.patch(admission, 'infer_subscription', infer)
+            if self.availability_probe.kind == 'scheduler_cleanup_once':
+                from eidolon_cli import organization_setup_subscription_reconciliation as reconciliation
+                original_reconcile = reconciliation.reconcile_unsent_request
+
+                @wraps(original_reconcile)
+                def reconcile(home, params, *, transport):
+                    result = original_reconcile(home, params, transport=transport)
+                    binding = self.availability_probe._binding
+                    if (Path(home) == self.home and binding is not None and type(params) is dict
+                            and params.get('idempotencyKey') == binding.idempotency_key):
+                        # Successful local proof has released every publication,
+                        # ledger and store context. Never export the binding/key.
+                        self.record('reconciliation-checkpoint', **self.native_checkpoint_counts())
+                    return result
+
+                self.patch(reconciliation, 'reconcile_unsent_request', reconcile)
         if self.boundary_diagnostics is not None:
             self.boundary_diagnostics.install()
         self.record('installed', nativeStoreMode='production', platform=__import__('sys').platform)
@@ -762,8 +1063,12 @@ class SyntheticEdges:
 
     def close(self):
         try:
-            if self.recovery_fault is not None:
-                self.recovery_fault.close()
+            try:
+                if self.recovery_fault is not None:
+                    self.recovery_fault.close()
+            finally:
+                if self.availability_probe is not None:
+                    self.availability_probe.close()
         finally:
             try:
                 if self.boundary_diagnostics is not None:
@@ -798,6 +1103,7 @@ class SyntheticEdges:
         finally:
             connection.close()
         self.report_recovery_fault()
+        self.report_availability_probe()
         return True
 
     def oauth(self, path, body):

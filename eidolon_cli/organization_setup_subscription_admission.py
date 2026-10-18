@@ -4,7 +4,7 @@ Only accounting jobs run in bounded workers. They receive no token lease, form
 text, sender callback, socket, or physical permit. A timed-out dispatch may leave
 a charge, but can never deliver a permit later.
 """
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import replace
 import hashlib
 import json
@@ -16,6 +16,9 @@ import time
 import uuid
 
 from eidolon_cli.organization_owner_policy import OwnerPolicyError, _connection, _hash
+from eidolon_cli.organization_ledger_writer import (
+    ledger_writer, PUBLICATION_WAIT_SECONDS, ACCOUNTING_WAIT_SECONDS,
+)
 from eidolon_cli.organization_setup_subscription_usage import (
     AttemptBindingV1, ENDPOINT_IDENTITY, TransportObservationV1,
 )
@@ -125,13 +128,17 @@ class _KnownRollback(RuntimeError):
     pass
 
 
-def _dispatch_job(home, transport, evidence, binding, nonce_digest, cancelled, deadline):
+def _dispatch_job(home, transport, evidence, binding, nonce_digest, cancelled, deadline, caller_cancel=None):
     from tui_gateway.organization_credential_transport import owner_publication
     entered = False
+    def stopped():
+        return cancelled.is_set() or caller_cancel is not None and caller_cancel.is_set()
     try:
-        with owner_publication(transport, home, evidence.owner_generation), _ledger_connection(home, write=True, classify_rollback=True) as conn:
+        with owner_publication(transport, home, evidence.owner_generation), _ledger_connection(
+                home, write=True, classify_rollback=True,
+                deadline=min(deadline, time.monotonic() + PUBLICATION_WAIT_SECONDS), cancelled=stopped) as conn:
             entered = True
-            if cancelled.is_set() or time.monotonic() >= deadline:
+            if stopped() or time.monotonic() >= deadline:
                 return False
             row = _exact_attempt(conn, binding, nonce_digest, dispatched=False)
             if row['status'] != 'running':
@@ -143,7 +150,7 @@ def _dispatch_job(home, transport, evidence, binding, nonce_digest, cancelled, d
                          (binding.idempotency_key,))
             after = _snapshot(conn, home, transport, evidence, binding, allow_charged=True)
             if (before['authorityEvidenceDigest'] != after['authorityEvidenceDigest']
-                    or cancelled.is_set() or time.monotonic() >= deadline):
+                    or stopped() or time.monotonic() >= deadline):
                 raise OwnerPolicyError('source_conflict')
         return True
     except _KnownRollback:
@@ -183,11 +190,13 @@ def _outcome_job(home, binding, nonce_digest, observation):
 
 
 @contextmanager
-def _ledger_connection(home, *, write=False, classify_rollback=False):
+def _ledger_connection(home, *, write=False, classify_rollback=False, deadline=None, cancelled=None):
     path = Path(home) / 'organization' / 'state.db'
     if path.resolve() != path.absolute():
         raise OwnerPolicyError('identity_conflict')
-    with closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'), uri=True,
+    if deadline is None:
+        deadline = time.monotonic() + ACCOUNTING_WAIT_SECONDS
+    with (ledger_writer(path, deadline=deadline, cancelled=cancelled) if write else nullcontext()), closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'), uri=True,
                                  timeout=0, isolation_level=None)) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA foreign_keys=ON' if write else 'PRAGMA query_only=ON')
@@ -234,7 +243,7 @@ class _Admission:
                 return None
             self._attempted = True
         known = _persist(_dispatch_job, (self.home, self.transport, self.evidence, self.binding,
-            self.dispatch_nonce_digest, self._abandoned, deadline), deadline, detailed=True)
+            self.dispatch_nonce_digest, self._abandoned, deadline, self._cancel), deadline, detailed=True)
         self._dispatch_outcome = known
         if known != 'committed' or self.network_cancelled():
             self._abandoned.set()
@@ -300,6 +309,10 @@ def _failed_job(home, binding, nonce_digest, attempted):
         row = _exact_attempt(conn, binding, nonce_digest)
         outcome = conn.execute('SELECT 1 FROM organization_setup_subscription_outcomes WHERE idempotency_key=?',
                                (binding.idempotency_key,)).fetchone()
+        # A committed failed/dispatched=0 row is a durable no-permit fence. A
+        # late worker with an unknown acknowledgement must never reopen it.
+        if row['status'] == 'failed' and row['dispatched'] == 0 and outcome is None:
+            return True
         if row['status'] != 'completed':
             status = 'failed' if outcome or not (row['dispatched'] or attempted) else 'uncertain'
             conn.execute('UPDATE organization_team_generations SET status=? WHERE idempotency_key=?',

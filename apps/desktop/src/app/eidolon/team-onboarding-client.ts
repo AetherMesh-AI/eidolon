@@ -8,9 +8,20 @@ import {
 import type { SetupBudgetPolicy, SetupBudgetPreview, SetupBudgetState } from './team-setup-budget-client'
 import {
   createSetupSubscriptionClient,
+  readSubscriptionPendingRequest,
+  readSubscriptionReconciledRequest,
+  type SubscriptionPendingRequest,
+  type SubscriptionRecovery,
   type SubscriptionUsage,
   validateSubscriptionUsage
 } from './team-setup-subscription-client'
+
+export interface SubscriptionRequestInput {
+  jobs: string
+  goals: string
+  namingStyle: string
+  operation: SubscriptionRecovery['operation']
+}
 
 export interface TeamMember {
   id: string
@@ -260,6 +271,57 @@ export function createTeamOnboardingClient(
       validateSetupBudgetApplied(value, preview, idempotencyKey)
 
       return value
+    },
+    inspectSubscriptionRequest: async (
+      setup: TeamSetup,
+      input: SubscriptionRequestInput
+    ): Promise<SubscriptionPendingRequest | null> => {
+      const value = await request<unknown>('organization.inspectSetupSubscriptionRequest', {
+        expectedOrganizationId: setup.organizationId,
+        sourceRevision: setup.sourceRevision,
+        ...input
+      })
+
+      if (!value || typeof value !== 'object' || Array.isArray(value) || !('pending' in value)) {
+        throw new Error('invalid_pending_request')
+      }
+
+      if (value.pending === null) {
+        return null
+      }
+
+      const pending = readSubscriptionPendingRequest(value.pending, {
+        operation: input.operation,
+        sourceRevision: setup.sourceRevision ?? ''
+      })
+
+      if (!pending) {
+        throw new Error('invalid_pending_request')
+      }
+
+      return pending
+    },
+    reconcileSubscriptionRequest: async (
+      setup: TeamSetup,
+      input: SubscriptionRequestInput & { idempotencyKey: string }
+    ): Promise<SubscriptionRecovery> => {
+      const value = await request<unknown>('organization.reconcileSetupSubscriptionRequest', {
+        expectedOrganizationId: setup.organizationId,
+        sourceRevision: setup.sourceRevision,
+        ...input,
+        confirmed: true
+      })
+
+      const recovery = readSubscriptionReconciledRequest(
+        value && typeof value === 'object' && 'recovery' in value ? value.recovery : null,
+        { ...input, sourceRevision: setup.sourceRevision ?? '' }
+      )
+
+      if (!recovery) {
+        throw new Error('invalid_reconciled_request')
+      }
+
+      return recovery
     },
     generate: (setup: TeamSetup, input: { jobs: string; goals: string; namingStyle: string; idempotencyKey: string }) =>
       request<TeamPreview>('organization.generateTeam', {
