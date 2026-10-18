@@ -17,6 +17,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_ledger_writer import ledger_writer
+
 from eidolon_cli.organization_request_intake import INTAKE_SCHEMA, OrganizationIntakeStore
 from eidolon_cli.organization_intake_inspection_store import INSPECTION_SCHEMA, OrganizationIntakeInspectionStore
 from eidolon_cli.organization_recovery import RECOVERY_SCHEMA, OrganizationRecoveryStore
@@ -136,7 +138,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect() as conn:
             from eidolon_cli.organization_prepared_validation_ledger import migrate_prepared_validation_schema
             migrate_prepared_validation_schema(conn)
             # Schema creation is one durable unit: avoid hundreds of separate
@@ -192,7 +194,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
 
     @contextlib.contextmanager
     def _write(self):
-        with self._connect() as conn:
+        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             previous = (self.settings, getattr(self, '_policy_generation', None), getattr(self, '_policy_fingerprint', None))
             try:

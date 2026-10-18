@@ -9,12 +9,23 @@ from eidolon_cli.organization_roster import _text
 from eidolon_cli.organization_team_setup import _current, _fresh, _preview
 
 
+class SetupSubscriptionExecutionError(RuntimeError):
+    """Subscription execution failed after its existing accounting cleanup."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__('Team setup is unavailable')
+
+
 def _reserve(home, params, *, provider, model, input_limit, output_limit, selected_provider=None, operation='generateTeam'):
     if (type(input_limit) is not int or type(output_limit) is not int
             or not 0 < input_limit <= 32768 or not 0 < output_limit <= 8000):
         raise ValueError('Team generation exceeds its bounded input/output allowance')
     with _connection(home, write=True) as conn:
         _, policy, settings, revision = _current(conn, home, params['expectedOrganizationId'])
+        from eidolon_cli.organization_team_budget import read_policy
+        if (read_policy(conn) or {}).get('version') == 3:
+            raise OwnerPolicyError('subscription_dedicated_admission_required')
         if revision != params['sourceRevision'] or not _fresh(conn, settings):
             raise OwnerPolicyError('source_conflict')
         key = params['idempotencyKey']
@@ -66,7 +77,7 @@ def _input(value, field, maximum, *, required=True):
     return value.strip()
 
 
-def generate_team(home, params, *, cancel=None):
+def generate_team(home, params, *, cancel=None, subscription_transport=None):
     _uuid(params.get('expectedOrganizationId'), 'expectedOrganizationId')
     key = _text(params.get('idempotencyKey'), 'Idempotency key', 128)
     jobs = _input(params.get('jobs'), 'Jobs', 4000)
@@ -75,10 +86,11 @@ def generate_team(home, params, *, cancel=None):
     from eidolon_cli.organization_team_generation import generate
     return _infer(home, params, key, 'generateTeam',
         lambda reserve: generate(home, jobs, goals, naming, reserve_model_call=reserve, cancel=cancel),
-        lambda conn, proposal: _preview(conn, home, {**params, 'team': proposal})[0])
+        lambda conn, proposal: _preview(conn, home, {**params, 'team': proposal})[0],
+        subscription_transport=subscription_transport, cancel=cancel)
 
 
-def improve_team_input(home, params, *, cancel=None):
+def improve_team_input(home, params, *, cancel=None, subscription_transport=None):
     _uuid(params.get('expectedOrganizationId'), 'expectedOrganizationId')
     key = _text(params.get('idempotencyKey'), 'Idempotency key', 128)
     field = params.get('field')
@@ -98,11 +110,24 @@ def improve_team_input(home, params, *, cancel=None):
 
     return _infer(home, params, key, 'improveTeamInput',
         lambda reserve: improve(home, field, jobs, goals, naming, reserve_model_call=reserve, cancel=cancel),
-        finish)
+        finish, subscription_transport=subscription_transport, cancel=cancel)
 
 
-def _infer(home, params, key, operation, invoke, finish):
+def _infer(home, params, key, operation, invoke, finish, *, subscription_transport=None, cancel=None):
     from eidolon_cli.organization_team_setup import _generation_allowance
+    from eidolon_cli.organization_team_budget import read_policy
+    with _connection(home) as conn:
+        setup_policy = read_policy(conn)
+    if (setup_policy or {}).get('version') == 3:
+        from eidolon_cli.organization_setup_subscription_admission import infer_subscription
+        from eidolon_cli.organization_executor import OrganizationExecutionError
+        from eidolon_cli.organization_team_generation import TeamInputRejected, TeamProposalRejected
+        try:
+            return infer_subscription(home, params, key, operation, finish,
+                                      transport=subscription_transport, cancel=cancel)
+        except OrganizationExecutionError as exc:
+            reason = 'rejected' if isinstance(exc, (TeamInputRejected, TeamProposalRejected)) else 'unavailable'
+            raise SetupSubscriptionExecutionError(reason) from None
     # Old generation receipts remain replayable, but new receipts bind their
     # operation so an improvement can never be replayed as a generated team.
     digest = _hash({'operation': operation, 'input': params})
@@ -113,6 +138,8 @@ def _infer(home, params, key, operation, invoke, finish):
     from eidolon_cli.organization_team_generation import TeamInputRejected, TeamProposalRejected
     with _connection(home, write=True) as conn:
         _, policy, settings, revision = _current(conn, home, params['expectedOrganizationId'])
+        if (read_policy(conn) or {}).get('version') == 3:
+            raise OwnerPolicyError('subscription_dedicated_admission_required')
         prior = conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
         if prior:
             if prior['organization_id'] != params['expectedOrganizationId'] or prior['input_hash'] not in accepted_digests:
@@ -153,3 +180,4 @@ def _infer(home, params, key, operation, invoke, finish):
         with _connection(home, write=True) as conn:
             conn.execute("UPDATE organization_team_generations SET status=CASE WHEN dispatched=1 AND ?=0 THEN 'uncertain' ELSE 'failed' END WHERE idempotency_key=?", (known_response, key))
         raise
+

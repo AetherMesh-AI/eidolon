@@ -84,6 +84,7 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
     from contextlib import contextmanager
     from threading import Event
     import sqlite3
+    from eidolon_cli import organization_ledger_writer as writers
 
     store, _, work, request = pending_question(tmp_path, max_owner_resolutions=1)
     peer = OrganizationStore(store.path)
@@ -100,19 +101,21 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
     monkeypatch.setattr(store, '_write', hold_first_transaction)
     connect = peer._connect
 
-    @contextmanager
-    def prove_peer_contention():
-        with connect() as conn:
-            # The winner cannot commit until this connection actually attempts
-            # its write and SQLite reports the occupied transaction lock.
-            conn.execute('PRAGMA busy_timeout=0')
-            with pytest.raises(sqlite3.OperationalError, match='database is locked'):
-                conn.execute('BEGIN IMMEDIATE')
-            conn.execute('PRAGMA busy_timeout=10000')
-            competing.set()
-            yield conn
+    wait_for_turn = writers._Gate._wait_for_turn
 
-    monkeypatch.setattr(peer, '_connect', prove_peer_contention)
+    def prove_peer_contention(self, ticket, deadline, cancelled):
+        if self.owner is not None:
+            # The actual peer is queued before opening SQLite. Independently
+            # prove that the winner still owns this same database's transaction.
+            with connect() as conn:
+                conn.execute('PRAGMA busy_timeout=0')
+                with pytest.raises(sqlite3.OperationalError) as error:
+                    conn.execute('BEGIN IMMEDIATE')
+                assert error.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+                competing.set()
+        return wait_for_turn(self, ticket, deadline, cancelled)
+
+    monkeypatch.setattr(writers._Gate, '_wait_for_turn', prove_peer_contention)
 
     def act(target, action):
         if action == 'answer':

@@ -74,11 +74,12 @@ def resolve_owner_overrides(conn, base):
             if not isinstance(saved, dict) or set(saved) - (set(BUDGET_FIELDS) | {'setup_budget'}):
                 raise ValueError('Persisted budget policy contains unsupported settings')
             if 'setup_budget' in saved:
-                from eidolon_cli.organization_team_budget import validate_policy
-                validate_policy(saved['setup_budget'])
+                from eidolon_cli.organization_team_budget import validate_stored_policy
+                validate_stored_policy(saved['setup_budget'])
             # Setup policy is a separate ledger authority, never a settings or
             # YAML default. Older runtimes reject this unknown persisted key.
             patch.update({key: value for key, value in saved.items()
                           if key != 'setup_budget' and key not in locked})
     patch.update(enforced)
     return validated_patch(base, patch) if patch else base
+
