@@ -38,6 +38,8 @@ class _WindowsCredentials:
         self.api.CredReadW.restype = wintypes.BOOL
         self.api.CredWriteW.argtypes = [ctypes.POINTER(Credential), wintypes.DWORD]
         self.api.CredWriteW.restype = wintypes.BOOL
+        self.api.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
+        self.api.CredDeleteW.restype = wintypes.BOOL
         self.api.CredFree.argtypes = [ctypes.c_void_p]
         self.api.CredFree.restype = None
 
@@ -75,6 +77,14 @@ class _WindowsCredentials:
                 raise CredentialError('backend_write_failed')
         finally:
             self.ctypes.memset(buffer, 0, len(buffer))
+
+
+    def delete(self, target):
+        # Exact namespaced target only; missing already means cleanup succeeded.
+        if not self.api.CredDeleteW(target, 1, 0):
+            error = self.ctypes.get_last_error()
+            if error != 1168:
+                raise CredentialError('backend_delete_failed')
 
 
 class WindowsCredentialBackend:
@@ -115,6 +125,12 @@ class WindowsCredentialBackend:
         if value is None:
             raise CredentialError('value_missing')
         consumer(value)
+
+
+    def delete(self, reference, binding):
+        # Validate the binding before constructing an OS API or touching a vault.
+        target = self._target(binding, reference)
+        _WindowsCredentials().delete(target)
 
 
 def native_backend(directory):
