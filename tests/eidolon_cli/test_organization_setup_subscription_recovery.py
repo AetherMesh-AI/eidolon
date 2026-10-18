@@ -193,7 +193,34 @@ def test_lost_host_retirement_acknowledgment_revalidates_without_resend(recovery
 
 
 @pytest.fixture
-def recovery_ledger(ledger, monkeypatch, request):
+def recovery_ledger(tmp_path, monkeypatch, request):
+    # A cold gateway import starts a real passive update daemon. Finish that
+    # exact startup work under supported opt-out before capturing ledger source
+    # evidence or installing synthetic sender sockets.
+    bootstrap = tmp_path / 'gateway-bootstrap'
+    bootstrap.mkdir()
+    (bootstrap / 'config.yaml').write_text('updates:\n  check: false\n', encoding='utf-8')
+    from eidolon_cli import banner
+    completions = []
+    original_daemon = banner._daemon
+    with monkeypatch.context() as startup:
+        startup.setenv('HERMES_HOME', str(bootstrap))
+        def tracked_daemon(name, target):
+            done = threading.Event()
+            completions.append(done)
+            def run():
+                try:
+                    target()
+                finally:
+                    done.set()
+            original_daemon(name, run)
+        startup.setattr(banner, '_daemon', tracked_daemon)
+        from eidolon_cli.config import load_config
+        assert load_config()['updates']['check'] is False
+        from tui_gateway import server  # noqa: F401
+        for done in completions:
+            assert done.wait(10), 'Passive startup did not finish under the fixture profile'
+    ledger = request.getfixturevalue('ledger')
     # Bypass only OS admission in this explicitly synthetic filesystem proof.
     # Production platform eligibility is unchanged and separately host-tested.
     from tui_gateway.organization_credential_transport import owner_generation
@@ -233,11 +260,56 @@ def _retry_error_category(error):
     return category
 
 
-def _capture_retry_boundaries(monkeypatch):
+def _retry_socket_category(socket, read_calls):
+    """Only bounded synthetic byte counts and phases; never request/response data."""
+    from tests.eidolon_cli.test_organization_setup_subscription_transport import Socket
+    if type(socket) is not Socket:
+        return {'phase': 'unavailable'}
+    fields = vars(socket)
+    if type(fields) is not dict:
+        return {'phase': 'unavailable'}
+    sent, received, remaining = fields.get('sent'), fields.get('received'), fields.get('data')
+    rejected = fields.get('rejected_connections')
+    if (type(sent) is not list or type(received) is not int or received < 0
+            or type(remaining) is not bytearray or type(read_calls) is not int or read_calls < 0
+            or type(rejected) is not int or rejected < 0):
+        return {'phase': 'unavailable'}
+    writes = min(3, len(sent))
+    return {'writePhase': ('none', 'headers_only', 'headers_and_body', 'other')[writes],
+        'postWriteObserved': any(type(frame) is bytes and frame.startswith(b'POST /v1/responses HTTP/1.1\r\n') for frame in sent[:3]),
+        'writes': writes, 'readCalls': min(32, read_calls), 'rejectedConnections': min(2, rejected),
+        'receivePhase': 'none' if received == 0 else 'some',
+        'remainingPhase': 'none' if len(remaining) == 0 else 'some',
+        'receivedBytes': min(8 * 1024 * 1024 + 1, received),
+        'remainingBytes': min(8 * 1024 * 1024 + 1, len(remaining))}
+
+
+def _capture_retry_boundaries(monkeypatch, observed_socket=None):
     """Observe the existing one-shot call, without changing a gate or retrying."""
     from eidolon_cli import organization_setup_subscription_transport as sender
     from eidolon_cli.organization_setup_subscription_usage import SAFE_ERRORS, TransportResult
     events, lock = [], threading.Lock()
+    reads = [0]
+    if observed_socket is not None:
+        original_connect, original_recv = sender._Connection.connect, observed_socket.recv
+        @wraps(original_connect)
+        def connect(connection):
+            result = original_connect(connection)
+            try:
+                emit({'stage': 'connection', 'result': 'exact_socket' if connection.sock is observed_socket else 'other_socket'})
+            except BaseException:
+                emit({'stage': 'connection', 'result': 'diagnostic_error'})
+            return result
+        @wraps(original_recv)
+        def recv(count):
+            try:
+                with lock:
+                    reads[0] = min(32, reads[0] + 1)
+            except BaseException:
+                pass
+            return original_recv(count)
+        monkeypatch.setattr(sender._Connection, 'connect', connect)
+        monkeypatch.setattr(observed_socket, 'recv', recv)
     def emit(value):
         try:
             with lock:
@@ -280,7 +352,10 @@ def _capture_retry_boundaries(monkeypatch):
     wrap(sender, 'send_once', 'transport')
     def snapshot(conn, keys, socket):
         with lock:
-            result = {'boundaries': list(events), 'postWriteObserved': bool(socket.sent)}
+            result = {'boundaries': list(events),
+                'postWriteObserved': _retry_socket_category(socket, reads[0]).get('postWriteObserved', False)}
+        if socket is observed_socket:
+            result['socket'] = _retry_socket_category(socket, reads[0])
         try:
             rows = []
             for key in keys:
@@ -333,12 +408,119 @@ def test_registered_retry_offer_preserves_failed_row_and_allows_only_explicit_ne
     if improve:
         content = None
     socket, new_connects = install(monkeypatch, wire(event(response=response() if improve else response(content))))
-    diagnostic = _capture_retry_boundaries(monkeypatch)
+    diagnostic = _capture_retry_boundaries(monkeypatch, socket)
     result = call(method, {**value, 'idempotencyKey': 'explicit-new-intent'}, rig.transport)
-    assert 'result' in result, diagnostic(rig.conn, (value['idempotencyKey'], 'explicit-new-intent'), socket)
+    assert 'result' in result, json.dumps(diagnostic(rig.conn, (value['idempotencyKey'], 'explicit-new-intent'), socket), sort_keys=True)
     assert state(rig)[1] == old  # Keys sort explicit-new-intent before inference.
     assert len(new_connects) == 1 and socket.sent
     assert budget.operation_counts(rig.conn)['total'] == 1
+
+
+@pytest.mark.parametrize('fault', ['body_guard', 'truncated_receive'])
+def test_retry_diagnostics_distinguish_partial_send_from_truncated_receive(recovery_ledger, monkeypatch, fault):
+    from eidolon_cli import organization_setup_subscription_transport as sender
+    rig = recovery_ledger
+    data = wire(event(response=response()))
+    socket, connects = install(monkeypatch, data if fault == 'body_guard' else data[:-3])
+    if fault == 'body_guard':
+        original = admission._Admission.try_send_allowed
+        monkeypatch.setattr(admission._Admission, 'try_send_allowed',
+            lambda self: original(self) and len(socket.sent) != 1)
+    diagnostic = _capture_retry_boundaries(monkeypatch, socket)
+    value = request(rig)
+    with pytest.raises(Exception):
+        infer(rig, value)
+    observed = diagnostic(rig.conn, (value['idempotencyKey'],), socket)
+    transport = next(row for row in observed['boundaries'] if row['stage'] == 'transport')
+    assert transport['terminal'] == 'unknown' and transport['dispatch'] == 'possible_send'
+    assert transport['error'] == ('stale_binding' if fault == 'body_guard' else 'incomplete_stream')
+    assert observed['socket']['writePhase'] == ('headers_only' if fault == 'body_guard' else 'headers_and_body')
+    assert observed['socket']['receivePhase'] == ('none' if fault == 'body_guard' else 'some')
+    assert observed['socket']['remainingPhase'] == ('some' if fault == 'body_guard' else 'none')
+    assert observed['socket']['writes'] == (1 if fault == 'body_guard' else 2)
+    assert observed['socket']['readCalls'] == (0 if fault == 'body_guard' else 2)
+    assert {'stage': 'connection', 'result': 'exact_socket'} in observed['boundaries']
+    assert observed['attempts'] == [{'phase': 'uncertain', 'dispatched': 'yes', 'counts': [1, 1, 0], 'terminal': 'absent'}]
+    before = list(rig.conn.iterdump())
+    with pytest.raises(Exception):
+        infer(rig, value)
+    assert len(connects) == 1 and list(rig.conn.iterdump()) == before
+    encoded = json.dumps(observed, sort_keys=True)
+    assert 'synthetic-access' not in encoded and 'Ready' not in encoded and str(rig.home) not in encoded
+    assert '"error": "' + transport['error'] + '"' in encoded and '...' not in encoded
+    socket.received = 2 ** 60
+    assert _retry_socket_category(socket, 2 ** 60)['receivedBytes'] == sender.MAX_WIRE + 1
+    assert _retry_socket_category(socket, 2 ** 60)['readCalls'] == 32
+
+
+def test_late_old_connection_interrupt_cannot_close_explicit_retry_socket(recovery_ledger, monkeypatch):
+    import tui_gateway.server as server
+    from eidolon_cli import organization_setup_subscription_transport as sender
+    from tests.tui_gateway.test_organization_setup_subscription_flow import call
+    rig = recovery_ledger
+    monkeypatch.setattr(server, '_eidolon_home', rig.home)
+    rig.transport.responses = Queue()
+    rig.transport.write = rig.transport.responses.put
+    old_socket, old_connects = install(monkeypatch, wire(event(response=response())))
+    old_connection = []
+    original_connect, dispatch = sender._Connection.connect, admission._dispatch_job
+    def connect(connection):
+        original_connect(connection)
+        old_connection.append(connection)
+    monkeypatch.setattr(sender._Connection, 'connect', connect)
+    monkeypatch.setattr(admission, '_dispatch_job', lambda *args: False)
+    value = request(rig)
+    first = call('improveTeamInput', value, rig.transport)
+    assert first['error']['data']['recovery']['disposition'] == 'retry_unsent'
+    assert len(old_connection) == len(old_connects) == 1 and not old_socket.sent
+    old_row = state(rig)[0]
+    monkeypatch.setattr(admission, '_dispatch_job', dispatch)
+    socket, connects = install(monkeypatch, wire(event(response=response())))
+    release, finished = threading.Event(), threading.Event()
+    def late_cleanup():
+        if release.wait(10):
+            sender._interrupt(old_connection[0], threading.Event())
+        finished.set()
+    worker = threading.Thread(target=late_cleanup)
+    worker.start()
+    def before_body(_):
+        if len(socket.sent) == 1:
+            release.set()
+            assert finished.wait(10)
+            assert not socket.closed
+    socket.before_send = before_body
+    try:
+        result = call('improveTeamInput', {**value, 'idempotencyKey': 'explicit-new-intent'}, rig.transport)
+        assert result['result']['suggestion'] == 'Ready'
+    finally:
+        release.set()
+        worker.join(10)
+    assert not worker.is_alive() and finished.is_set()
+    assert len(connects) == 1 and len(socket.sent) == 2 and socket.received > 0
+    assert state(rig)[1] == old_row and state(rig)[0]['status'] == 'completed'
+
+
+def test_synthetic_recovery_profile_opt_out_finishes_exact_passive_invocation(recovery_ledger, monkeypatch):
+    from eidolon_cli import banner
+    rig = recovery_ledger
+    (rig.home / 'config.yaml').write_text('updates:\n  check: false\n', encoding='utf-8')
+    probes, completions = [], []
+    original_daemon = banner._daemon
+    def tracked_daemon(name, target):
+        done = threading.Event()
+        completions.append(done)
+        def run():
+            try:
+                target()
+            finally:
+                done.set()
+        original_daemon(name, run)
+    monkeypatch.setattr(banner, '_daemon', tracked_daemon)
+    monkeypatch.setattr(banner, '_check_via_rev', lambda *args: probes.append(True))
+    monkeypatch.setattr(banner, '_check_via_local_git', lambda *args: probes.append(True))
+    banner.prefetch_update_check()
+    assert len(completions) == 1 and completions[0].wait(10)
+    assert probes == [] and not (rig.home / '.update_check').exists()
 
 
 def test_retry_diagnostics_export_only_closed_error_categories():
@@ -366,6 +548,11 @@ def test_retry_diagnostics_export_only_closed_error_categories():
     error = StoreError('operation_failed')
     error.__dict__ = HostileDict(reason='operation_failed')
     assert _retry_error_category(error) == {'class': 'StoreError', 'code': 'other'}
+    from tests.eidolon_cli.test_organization_setup_subscription_transport import Socket
+    assert _retry_socket_category(object(), 0) == {'phase': 'unavailable'}
+    socket = Socket(b'')
+    socket.__dict__ = HostileDict(sent=[], received=0, data=bytearray())
+    assert _retry_socket_category(socket, 0) == {'phase': 'unavailable'}
     assert accesses == []
 
 

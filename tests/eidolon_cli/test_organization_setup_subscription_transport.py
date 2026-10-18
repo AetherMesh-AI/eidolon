@@ -21,6 +21,7 @@ class Socket:
     def __init__(self, data, fragment=8192):
         self.data, self.fragment = bytearray(data), fragment
         self.sent, self.closed, self.received = [], False, 0
+        self.rejected_connections = 0
         self.before_send = self.before_recv = None
 
     def sendall(self, value):
@@ -167,10 +168,50 @@ def install(monkeypatch, data, fragment=8192):
     sock = Socket(data, fragment)
     connects = []
     def connect(connection):
+        if type(connection) is not transport._Connection or connection.host != 'api.openai.com':
+            sock.rejected_connections = min(2, sock.rejected_connections + 1)
+            raise OSError('synthetic_connection_refused')
         connects.append(connection.host)
         connection.sock = sock
-    monkeypatch.setattr(http.client.HTTPSConnection, 'connect', connect)
+    monkeypatch.setattr(transport._Connection, 'connect', connect)
     return sock, connects
+
+
+def test_passive_updater_http_cannot_borrow_sender_fixture_socket(prepared, monkeypatch):
+    import io
+    from eidolon_cli import banner
+    capability, admission, _ = prepared
+    body = b'{"ahead_by":2}'
+    class UpdateSocket(Socket):
+        def makefile(self, mode):
+            assert mode == 'rb'
+            return io.BytesIO(bytes(self.data))
+    ordinary = UpdateSocket(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: '
+        + str(len(body)).encode() + b'\r\n\r\n' + body)
+    ordinary_connects = []
+    def ordinary_connect(connection):
+        assert type(connection) is http.client.HTTPSConnection and connection.host == 'api.github.com'
+        ordinary_connects.append(True)
+        connection.sock = ordinary
+    for key in ('HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'https_proxy', 'http_proxy', 'all_proxy'):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(http.client.HTTPSConnection, 'connect', ordinary_connect)
+    monkeypatch.setattr(banner, '_upstream_main_sha', lambda: 'b' * 40)
+    sock, connects = install(monkeypatch, wire(event(response=response())))
+    update_result = banner._check_via_rev('a' * 40)
+    before = {'writes': len(sock.sent), 'closed': sock.closed, 'received': sock.received}
+    result = transport.send_once(capability)
+    assert before == {'writes': 0, 'closed': False, 'received': 0}, json.dumps(
+        {**before, 'terminal': result.observation.terminal_kind, 'delivery': result.delivery_error_code}, sort_keys=True)
+    assert update_result == 2 and ordinary_connects == [True]
+    assert len(ordinary.sent) == 1 and ordinary.sent[0].startswith(b'GET /repos/AetherMesh-AI/Eidolon/compare/')
+    assert connects == ['api.openai.com'] and sock.rejected_connections == 0
+    assert len(sock.sent) == 2 and sock.received > 0
+    assert result.observation.terminal_kind == 'completed' and result.text is not None
+    assert len(admission.dispatches) == len(admission.observations) == 1
+    with pytest.raises(OSError, match='synthetic_connection_refused'):
+        transport._Connection.connect(http.client.HTTPSConnection('api.github.com'))
+    assert sock.rejected_connections == 1 and len(connects) == 1
 
 
 def test_exact_one_post_fixed_payload_and_text_free_accounting(prepared, monkeypatch):

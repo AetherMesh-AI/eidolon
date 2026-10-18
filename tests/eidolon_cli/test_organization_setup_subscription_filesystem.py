@@ -571,7 +571,7 @@ def test_first_unsafe_acl_fails_without_renewal_even_with_sibling_churn(tmp_path
     assert config['reads'] == []
 
 
-def test_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch):
+def _assert_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch):
     from eidolon_cli.organization_setup_subscription_store import SubscriptionStore
     profile = tmp_path / 'profile'
     profile.mkdir(mode=0o700)
@@ -581,6 +581,16 @@ def test_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch):
     store._check(profile, directory=True)
     assert calls[0] == (profile, False)
     assert calls[1:] == [(parent, True) for parent in profile.parents]
+
+
+@pytest.mark.linux_only
+def test_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch):
+    _assert_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch)
+
+
+@pytest.mark.macos_only
+def test_native_darwin_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch):
+    _assert_store_opts_in_only_ancestor_directories(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize('kind', [0, 1, 3, 15])
@@ -649,23 +659,61 @@ def test_native_darwin_ancestor_revalidates_complete_deny_acl(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize('change_acl', [False, True])
-def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, pinned_acl_api, change_acl):
-    config, _, _ = pinned_acl_api
+def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, monkeypatch, pinned_acl_api, change_acl):
+    """Synthetic ctime-only metadata; real sibling churn is covered separately."""
+    from types import SimpleNamespace
+    config, calls, api = pinned_acl_api
     config.update(tags=[2], snapshot=_encoded_acl([(bytes(16), 2, 2)]))
-    before = tmp_path.stat()
+    before = tmp_path.lstat()
+    identity = module._file_identity(before)
+    real_fstat, real_lstat = os.fstat, Path.lstat
+    native_stat = api.fstatx_np
+    changed = False
 
-    def change_sibling_file(fd, count):
+    def ctime_view(info):
+        assert module._file_identity(info) == identity
+        fields = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_ctime_ns')
+        values = {field: getattr(info, field) for field in fields}
+        values['st_ctime_ns'] += int(changed)
+        return SimpleNamespace(**values)
+
+    def fstat(fd):
+        info = real_fstat(fd)
+        return ctime_view(info) if (info.st_dev, info.st_ino) == identity[:2] else info
+
+    def lstat(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        return ctime_view(info) if path == tmp_path else info
+
+    def fstatx(fd, pointer, fsec):
+        result = native_stat(fd, pointer, fsec)
+        info = ctime_view(real_fstat(fd))
+        pointer._obj.st_ctimespec.tv_sec, pointer._obj.st_ctimespec.tv_nsec = divmod(info.st_ctime_ns, 1_000_000_000)
+        return result
+
+    def change_ctime(fd, count):
+        nonlocal changed
+        assert module._file_identity(real_fstat(fd)) == identity
         if count == 1:
-            (tmp_path / 'sibling-file').write_bytes(b'')
+            changed = True
             if change_acl:
                 config['snapshot'] = _encoded_acl([(bytes(16), 2, 4)])
 
-    config['after_read'] = change_sibling_file
+    monkeypatch.setattr(module.os, 'fstat', fstat)
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    for symbol in ('fstatx_np', 'fstatx_np$INODE64'):
+        monkeypatch.setattr(api, symbol, fstatx)
+    config['after_read'] = change_ctime
     if change_acl:
         with pytest.raises(StoreError, match='unsafe_filesystem'):
             module.check_darwin_acl(tmp_path, ancestor=True)
     else:
         module.check_darwin_acl(tmp_path, ancestor=True)
-    after = tmp_path.stat()
-    assert after.st_nlink == before.st_nlink and after.st_ctime_ns != before.st_ctime_ns
+    after = module._file_identity(tmp_path.lstat())
+    assert tuple(new - old for old, new in zip(identity, after)) == (0, 0, 0, 0, 0, 0, 1)
     assert len(config['reads']) == 2
+    assert config['reads'][0][0] == config['reads'][1][0]
+    assert [module._file_identity(result[0]) for _, result in config['reads']] == [identity, after]
+    assert (config['reads'][0][1][1] != config['reads'][1][1][1]) == change_acl
+    for operation in ('stat', 'query', 'get', 'copy', 'free_acl', 'free_fsec'):
+        assert sum(call[0] == operation for call in calls) == 2

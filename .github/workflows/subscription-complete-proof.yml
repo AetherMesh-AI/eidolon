@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 412b642c5ec50b317e643e0a471856355a52da08
+          ref: cafce563397b67fad0df141b853dacaad27b1c59
           path: source
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -43,8 +43,8 @@ jobs:
           python-version: '3.12'
       - name: Verify exact source and old runtime
         run: |
-          test "$(git rev-parse HEAD)" = 412b642c5ec50b317e643e0a471856355a52da08
-          test "$(git rev-parse HEAD^{tree})" = fca4e1f6a9013657bace98d5f976fc854108517c
+          test "$(git rev-parse HEAD)" = cafce563397b67fad0df141b853dacaad27b1c59
+          test "$(git rev-parse HEAD^{tree})" = 7346b68d2ebdb205e62142925596ff569f2ae6f5
           test "$(git -C ../old-runtime rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           test "$(git -C ../old-runtime rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
           python -c "import platform; print(platform.system(), platform.machine())"
@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Insert this job under jobs: after replacing 412b642c5ec50b317e643e0a471856355a52da08 and fca4e1f6a9013657bace98d5f976fc854108517c with
+  # Insert this job under jobs: after replacing cafce563397b67fad0df141b853dacaad27b1c59 and 7346b68d2ebdb205e62142925596ff569f2ae6f5 with
   # the immutable source commit and its root tree. No workflow/branch publication.
   # Native display strategy: launch Electron directly on the hosted macOS session.
   # https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci
@@ -95,13 +95,13 @@ jobs:
       OPENROUTER_API_KEY: ''
       NOUS_API_KEY: ''
       ANTHROPIC_API_KEY: ''
-      SUBSCRIPTION_PROOF_SHA: '412b642c5ec50b317e643e0a471856355a52da08'
-      SUBSCRIPTION_PROOF_TREE: 'fca4e1f6a9013657bace98d5f976fc854108517c'
+      SUBSCRIPTION_PROOF_SHA: 'cafce563397b67fad0df141b853dacaad27b1c59'
+      SUBSCRIPTION_PROOF_TREE: '7346b68d2ebdb205e62142925596ff569f2ae6f5'
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 412b642c5ec50b317e643e0a471856355a52da08
+          ref: cafce563397b67fad0df141b853dacaad27b1c59
           persist-credentials: false
       - name: Verify immutable source and actual macOS host
         run: |
@@ -138,7 +138,8 @@ jobs:
       - name: Verify registered native gateway journey and fail-closed network guards
         run: |
           set -euo pipefail
-          scripts/run_tests.sh tests/tui_gateway/test_subscription_native_journey.py tests/eidolon_cli/test_organization_setup_subscription_filesystem.py -vv --tb=long --junitxml="$GITHUB_WORKSPACE/subscription-native-proof/gateway-junit.xml" 2>&1 | tee subscription-native-proof/gateway.log
+          scripts/run_tests.sh tests/tui_gateway/test_subscription_native_journey.py -vv --tb=long --junitxml="$GITHUB_WORKSPACE/subscription-native-proof/gateway-junit.xml" 2>&1 | tee subscription-native-proof/gateway.log
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_setup_subscription_filesystem.py -vv --tb=long --junitxml="$GITHUB_WORKSPACE/subscription-native-proof/filesystem-junit.xml" 2>&1 | tee subscription-native-proof/filesystem.log
       - name: Verify subscription and baseline setup components
         working-directory: apps/desktop
         run: |
