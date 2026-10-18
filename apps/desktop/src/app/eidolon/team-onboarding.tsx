@@ -1,7 +1,7 @@
 import './team-onboarding.css'
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 import { teamOnboardingCopy, type TeamOnboardingCopy } from '@/i18n/organization-team-onboarding'
+import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscription'
 import { $gateway } from '@/store/gateway'
 import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
 
@@ -27,11 +28,21 @@ import {
 import { TeamOnboardingEditor } from './team-onboarding-editor'
 import { type TeamInputReview, TeamOnboardingInputs, type TeamSetupInputs } from './team-onboarding-inputs'
 import { SetupBudgetRemaining, TeamSetupBudgetEditor } from './team-setup-budget-editor'
+import { TeamSetupSubscription } from './team-setup-subscription'
+import {
+  readSubscriptionPendingRequest,
+  readSubscriptionReconciledRequest,
+  readSubscriptionRecovery,
+  type SubscriptionRecovery
+} from './team-setup-subscription-client'
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
 function teamInputKeyboardContext(active: HTMLElement): HTMLElement[] {
-  if (!active.matches('.eid-team-input > textarea')) {return []}
+  if (!active.matches('.eid-team-input > textarea')) {
+    return []
+  }
+
   const field = active.parentElement
   const heading = field?.querySelector<HTMLElement>(':scope > .eid-team-input-heading')
   const help = field?.querySelector<HTMLElement>(':scope > .eid-team-note')
@@ -261,6 +272,14 @@ interface TeamGenerationIntent {
   revision: number
 }
 
+interface TeamUnsentRequest extends Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'> {
+  organizationId: string
+  inputs: TeamSetupInputs
+  fingerprint: string
+  revision: number
+  replace: boolean
+}
+
 interface TeamOnboardingDialogProps {
   client: TeamOnboardingClient
   setup: TeamSetup
@@ -270,10 +289,83 @@ interface TeamOnboardingDialogProps {
   onReturnFocus: () => void
 }
 
+function localRequestCheckSupported(next: TeamSetup) {
+  return (
+    next.state === 'available' &&
+    next.setupSubscriptionState === 'available' &&
+    next.setupSubscriptionVersion === 1 &&
+    !!next.organizationId &&
+    !!next.sourceRevision &&
+    next.generationAllowance?.policyVersion === 3
+  )
+}
+
+function recoveryAllowance(next: TeamSetup, request: TeamUnsentRequest) {
+  return (
+    next.state === 'available' &&
+    next.setupSubscriptionState === 'available' &&
+    next.setupSubscriptionVersion === 1 &&
+    next.organizationId === request.organizationId &&
+    next.sourceRevision === request.sourceRevision &&
+    next.readiness.status !== 'blocked' &&
+    next.generationAllowance?.policyVersion === 3 &&
+    next.generationAllowance.status === 'available' &&
+    (next.generationAllowance.remainingByOperation?.[
+      request.operation === 'generate' ? 'generateTeam' : 'improveTeamInput'
+    ] ?? 0) > 0
+  )
+}
+
 function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreated }: TeamOnboardingDialogProps) {
   const { locale } = useI18n()
   const copy = teamOnboardingCopy[locale]
+  const subscriptionCopy = setupSubscriptionCopy[locale]
   const [setup, setSetup] = useState(initialSetup)
+  const latestSetup = useRef(initialSetup)
+  const [unsentRequest, setUnsentRequest] = useState<TeamUnsentRequest | null>(null)
+  const recoveryOffer = useRef<TeamUnsentRequest | null>(null)
+  const [unsentCheck, setUnsentCheck] = useState<TeamUnsentRequest | null>(null)
+  const [checkedUnsent, setCheckedUnsent] = useState(false)
+  const retainedCheck = useRef<TeamUnsentRequest | null>(null)
+  const discoveryRevision = useRef(0)
+  const [unsentOperation, setUnsentOperation] = useState<SubscriptionRecovery['operation']>('generate')
+
+  const clearRecovery = useCallback(() => {
+    recoveryOffer.current = null
+    setUnsentRequest(null)
+  }, [])
+
+  const clearUnsent = useCallback(() => {
+    discoveryRevision.current++
+    clearRecovery()
+    retainedCheck.current = null
+    setUnsentCheck(null)
+    setCheckedUnsent(false)
+  }, [clearRecovery])
+
+  const refreshSetup = useCallback(
+    (next: TeamSetup) => {
+      if (recoveryOffer.current && !recoveryAllowance(next, recoveryOffer.current)) {
+        clearRecovery()
+      }
+
+      const retained = retainedCheck.current
+
+      if (
+        retained &&
+        (!localRequestCheckSupported(next) ||
+          next.organizationId !== retained.organizationId ||
+          next.sourceRevision !== retained.sourceRevision)
+      ) {
+        clearUnsent()
+      }
+
+      latestSetup.current = next
+      setSetup(next)
+    },
+    [clearRecovery, clearUnsent]
+  )
+
   const providerSetup = useStore($desktopOnboarding)
   const returningFromProvider = useRef(false)
   const [inputs, setInputs] = useState<TeamSetupInputs>({ jobs: '', goals: '', namingStyle: '' })
@@ -290,7 +382,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   const [receipt, setReceipt] = useState<TeamReceipt | null>(null)
 
   const [pending, setPending] = useState<
-    'generate' | 'regenerate' | 'improve' | 'preview' | 'create' | 'check' | 'budget' | null
+    'generate' | 'regenerate' | 'improve' | 'preview' | 'create' | 'check' | 'inspect' | 'reconcile' | 'budget' | null
   >(null)
 
   const [error, setError] = useState('')
@@ -315,7 +407,45 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     }
   }, [])
 
-  const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>) => {
+  const requestCurrent = (request: TeamUnsentRequest) => {
+    const next = latestSetup.current
+
+    if (
+      !alive.current ||
+      !client.current() ||
+      !localRequestCheckSupported(next) ||
+      next.organizationId !== request.organizationId ||
+      next.sourceRevision !== request.sourceRevision
+    ) {
+      return false
+    }
+
+    if (request.operation === 'generate') {
+      const retained = request.replace ? regenerationIntent.current : generationIntent.current
+
+      return (
+        retained?.key === request.idempotencyKey &&
+        JSON.stringify(retained.inputs) === request.fingerprint &&
+        retained.setup.organizationId === request.organizationId &&
+        retained.setup.sourceRevision === request.sourceRevision &&
+        request.revision === draftRevision.current
+      )
+    }
+
+    const field = request.operation === 'improve_jobs' ? 'jobs' : 'goals'
+    const retained = improvementIntents.current[field]
+
+    return (
+      retained?.key === request.idempotencyKey &&
+      retained.fingerprint === request.fingerprint &&
+      request.revision === inputRevision.current
+    )
+  }
+
+  const recoveryCurrent = (request: TeamUnsentRequest) =>
+    requestCurrent(request) && recoveryAllowance(latestSetup.current, request)
+
+  const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>, request?: TeamUnsentRequest) => {
     if (busy.current || !client.current()) {
       if (!client.current()) {
         setError(copy.stale)
@@ -334,12 +464,25 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     } catch (failure) {
       if (alive.current && token === operation.current) {
         setError(
-          failure instanceof Error && failure.message === 'stale'
+          !client.current() || (failure instanceof Error && failure.message === 'stale')
             ? copy.stale
-            : kind === 'check'
-              ? copy.checkFailed
-              : copy.error
+            : kind === 'reconcile' || kind === 'inspect'
+              ? subscriptionCopy.checkUnsentBlocked
+              : kind === 'check'
+                ? copy.checkFailed
+                : copy.error
         )
+
+        // A captured original request enables only local proof, not an unsent claim.
+        if (request && requestCurrent(request)) {
+          retainedCheck.current = request
+          setUnsentCheck(request)
+        }
+
+        if (request && readSubscriptionRecovery(failure, request) && recoveryCurrent(request)) {
+          recoveryOffer.current = request
+          setUnsentRequest(request)
+        }
 
         if (['generate', 'regenerate', 'improve'].includes(kind) && client.current()) {
           setAllowanceUnverified(true)
@@ -348,7 +491,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
             const result = await client.setup(setup.organizationId ?? null)
 
             if (alive.current && token === operation.current && client.current()) {
-              setSetup(result)
+              refreshSetup(result)
               setAllowanceUnverified(false)
             }
           } catch {
@@ -374,7 +517,10 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       setTeam(result.team)
 
       if (result.generationAllowance) {
-        setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
+        refreshSetup({
+          ...latestSetup.current,
+          generationAllowance: result.generationAllowance
+        })
         setAllowanceUnverified(false)
       }
 
@@ -383,6 +529,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   }
 
   const update = (value: TeamDraft) => {
+    clearUnsent()
     draftRevision.current++
     setTeam(value)
     setPreview(null)
@@ -390,6 +537,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   }
 
   const changeInput = (field: keyof TeamSetupInputs, value: string) => {
+    clearUnsent()
     inputRevision.current++
     draftRevision.current++
     setInputs(current => ({ ...current, [field]: value }))
@@ -431,19 +579,36 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     }
 
     const idempotencyKey = improvementIntents.current[field]!.key
+    clearUnsent()
     setSuggestion(null)
-    void act('improve', async () => {
-      const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
+    void act(
+      'improve',
+      async () => {
+        const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
 
-      if (alive.current && client.current() && revision === inputRevision.current) {
-        setSuggestion({ ...result, original: inputs[field], revision })
+        if (alive.current && client.current() && revision === inputRevision.current) {
+          setSuggestion({ ...result, original: inputs[field], revision })
 
-        if (result.generationAllowance) {
-          setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
-          setAllowanceUnverified(false)
+          if (result.generationAllowance) {
+            refreshSetup({
+              ...latestSetup.current,
+              generationAllowance: result.generationAllowance
+            })
+            setAllowanceUnverified(false)
+          }
         }
+      },
+      {
+        idempotencyKey,
+        operation: field === 'jobs' ? 'improve_jobs' : 'improve_goals',
+        sourceRevision: setup.sourceRevision ?? '',
+        organizationId: setup.organizationId ?? '',
+        inputs: { ...inputs },
+        fingerprint,
+        revision,
+        replace: false
       }
-    })
+    )
   }
 
   const generate = (replace = false) => {
@@ -477,31 +642,198 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
           revision: draftRevision.current
         })
 
-    void act(replace ? 'regenerate' : 'generate', async () => {
-      const result = await client.generate(request.setup, { ...request.inputs, idempotencyKey: request.key })
+    clearUnsent()
+    void act(
+      replace ? 'regenerate' : 'generate',
+      async () => {
+        const result = await client.generate(request.setup, {
+          ...request.inputs,
+          idempotencyKey: request.key
+        })
 
-      if (alive.current && client.current()) {
-        if (request.revision !== draftRevision.current) {
-          if (result.generationAllowance) {
-            setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
-            setAllowanceUnverified(false)
+        if (alive.current && client.current()) {
+          if (request.revision !== draftRevision.current) {
+            if (result.generationAllowance) {
+              refreshSetup({
+                ...latestSetup.current,
+                generationAllowance: result.generationAllowance
+              })
+              setAllowanceUnverified(false)
+            }
+
+            if (replace) {
+              regenerationIntent.current = null
+            }
+
+            setError(copy.previousDraftPreserved)
+
+            return
           }
 
-          if (replace) {
-            regenerationIntent.current = null
-          }
-
-          setError(copy.previousDraftPreserved)
-
-          return
+          applyPreview(result)
+          setHasGenerated(true)
+          generationIntent.current = request
+          regenerationIntent.current = null
         }
+      },
+      {
+        idempotencyKey: request.key,
+        operation: 'generate',
+        sourceRevision: request.setup.sourceRevision ?? '',
+        organizationId: request.setup.organizationId ?? '',
+        inputs: { ...request.inputs },
+        fingerprint: JSON.stringify(request.inputs),
+        revision: request.revision,
+        replace
+      }
+    )
+  }
 
-        applyPreview(result)
-        setHasGenerated(true)
-        generationIntent.current = request
-        regenerationIntent.current = null
+  const findUnsent = () => {
+    if (busy.current || !localRequestCheckSupported(latestSetup.current)) {
+      return
+    }
+
+    const capturedSetup = latestSetup.current
+    const capturedInputs = { ...inputs }
+    const selected = unsentOperation
+    const revision = selected === 'generate' ? draftRevision.current : inputRevision.current
+    clearUnsent()
+    const discovery = discoveryRevision.current
+    void act('inspect', async () => {
+      const found = await client.inspectSubscriptionRequest(capturedSetup, { ...capturedInputs, operation: selected })
+      const currentRevision = selected === 'generate' ? draftRevision.current : inputRevision.current
+
+      if (
+        !alive.current ||
+        !client.current() ||
+        revision !== currentRevision ||
+        discovery !== discoveryRevision.current ||
+        latestSetup.current.sourceRevision !== capturedSetup.sourceRevision ||
+        latestSetup.current.organizationId !== capturedSetup.organizationId ||
+        !localRequestCheckSupported(latestSetup.current)
+      ) {
+        return
+      }
+
+      if (!found) {
+        setError(subscriptionCopy.unsentNotFound)
+
+        return
+      }
+
+      if (
+        !readSubscriptionPendingRequest(found, { operation: selected, sourceRevision: capturedSetup.sourceRevision! })
+      ) {
+        throw new Error('invalid_pending_request')
+      }
+
+      const field = selected === 'improve_jobs' ? 'jobs' : 'goals'
+
+      const fingerprint =
+        selected === 'generate'
+          ? JSON.stringify(capturedInputs)
+          : JSON.stringify({ ...capturedInputs, sourceRevision: capturedSetup.sourceRevision, field })
+
+      const request: TeamUnsentRequest = {
+        idempotencyKey: found.idempotencyKey,
+        operation: selected,
+        sourceRevision: capturedSetup.sourceRevision!,
+        organizationId: capturedSetup.organizationId!,
+        inputs: capturedInputs,
+        fingerprint,
+        revision,
+        replace: false
+      }
+
+      // Adopt the exact old key returned by discovery, without minting or sending.
+      if (selected === 'generate') {
+        generationIntent.current = { key: found.idempotencyKey, setup: capturedSetup, inputs: capturedInputs, revision }
+      } else {
+        improvementIntents.current[field] = { key: found.idempotencyKey, fingerprint }
+      }
+
+      retainedCheck.current = request
+      setUnsentCheck(request)
+    })
+  }
+
+  const checkUnsent = () => {
+    const request = retainedCheck.current
+
+    if (!request || busy.current || !requestCurrent(request)) {
+      if (request && !requestCurrent(request)) {
+        clearUnsent()
+      }
+
+      return
+    }
+
+    clearRecovery()
+    setCheckedUnsent(false)
+    void act('reconcile', async () => {
+      const result = await client.reconcileSubscriptionRequest(latestSetup.current, {
+        ...request.inputs,
+        operation: request.operation,
+        idempotencyKey: request.idempotencyKey
+      })
+
+      if (retainedCheck.current !== request || !requestCurrent(request)) {
+        return
+      }
+
+      if (!readSubscriptionReconciledRequest(result, request)) {
+        throw new Error('invalid_reconciled_request')
+      }
+
+      setCheckedUnsent(true)
+      setAllowanceUnverified(true)
+      const refreshed = await client.setup(request.organizationId)
+
+      if (retainedCheck.current !== request || !requestCurrent(request)) {
+        return
+      }
+
+      refreshSetup(refreshed)
+      setAllowanceUnverified(false)
+
+      if (recoveryCurrent(request)) {
+        recoveryOffer.current = request
+        setUnsentRequest(request)
       }
     })
+  }
+
+  const retryUnsent = () => {
+    const request = recoveryOffer.current
+
+    if (!request || busy.current || budgetUnverified || allowanceUnverified) {
+      return
+    }
+
+    if (!recoveryCurrent(request)) {
+      clearRecovery()
+
+      return
+    }
+
+    // Consume synchronously before creating a fresh intent. Ordinary retry and
+    // configuration checks keep the old key; only this explicit action rotates it.
+    clearUnsent()
+    const key = crypto.randomUUID()
+
+    if (request.operation === 'generate') {
+      const retained = request.replace ? regenerationIntent : generationIntent
+      retained.current = { ...retained.current!, key }
+      generate(request.replace)
+    } else {
+      const field = request.operation === 'improve_jobs' ? 'jobs' : 'goals'
+      improvementIntents.current[field] = {
+        fingerprint: request.fingerprint,
+        key
+      }
+      improve(field)
+    }
   }
 
   const applySuggestion = () => {
@@ -529,6 +861,8 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       return
     }
 
+    recoveryOffer.current = null
+    retainedCheck.current = null
     alive.current = false
     operation.current++
     onClose()
@@ -564,7 +898,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       .setup(setup.organizationId ?? null)
       .then(result => {
         if (alive.current && token === operation.current && client.current()) {
-          setSetup(result)
+          refreshSetup(result)
           setAllowanceUnverified(false)
         }
       })
@@ -579,7 +913,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
           setPending(null)
         }
       })
-  }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale])
+  }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale, refreshSetup])
   const modelBlocked = setup.readiness.status === 'blocked'
 
   return {
@@ -592,6 +926,18 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     receipt,
     pending,
     error,
+    canRetryUnsent: !!unsentRequest && recoveryCurrent(unsentRequest) && !budgetUnverified && !allowanceUnverified,
+    retryUnsent,
+    canCheckUnsent: !!unsentCheck && requestCurrent(unsentCheck),
+    checkUnsent,
+    checkedUnsent,
+    canFindUnsent: !team && localRequestCheckSupported(setup),
+    findUnsent,
+    unsentOperation,
+    changeUnsentOperation: (value: SubscriptionRecovery['operation']) => {
+      clearUnsent()
+      setUnsentOperation(value)
+    },
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
@@ -621,6 +967,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       setPending(value ? 'budget' : null)
     },
     invalidateBudget: () => {
+      clearUnsent()
       setBudgetUnverified(true)
       setPreview(null)
       setSuggestion(null)
@@ -632,15 +979,15 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     },
     refreshBudgetSetup: (result: TeamSetup) => {
       setBudgetUnverified(false)
-      setSetup(result)
+      refreshSetup(result)
       setAllowanceUnverified(false)
     },
     check: () =>
       void act('check', async () => {
         const result = await client.setup(setup.organizationId ?? null)
 
-        if (alive.current) {
-          setSetup(result)
+        if (alive.current && client.current()) {
+          refreshSetup(result)
           setAllowanceUnverified(false)
         }
       }),
@@ -669,6 +1016,8 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
 
 export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
   const { profile, onReturnFocus } = props
+  const { locale } = useI18n()
+  const subscriptionCopy = setupSubscriptionCopy[locale]
 
   const {
     copy,
@@ -680,6 +1029,15 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     receipt,
     pending,
     error,
+    canRetryUnsent,
+    retryUnsent,
+    canCheckUnsent,
+    checkUnsent,
+    checkedUnsent,
+    canFindUnsent,
+    findUnsent,
+    unsentOperation,
+    changeUnsentOperation,
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
@@ -706,6 +1064,11 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     validate,
     create
   } = useTeamOnboardingDraft(props)
+
+  const subscriptionSelected =
+    setup.setupSubscriptionVersion === 1 &&
+    (setup.generationAllowance?.policyVersion === 3 ||
+      setup.readiness.blockers.includes('subscription_generation_unsupported'))
 
   const readinessId = useId()
   const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)
@@ -793,16 +1156,24 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                 </Button>
               </div>
               <div id={readinessId} role="status">
-                <p>{readinessMessage(setup.readiness, copy)}</p>
+                <p>
+                  {subscriptionSelected
+                    ? modelBlocked
+                      ? setup.generationAllowance?.policyVersion === 3
+                        ? subscriptionCopy.blocked
+                        : subscriptionCopy.intro
+                      : subscriptionCopy.readyForSetup
+                    : readinessMessage(setup.readiness, copy)}
+                </p>
                 {(setup.generationAllowance || allowanceUnverified) && (
                   <p className="eid-team-note">
                     {allowanceUnverified
                       ? copy.allowanceBlocked
                       : {
-                          available: copy.allowanceAvailable.replace(
-                            '{count}',
-                            String(setup.generationAllowance!.remainingCalls)
-                          ),
+                          available: (setup.generationAllowance?.policyVersion === 3
+                            ? subscriptionCopy.allowanceAvailable
+                            : copy.allowanceAvailable
+                          ).replace('{count}', String(setup.generationAllowance!.remainingCalls)),
                           exhausted: copy.allowanceExhausted,
                           running: copy.allowanceRunning,
                           uncertain: copy.allowanceUncertain,
@@ -818,14 +1189,25 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                   total={setup.generationAllowance.remainingCalls}
                 />
               )}
-              <TeamSetupBudgetEditor
-                client={props.client}
-                disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
-                onBusyChange={setBudgetBusy}
-                onInvalidate={invalidateBudget}
-                onRefreshed={refreshBudgetSetup}
-                setup={setup}
-              />
+              {subscriptionSelected ? (
+                <TeamSetupSubscription
+                  client={props.client}
+                  disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
+                  onBusyChange={setBudgetBusy}
+                  onInvalidate={invalidateBudget}
+                  onRefreshed={refreshBudgetSetup}
+                  setup={setup}
+                />
+              ) : (
+                <TeamSetupBudgetEditor
+                  client={props.client}
+                  disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
+                  onBusyChange={setBudgetBusy}
+                  onInvalidate={invalidateBudget}
+                  onRefreshed={refreshBudgetSetup}
+                  setup={setup}
+                />
+              )}
               {!team ? (
                 <>
                   <TeamOnboardingInputs
@@ -925,6 +1307,69 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
           )}
           {(receipt?.readiness ?? preview?.readiness)?.warnings?.includes('new_member_routes_unassigned') && (
             <p className="eid-team-note">{copy.inheritedRoutes}</p>
+          )}
+          {canFindUnsent && !canCheckUnsent && !canRetryUnsent && !receipt && (
+            <details>
+              <summary>{subscriptionCopy.findUnsent}</summary>
+              <p className="eid-team-note" id={`${readinessId}-find-unsent`}>
+                {subscriptionCopy.unsentRestartHelp}
+              </p>
+              <label>
+                {subscriptionCopy.unsentOperation}
+                <select
+                  aria-describedby={`${readinessId}-find-unsent`}
+                  disabled={!!pending || unresolvedCreate}
+                  onChange={event => changeUnsentOperation(event.target.value as SubscriptionRecovery['operation'])}
+                  value={unsentOperation}
+                >
+                  <option value="generate">{copy.generate}</option>
+                  <option value="improve_jobs">{copy.improveJobs}</option>
+                  <option value="improve_goals">{copy.improveGoals}</option>
+                </select>
+              </label>
+              <Button disabled={!!pending || unresolvedCreate} onClick={findUnsent} size="sm" variant="secondary">
+                {subscriptionCopy.findUnsent}
+              </Button>
+            </details>
+          )}
+          {checkedUnsent && !canRetryUnsent && !receipt && (
+            <p role="status">
+              {subscriptionCopy.unsentVerified
+                .replace('{setup}', subscriptionCopy.inspect)
+                .replace('{models}', subscriptionCopy.loadModels)}
+            </p>
+          )}
+          {canCheckUnsent && !canRetryUnsent && !receipt && (
+            <div>
+              <p className="eid-team-note" id={`${readinessId}-check-unsent`}>
+                {subscriptionCopy.checkUnsentHelp}
+              </p>
+              <Button
+                aria-describedby={`${readinessId}-check-unsent`}
+                disabled={!!pending || unresolvedCreate}
+                onClick={checkUnsent}
+                size="sm"
+                variant="secondary"
+              >
+                {subscriptionCopy.checkUnsent}
+              </Button>
+            </div>
+          )}
+          {canRetryUnsent && !receipt && (
+            <div>
+              <p className="eid-team-note" id={`${readinessId}-retry-unsent`}>
+                {subscriptionCopy.retryUnsentHelp}
+              </p>
+              <Button
+                aria-describedby={`${readinessId}-retry-unsent`}
+                disabled={!!pending || unresolvedCreate}
+                onClick={retryUnsent}
+                size="sm"
+                variant="secondary"
+              >
+                {subscriptionCopy.retryUnsent}
+              </Button>
+            </div>
           )}
           {pending && pending !== 'budget' && (
             <Loader

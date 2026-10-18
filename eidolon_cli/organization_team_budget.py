@@ -49,6 +49,13 @@ def validate_policy(raw):
     return {key: raw[key] for key in SUGGESTED_POLICY}
 
 
+def validate_stored_policy(raw):
+    if isinstance(raw, dict) and raw.get('version') == 3:
+        from eidolon_cli.organization_setup_subscription_policy import validate_candidate
+        return validate_candidate(raw)
+    return validate_policy(raw)
+
+
 def _exists(conn, name):
     return conn.execute('SELECT 1 FROM sqlite_master WHERE name=?', (name,)).fetchone() is not None
 
@@ -70,7 +77,7 @@ def _stored_policy(conn):
         saved = json.loads(row[0]) if row else {}
         if not isinstance(saved, dict):
             raise ValueError()
-        policy = validate_policy(saved['setup_budget']) if 'setup_budget' in saved else None
+        policy = validate_stored_policy(saved['setup_budget']) if 'setup_budget' in saved else None
     except (ValueError, TypeError, KeyError):
         raise OwnerPolicyError('setup_budget_corrupt') from None
     if policy is None:
@@ -127,9 +134,14 @@ def _operation_rows(conn, rows, *, allow_missing=None):
 def read_policy(conn):
     """Return the explicitly adopted policy, rejecting incomplete accounting."""
     policy = _stored_policy(conn)
+    from eidolon_cli.organization_setup_subscription_policy import SUBSCRIPTION_TABLES, validate_subscription_ledger
+    present = any(_exists(conn, name) for name in SUBSCRIPTION_TABLES)
+    if present and (policy is None or policy['version'] != 3):
+        raise OwnerPolicyError('subscription_mode_transition_unsupported')
     if policy is not None:
         _operation_rows(conn, _generation_rows(conn))
         _require_receipt(conn, policy)
+        validate_subscription_ledger(conn)
     return policy
 
 
@@ -189,6 +201,9 @@ def budget_view(conn, settings, *, completing_key=None):
     remaining = max(0, total - counts['total'])
     improve_remaining = min(remaining, max(0, improve - counts['improveTeamInput']))
     generate_remaining = min(remaining, max(0, generate - counts['generateTeam']))
+    if policy and policy['version'] == 3:
+        return _subscription_budget_view(conn, policy, settings, rows, counts, total, improve, generate,
+                                         remaining, improve_remaining, generate_remaining, completing_key)
     invalid_tokens = any(type(row['reserved_tokens']) is not int or row['reserved_tokens'] < 0 for row in sent)
     tokens = sum(row['reserved_tokens'] for row in sent) if not invalid_tokens else 0
     token_limit = min(120000, settings.max_total_tokens)
@@ -265,6 +280,9 @@ def _latest_receipt(conn, identity):
 
 
 def _require_receipt(conn, policy):
+    if policy['version'] == 3:
+        from eidolon_cli.organization_setup_subscription_policy import require_subscription_receipt
+        return require_subscription_receipt(conn, policy)
     descriptor = _inspect(conn)
     if descriptor['state'] != 'ready':
         raise OwnerPolicyError('setup_budget_corrupt')
@@ -301,6 +319,8 @@ def _preview(conn, home, params):
         raise OwnerPolicyError('managed_configuration')
     if conn.execute("SELECT 1 FROM organization_team_generations WHERE status IN ('running','uncertain') LIMIT 1").fetchone():
         raise OwnerPolicyError('team_generation_in_progress_or_uncertain')
+    if read_policy(conn) and read_policy(conn)['version'] == 3:
+        raise OwnerPolicyError('subscription_mode_transition_unsupported')
     canonical = validate_policy(params.get('configuration'))
     from eidolon_cli.organization_policy import persisted_settings
     if persisted_settings(conn) != settings:
@@ -379,3 +399,35 @@ def apply_budget(home, params):
         import logging
         logging.getLogger(__name__).exception('Setup budget committed; cached service refresh deferred')
     return result
+
+
+
+def _subscription_budget_view(conn, policy, settings, rows, counts, total, improve, generate,
+                              remaining, improve_remaining, generate_remaining, completing_key):
+    from eidolon_cli.organization_setup_subscription_usage import TransportObservationV1
+    pending = {row['status'] for row in rows if row['idempotency_key'] != completing_key}
+    status = ('uncertain' if 'uncertain' in pending else 'running' if 'running' in pending
+              else 'exhausted' if not remaining or not (improve_remaining or generate_remaining) else 'available')
+    observations = []
+    for row in conn.execute('SELECT idempotency_key,outcome_json FROM organization_setup_subscription_outcomes '
+                            'ORDER BY idempotency_key'):
+        observation = TransportObservationV1.from_dict(json.loads(row['outcome_json']))
+        observations.append({'idempotencyKey': row['idempotency_key'],
+                             'terminalKind': observation.terminal_kind, 'usage': observation.usage.to_dict()})
+    attempts = conn.execute('SELECT count(*) FROM organization_setup_subscription_dispatches').fetchone()[0]
+    observed = [row['usage'] for row in observations if row['usage']['token_status'] == 'observed']
+    all_observed = attempts > 0 and len(observed) == attempts
+    usage = {'version': 1, 'tokenStatus': 'observed' if all_observed else 'unknown',
+             'inputTokens': sum(row['input_tokens'] for row in observed) if all_observed else None,
+             'outputTokens': sum(row['output_tokens'] for row in observed) if all_observed else None,
+             'totalTokens': sum(row['total_tokens'] for row in observed) if all_observed else None,
+             'costStatus': 'unknown', 'costUsd': None, 'subscriptionCalls': attempts,
+             'observations': observations}
+    return {'policyVersion': 3, 'policy': policy, 'usage': counts,
+            'limits': {'improveCalls': improve, 'generationCalls': generate, 'totalCalls': total,
+                       'totalTokens': None, 'maxCostUsd': None},
+            'remaining': {'improveCalls': improve_remaining, 'generationCalls': generate_remaining,
+                          'totalCalls': remaining}, 'status': status,
+            'reservedTokens': None, 'reservedCostUsd': None, 'setupUsage': usage,
+            'requestTimeoutSeconds': min(120, policy['requestTimeoutSeconds'], settings.objective_timeout_seconds),
+            'hardTokenGuarantee': False, 'hardUsdGuarantee': False}

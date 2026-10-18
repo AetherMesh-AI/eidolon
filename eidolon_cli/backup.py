@@ -24,6 +24,9 @@ from utils import (
 )
 
 from eidolon_cli.sizefmt import format_bytes as _format_size
+from eidolon_cli.profiles import (
+    _is_setup_subscription_private_path, _setup_subscription_copy_excluded,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -207,15 +210,18 @@ def _collect_memory_provider_external_paths() -> List[Path]:
 
 def _iter_external_files(base: Path) -> List[Path]:
     """Regular files under *base* (a file or a directory), skipping symlinks, caches, and pyc."""
+    if _setup_subscription_copy_excluded(base):
+        return []
     if base.is_file() and not base.is_symlink():
         return [base]
     if not base.is_dir():
         return []
     files: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
-        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS
+                      and not _setup_subscription_copy_excluded(Path(dirpath) / d)]
         files.extend(fp for fp in (Path(dirpath) / f for f in filenames)
-                     if not (fp.is_symlink() or fp.name in _EXCLUDED_NAMES
+                     if not (_setup_subscription_copy_excluded(fp) or fp.is_symlink() or fp.name in _EXCLUDED_NAMES
                              or fp.name.endswith(_EXCLUDED_SUFFIXES)))
     return files
 
@@ -223,6 +229,8 @@ def _iter_external_files(base: Path) -> List[Path]:
 def _should_exclude(rel_path: Path) -> bool:
     """Return True if *rel_path* (relative to eidolon root) should be skipped."""
     parts = rel_path.parts
+    if _is_setup_subscription_private_path(rel_path):
+        return True
     if _in_excluded_root_dir(rel_path):
         return True
     # ``eidolon-agent`` only matches at the root level; nested same-named dirs are preserved.
@@ -245,7 +253,8 @@ def _iter_backup_files(hermes_root: Path, out_path: Path, skipped_dirs: Optional
         kept = [
             d for d in dirnames
             if (d not in _EXCLUDED_DIRS or (d == "eidolon-agent" and not is_root))
-            and not _in_excluded_root_dir(rel_dir / d)]
+            and not _in_excluded_root_dir(rel_dir / d)
+            and not _setup_subscription_copy_excluded(Path(dirpath) / d)]
         if skipped_dirs is not None:
             skipped_dirs.update(str(rel_dir / d) for d in set(dirnames) - set(kept))
         dirnames[:] = kept
@@ -254,7 +263,7 @@ def _iter_backup_files(hermes_root: Path, out_path: Path, skipped_dirs: Optional
             fpath = hermes_root / rel
             # zipfile.write() follows file symlinks, so skip links before any archive write can
             # copy data from outside HERMES_HOME; never archive the output zip into itself.
-            if _should_exclude(rel) or fpath.is_symlink():
+            if _should_exclude(rel) or fpath.is_symlink() or _setup_subscription_copy_excluded(fpath):
                 continue
             with suppress(OSError, ValueError):
                 if fpath.resolve() == out_path.resolve():
@@ -686,6 +695,10 @@ def _run_backup_locked(args, hermes_root: Path) -> None:
 def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
     """Check that a zip looks like a Eidolon backup."""
     names = zf.namelist()
+    if any(_is_setup_subscription_private_path(n) for n in names):
+        return False, "backup contains private setup subscription state"
+    if any(stat.S_ISLNK(info.external_attr >> 16) for info in zf.infolist()):
+        return False, "backup contains symbolic links"
     if not names:
         return False, "zip archive is empty"
     # Telltale files a eidolon home has — at the root or one level deep (zipped directory).
@@ -843,6 +856,25 @@ def _confirm_import_overwrite(hermes_root: Path) -> bool:
     return False
 
 
+def _validate_setup_subscription_backup_targets(
+    zf: zipfile.ZipFile, prefix: str, hermes_root: Path,
+) -> None:
+    """Reject the entire import before extraction, including existing symlink aliases."""
+    home = Path.home().resolve()
+    for info in zf.infolist():
+        member = info.filename
+        if member.startswith(_EXTERNAL_PREFIX):
+            target = home / member[len(_EXTERNAL_PREFIX):]
+        else:
+            rel = member[len(prefix):] if prefix and member.startswith(prefix) else member
+            target = hermes_root / rel
+        if (_is_setup_subscription_private_path(member)
+                or _setup_subscription_copy_excluded(target)):
+            raise ValueError("Backup import targets private setup subscription state")
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError("Backup import contains symbolic links")
+
+
 def _import_members(
     zf: zipfile.ZipFile, members: List[str], prefix: str, hermes_root: Path, file_count: int
 ) -> tuple[int, int, list[str], list[str], list[tuple[str, tuple[int, int], tuple[int, int]]]]:
@@ -851,6 +883,7 @@ def _import_members(
     ``db_shrunk`` holds ``(rel, live_counts, imported_counts)`` for every session database the
     import replaced with one holding fewer rows — allowed, but never silent (#100960).
     """
+    _validate_setup_subscription_backup_targets(zf, prefix, hermes_root)
     errors: list[str] = []
     skipped_runtime: list[str] = []
     db_shrunk: list[tuple[str, tuple[int, int], tuple[int, int]]] = []
@@ -934,6 +967,11 @@ def run_import(args) -> None:
             print(f"Error: {reason}")
             sys.exit(1)
         prefix = _detect_prefix(zf)
+        try:
+            _validate_setup_subscription_backup_targets(zf, prefix, hermes_root)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            sys.exit(1)
         members = [n for n in zf.namelist() if not n.endswith("/")]
         file_count = len(members)
         print(f"Backup contains {file_count} files\nTarget: {display_eidolon_home()}")
@@ -1086,8 +1124,12 @@ def _quick_snapshot_candidates(home: Path):
     regenerable per-board subtrees (workspaces, attachments) are skipped."""
     for rel in _QUICK_STATE_FILES:
         src = home / rel
+        if _setup_subscription_copy_excluded(src):
+            continue
         if src.is_dir():
             for sub in filter(Path.is_file, src.rglob("*")):
+                if _setup_subscription_copy_excluded(sub):
+                    continue
                 sub_rel = sub.relative_to(home).as_posix()
                 if "/workspaces/" in f"/{sub_rel}/" or "/attachments/" in f"/{sub_rel}/":
                     continue
@@ -1246,6 +1288,13 @@ def restore_quick_snapshot(snapshot_id: str, hermes_home: Optional[Path] = None)
     with open(manifest_path, encoding="utf-8") as f:
         meta = json.load(f)
     snap_res, home_res = snap_dir.resolve(), home.resolve()
+    # A handmade snapshot must not reactivate a grant or overwrite a live handle.
+    # Validate the complete manifest before restoring even its first ordinary file.
+    if any(_setup_subscription_copy_excluded(snap_dir / rel)
+           or _setup_subscription_copy_excluded(home / rel)
+           for rel in meta.get("files", {})):
+        logger.error("Snapshot restore blocked: private setup subscription state")
+        return False
     restored = 0
     for rel in meta.get("files", {}):
         src = snap_dir / rel

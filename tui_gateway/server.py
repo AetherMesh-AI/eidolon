@@ -39,6 +39,21 @@ from tui_gateway.transport import (FanoutTransport, StdioTransport, Transport, b
 
 logger = logging.getLogger(__name__)
 
+# Capture installation and process-profile authority before dotenv or request scopes.
+# Invalid layouts disable only the separately scoped setup subscription surface.
+try:
+    from eidolon_constants import get_default_hermes_root, get_process_eidolon_home
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority
+    _setup_subscription_authority = HostAuthority.capture(
+        get_default_hermes_root, get_process_eidolon_home)
+except (OSError, RuntimeError, ValueError):
+    _setup_subscription_authority = None
+
+
+def _subscription_installation_authority():
+    return _setup_subscription_authority
+
+
 _eidolon_home = get_eidolon_home()
 load_hermes_dotenv(hermes_home=_eidolon_home, project_env=Path(__file__).parent.parent / ".env")
 
@@ -167,6 +182,14 @@ _LONG_HANDLERS = frozenset({
     "organization.credentials.replacementTargets", "organization.credentials.prepareReplacement",
     "organization.credentials.replacementStatus", "organization.credentials.cancelReplacement",
     "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam", "organization.improveTeamInput",
+    "organization.setupSubscriptionPolicy", "organization.previewSetupSubscriptionPolicy",
+    "organization.applySetupSubscriptionPolicy", "organization.setupSubscriptionStatus",
+    "organization.beginSetupSubscription", "organization.cancelSetupSubscription",
+    "organization.prepareSetupSubscriptionOperation", "organization.executeSetupSubscriptionOperation",
+    "organization.reconcileSetupSubscriptionOperation", "organization.cancelSetupSubscriptionOperation",
+    "organization.recoverSetupSubscriptionOperation", "organization.setupSubscriptionModels",
+    "organization.inspectSetupSubscriptionRequest", "organization.reconcileSetupSubscriptionRequest",
+    "organization.setupBudgetPolicy", "organization.previewSetupBudget", "organization.applySetupBudget",
     "organization.sharedAllowance", "organization.previewSharedAllowance", "organization.configureSharedAllowance",
     "organization.previewSharedAllowanceObservation", "organization.recordSharedAllowanceObservation",
     "billing.state", "subscription.state", "subscription.preview", "subscription.change",
@@ -3219,6 +3242,7 @@ from . import (  # noqa: E402
     methods_organization_milestones as _methods_organization_milestones,
     methods_organization_goals as _methods_organization_goals,
     methods_organization_team_setup as _methods_organization_team_setup,
+    methods_organization_setup_subscription as _methods_organization_setup_subscription,
     methods_organization_owner_policy as _methods_organization_owner_policy,
     methods_organization_folder_setup as _methods_organization_folder_setup,
     methods_organization_prepared_validation as _methods_organization_prepared_validation,
@@ -3238,7 +3262,8 @@ for _m in (
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat, _methods_organization_intake,
     _methods_organization_workspaces, _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup, _methods_organization_prepared_validation,
-    _methods_organization_shared_allowance, _methods_organization_team_setup, _methods_organization_credentials,
+    _methods_organization_shared_allowance, _methods_organization_team_setup,
+    _methods_organization_setup_subscription, _methods_organization_credentials,
     _methods_organization_credential_handoff):
     _m.register(sys.modules[__name__])
 del _m

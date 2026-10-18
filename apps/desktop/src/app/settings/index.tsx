@@ -37,6 +37,7 @@ import { $settingsScopeProfile } from '@/store/settings-scope'
 
 import { OrganizationCredentialsSettings } from '../eidolon/organization-credentials'
 import { OwnerPolicySettings } from '../eidolon/organization-owner-policy'
+import { OrganizationSetupConnectionSettings } from '../eidolon/organization-setup-connection'
 import { SharedAllowanceSettings } from '../eidolon/organization-shared-allowance'
 import { OrganizationScenery } from '../eidolon/scenery'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -391,7 +392,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         } : undefined}
       />
     ) : activeView === 'organization' ? (
-      <div className="eid-organization-settings"><OwnerPolicySettings /><SharedAllowanceSettings /><OrganizationCredentialsSettings /></div>
+      <div className="eid-organization-settings"><OwnerPolicySettings /><SharedAllowanceSettings /><OrganizationCredentialsSettings /><OrganizationSetupConnectionSettings /></div>
     ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
     ) : activeView === 'about' ? (
@@ -463,3 +464,4 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
 }
 
 export { SettingsView as SettingsPage }
+
