@@ -1,0 +1,101 @@
+name: PR208 synthetic macOS containment preflight
+
+on:
+  push:
+    branches: [proof/pr208-packaged-containment-20261019]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr208-containment-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  containment:
+    name: Synthetic-only macOS inherited containment controls
+    runs-on: macos-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: harness
+    env:
+      HARNESS_SHA: 1ea2fb185cf78e048aac50eb92bfcbf99b7654ae
+      HARNESS_TREE: 7c3b80ec4e530cbb5aa178eca59e882927805ae5
+      PRODUCT_SHA: 6c071ecac21ee8143b2d34a43b1670e159f0811e
+      PRODUCT_TREE: 008fc3f0a6d66706aa3886a6e0ffed71c2682581
+      EVENT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 1ea2fb185cf78e048aac50eb92bfcbf99b7654ae
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 6c071ecac21ee8143b2d34a43b1670e159f0811e
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Verify native host and exact separate source identities
+        run: |
+          set -euo pipefail
+          mkdir -p ../containment-proof
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/sandbox-exec
+          for name in harness product; do
+            root="$(cd "../$name" && pwd -P)"
+            if [ "$name" = harness ]; then sha="$HARNESS_SHA"; tree="$HARNESS_TREE"; else sha="$PRODUCT_SHA"; tree="$PRODUCT_TREE"; fi
+            test "$(git -C "$root" rev-parse HEAD)" = "$sha"
+            test "$(git -C "$root" rev-parse 'HEAD^{tree}')" = "$tree"
+            test "$(git -C "$root" write-tree)" = "$tree"
+            test -z "$(git -C "$root" status --porcelain --untracked-files=all)"
+            git -C "$root" rev-parse HEAD 'HEAD^{tree}' > "../containment-proof/$name-source.txt"
+          done
+          printf '%s\n' "$EVENT_SHA" > ../containment-proof/event-sha.txt
+          { sw_vers; uname -a; node --version; python --version; } > ../containment-proof/host.txt
+          shasum -a 256 apps/desktop/e2e/packaged-containment.{sb,cjs} apps/desktop/e2e/packaged-containment-probe.py > ../containment-proof/adapter-sha256.txt
+      - name: Run fail-closed receipt and protocol controls
+        run: |
+          set -euo pipefail
+          node --test apps/desktop/e2e/packaged-containment.controls.cjs 2>&1 | tee ../containment-proof/unit-controls.log
+      - name: Prove identical inherited profile with synthetic-only local controls
+        run: |
+          set -euo pipefail
+          node apps/desktop/e2e/packaged-containment.cjs \
+            "$(cd ../product && pwd -P)" "$(pwd -P)" "$(command -v python)" \
+            "$(cd ../containment-proof && pwd -P)" 2>&1 | tee ../containment-proof/native-controls.log
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const { validateReceipt } = require('./apps/desktop/e2e/packaged-containment.cjs')
+          validateReceipt(JSON.parse(fs.readFileSync('../containment-proof/containment-receipt.json', 'utf8')))
+          if (fs.existsSync('../containment-proof/failure.json')) throw new Error('Retained failure exists')
+          NODE
+      - name: Verify no source mutation or product execution
+        if: always()
+        run: |
+          set -euo pipefail
+          for name in harness product; do
+            git -C "../$name" status --porcelain --untracked-files=all > "../containment-proof/$name-final-status.txt"
+            test ! -s "../containment-proof/$name-final-status.txt"
+          done
+          test ! -d ../product/apps/desktop/dist
+          test ! -d ../product/apps/desktop/release
+      - name: Retain raw synthetic controls and failure receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr208-containment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: containment-proof/
+          if-no-files-found: error
+          retention-days: 14
