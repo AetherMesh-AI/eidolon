@@ -4,10 +4,11 @@ Only accounting jobs run in bounded workers. They receive no token lease, form
 text, sender callback, socket, or physical permit. A timed-out dispatch may leave
 a charge, but can never deliver a permit later.
 """
-from contextlib import closing, contextmanager, nullcontext
+from contextlib import closing, contextmanager
 from dataclasses import replace
 import hashlib
 import json
+import math
 from pathlib import Path
 import secrets
 import sqlite3
@@ -196,7 +197,10 @@ def _ledger_connection(home, *, write=False, classify_rollback=False, deadline=N
         raise OwnerPolicyError('identity_conflict')
     if deadline is None:
         deadline = time.monotonic() + ACCOUNTING_WAIT_SECONDS
-    with (ledger_writer(path, deadline=deadline, cancelled=cancelled) if write else nullcontext()), closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'), uri=True,
+    # Read-side send authority must also exclude cooperating connection close /
+    # WAL recovery. An ordinary WAL transaction alone does not block readers.
+    # The coordinator owns the entire connection lifetime, never network I/O.
+    with ledger_writer(path, deadline=deadline, cancelled=cancelled), closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'), uri=True,
                                  timeout=0, isolation_level=None)) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA foreign_keys=ON' if write else 'PRAGMA query_only=ON')
@@ -226,6 +230,7 @@ class _Admission:
         self._shared_paths = shared_paths
         self._authority_digest = authority_digest
         self._dispatch_outcome = 'not_committed'
+        self._dispatch_deadline = None
         self._lock, self._attempted, self._permit = threading.Lock(), False, None
 
     def __reduce__(self):
@@ -239,9 +244,13 @@ class _Admission:
 
     def begin_dispatch(self, request_sha256, *, deadline):
         with self._lock:
-            if self._attempted or request_sha256 != self.binding.request_sha256 or self.network_cancelled():
+            if (self._attempted or request_sha256 != self.binding.request_sha256 or self.network_cancelled()
+                    or type(deadline) not in {int, float} or not math.isfinite(deadline)):
                 return None
             self._attempted = True
+            # Keep the sender's original absolute budget; no send-edge wait can
+            # restart it, even after a successful accounting acknowledgement.
+            self._dispatch_deadline = deadline
         known = _persist(_dispatch_job, (self.home, self.transport, self.evidence, self.binding,
             self.dispatch_nonce_digest, self._abandoned, deadline, self._cancel), deadline, detailed=True)
         self._dispatch_outcome = known
@@ -260,13 +269,21 @@ class _Admission:
 
     def try_send_allowed(self):
         from eidolon_cli.config_primitives import _CONFIG_LOCK
-        if self.network_cancelled() or self.evidence.cheap_guard() is not True:
+        deadline = self._dispatch_deadline
+        if (deadline is None or time.monotonic() >= deadline
+                or self.network_cancelled() or self.evidence.cheap_guard() is not True):
             return False
         if any(Path(path).exists() for path in self._shared_paths):
             return False
         acquired = False
         try:
-            with _ledger_connection(self.home) as conn:
+            with _ledger_connection(self.home,
+                    deadline=min(deadline, time.monotonic() + PUBLICATION_WAIT_SECONDS),
+                    cancelled=self.network_cancelled) as conn:
+                if (self.network_cancelled() or time.monotonic() >= deadline
+                        or self.evidence.cheap_guard() is not True
+                        or any(Path(path).exists() for path in self._shared_paths)):
+                    return False
                 acquired = _CONFIG_LOCK.acquire(blocking=False)
                 if not acquired:
                     return False
@@ -280,9 +297,14 @@ class _Admission:
                 if _closed_sources(conn, self.home)[2] != self._authority_digest:
                     return False
                 _, policy, settings, revision = _current(conn, self.home, self.binding.organization_id)
-                return (policy['generation'] == self.binding.policy_generation
+                allowed = (policy['generation'] == self.binding.policy_generation
                         and revision == self.binding.source_revision and _fresh(conn, settings)
-                        and _read_scope_pin(conn) is None and self.evidence.cheap_guard() is True)
+                        and _read_scope_pin(conn) is None)
+            # Closing a WAL connection is part of the guarded lifecycle. In
+            # particular, the final reply fence must not publish after a close
+            # consumed the remaining request budget or owner was retired.
+            return (allowed and not self.network_cancelled()
+                    and self.evidence.cheap_guard() is True and time.monotonic() < deadline)
         except (OSError, RuntimeError, ValueError, sqlite3.Error):
             return False
         finally:

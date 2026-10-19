@@ -1,9 +1,11 @@
-"""Bounded, in-process coordination for organization setup and scheduler writers.
+"""Bounded coordination for organization writers and send-authority reads.
 
 This is scheduling, not storage or identity authority. SQLite remains the fence
 for other processes, inode aliases and writers outside these cooperating paths.
-Callers keep publication -> writer -> SQLite order; no callback or I/O runs in
-the queue. The registry owns no idle gates and the queue cannot grow unbounded.
+Callers keep publication -> coordinator -> SQLite order. Send-authority reads
+also hold this gate through connection close to exclude WAL cleanup/recovery;
+ordinary observation readers remain concurrent. No network I/O runs under this
+gate. The registry owns no idle gates and the queue cannot grow unbounded.
 """
 from collections import deque
 from contextlib import contextmanager
