@@ -402,10 +402,15 @@ async function observeSubscriptionRpc(page: Page) {
   const boundedInteger = (value: unknown, maximum = 1000) =>
     Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum
 
+  const ticketDigest = (value: Row) => digest(JSON.stringify(Object.keys(value).sort().map(key => [key, value[key]])))
+  const hashText = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+  const uuidText = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value)
+
   const rpc: Row[] = []
 
   const pending = new Map<string, {
     row: Row; organization?: string; source?: string; revision?: number; field: string
+    attempt?: string; ticket?: string; operationKind?: string
     policyApply?: { generation?: number; key?: string; preview?: string }
   }>()
 
@@ -414,7 +419,7 @@ async function observeSubscriptionRpc(page: Page) {
   let closed = false
   type CompletionWaiter = {
     method: string
-    sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string; appliedGeneration?: number }
+    sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string; organization?: string; appliedGeneration?: number; connectionRevision?: number; preparedTicket?: string }
     key?: string
     socket?: string
     completed: boolean
@@ -534,6 +539,9 @@ async function observeSubscriptionRpc(page: Page) {
           source: digest(params.sourceRevision),
           revision: Number.isSafeInteger(params.expectedRevision) && Number(params.expectedRevision) >= 0 ? Number(params.expectedRevision) : undefined,
           field: choice(params.field, ['jobs', 'goals']),
+          attempt: digest(params.attemptId),
+          ticket: params.ticket === undefined ? undefined : ticketDigest(object(params.ticket)),
+          operationKind: choice(params.kind, ['refresh', 'revoke']),
           policyApply: frame.method === 'organization.applySetupSubscriptionPolicy' ? {
             generation: Number.isSafeInteger(params.expectedGeneration) && Number(params.expectedGeneration) >= 1
               ? Number(params.expectedGeneration) : undefined,
@@ -618,6 +626,40 @@ async function observeSubscriptionRpc(page: Page) {
       const receipt = object(result.receipt)
       const apply = expected.policyApply
 
+      if (sequence && sequence.rows.length === 0) {
+        sequence.organization = expected.organization
+      }
+
+      if (sequence && sequence.rows.length === 0 && ['organization.beginSetupSubscription', 'organization.cancelSetupSubscription', 'organization.recoverSetupSubscriptionOperation'].includes(String(expected.row.method))) {
+        sequence.source = expected.source
+      }
+
+      const ticket = object(result.ticket)
+
+      const preparedTicketValid = expected.row.method === 'organization.prepareSetupSubscriptionOperation' ?
+        result.state === 'prepared' && result.verification === 'verified_current' &&
+        Object.keys(ticket).sort().join() === ['version', 'sequence', 'nonce', 'kind', 'bindingDigest', 'authorizationEpoch', 'priorStoreRevision', 'sourceRevision'].sort().join() &&
+        ticket.version === 1 && typeof ticket.sequence === 'string' && /^[1-9][0-9]{0,18}$/.test(ticket.sequence) &&
+        BigInt(ticket.sequence) <= 9223372036854775807n &&
+        hashText(ticket.nonce) && hashText(ticket.bindingDigest) && uuidText(ticket.authorizationEpoch) &&
+        ticket.kind === expected.operationKind && ticket.kind === 'revoke' &&
+        expected.revision !== undefined && ticket.priorStoreRevision === expected.revision &&
+        expected.source !== undefined && hashText(ticket.sourceRevision) && digest(ticket.sourceRevision) === expected.source : null
+
+      const requestRevisionMatchesAction = expected.revision === undefined || sequence?.connectionRevision === undefined
+        ? null : expected.revision === sequence.connectionRevision
+
+      const executeTicketMatchesPrepared = expected.row.method === 'organization.executeSetupSubscriptionOperation'
+        ? expected.ticket !== undefined && expected.ticket === sequence?.preparedTicket && ticketDigest(ticket) === sequence?.preparedTicket : null
+
+      if (sequence && preparedTicketValid) {
+        sequence.preparedTicket = ticketDigest(ticket)
+      }
+
+      if (sequence && expected.row.method === 'organization.setupSubscriptionStatus' && sequence.connectionRevision === undefined && Number.isSafeInteger(result.connectionRevision)) {
+        sequence.connectionRevision = Number(result.connectionRevision)
+      }
+
       const policyReceiptMatchesRequest = apply === undefined ? null :
         result.capabilityVersion === 1 && result.historical === false &&
         receipt.version === 1 && receipt.action === 'retireSetupInheritance' &&
@@ -654,6 +696,18 @@ async function observeSubscriptionRpc(page: Page) {
           sourceMatches: expected.source === undefined ? null : digest(result.sourceRevision) === expected.source,
           sourceMatchesAction: sequence?.source === undefined ? null : digest(result.sourceRevision) === sequence.source,
           policyReceiptMatchesRequest,
+          preparedTicketValid,
+          requestOrganizationMatchesAction: sequence?.organization === undefined || expected.organization === undefined
+            ? null : expected.organization === sequence.organization,
+          requestRevisionMatchesAction,
+          requestSourceMatchesAction: sequence?.source === undefined || expected.source === undefined
+            ? null : expected.source === sequence.source,
+          executeTicketMatchesPrepared,
+          cancelAttemptMatchesRequest: expected.row.method === 'organization.cancelSetupSubscription'
+            ? expected.attempt !== undefined && digest(result.attemptId) === expected.attempt : null,
+          stage: choice(result.stage, ['idle', 'pending', 'exchanging', 'connected', 'completed', 'cancelled', 'locally_retired', 'publication_uncertain', 'reconciliation_required', 'reauthorization_required', 'expired', 'failed', 'access_denied', 'stale_source']),
+          hasAttempt: typeof result.attemptId === 'string' && result.attemptId.length > 0,
+          remoteRevocation: choice(receipt.remoteRevocation, ['confirmed', 'unconfirmed', 'not_applicable']),
           policyGenerationMatchesApplied: expected.row.method === 'organization.setupSubscriptionPolicy' && sequence?.appliedGeneration !== undefined
             ? result.policyGeneration === sequence.appliedGeneration : null,
           savedPolicyVersionThree: result.policyVersion === 3,
@@ -667,7 +721,7 @@ async function observeSubscriptionRpc(page: Page) {
             Array.isArray(result.assumptions) &&
             result.assumptions.length <= 5 &&
             result.assumptions.every(value => validText(value, 300)),
-          state: choice(result.state, ['available', 'blocked', 'configured', 'unconfigured', 'unsupported', 'created']),
+          state: choice(result.state, ['available', 'blocked', 'configured', 'unconfigured', 'unsupported', 'created', 'prepared', 'admitted', 'completed', 'local_retired', 'uncertain']),
           connectionState: choice(result.connectionState, ['absent', 'active', 'refreshing', 'disconnected']),
           hostIdentityState: choice(result.hostIdentityState, [
             'new',
@@ -679,6 +733,7 @@ async function observeSubscriptionRpc(page: Page) {
             typeof result.canMigrateHostIdentity === 'boolean' ? result.canMigrateHostIdentity : null,
           cleanupPending: typeof result.cleanupPending === 'boolean' ? result.cleanupPending : null,
           canCancel: typeof result.canCancel === 'boolean' ? result.canCancel : null,
+          canCancelValid: result.canCancel === undefined || typeof result.canCancel === 'boolean',
           connectionRevisionValid:
             Number.isSafeInteger(result.connectionRevision) && Number(result.connectionRevision) >= 0,
           operationState: choice(operation.state, [
@@ -817,10 +872,16 @@ async function observeSubscriptionRpc(page: Page) {
       method: 'organization.improveTeamInput' | 'organization.generateTeam',
       action: () => Promise<unknown>
     ) => performObserved(method, action),
-    performSetupAction: (kind: 'models' | 'disconnect' | 'policy', action: () => Promise<unknown>) => {
+    performSetupAction: (kind: 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) => {
       // Observe only these existing owner actions. This barrier sends no RPCs
       // and invokes the supplied UI action once, without retrying it.
       const paths = {
+        inspect: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+        begin: ['beginSetupSubscription', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+        migration: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy', 'beginSetupSubscriptionHostMigration', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+        cancel: ['cancelSetupSubscription', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+        recover: ['recoverSetupSubscriptionOperation', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+        settingsDisconnect: ['teamSetup', 'setupSubscriptionStatus', 'prepareSetupSubscriptionOperation', 'executeSetupSubscriptionOperation', 'teamSetup', 'setupSubscriptionStatus'],
         models: [
           'teamSetup',
           'setupSubscriptionStatus',
@@ -1090,7 +1151,7 @@ export async function setupNativeSubscription(
       cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
-      performSetupAction: (kind: 'models' | 'disconnect' | 'policy', action: () => Promise<unknown>) =>
+      performSetupAction: (kind: 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) =>
         rpcObserver!.performSetupAction(kind, action),
       diagnostic: () => {
         const rows = events()

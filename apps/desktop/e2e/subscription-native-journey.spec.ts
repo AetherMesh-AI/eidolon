@@ -136,12 +136,209 @@ async function completePolicyApply(apply: Locator, hostIdentityState: 'current' 
   })
 }
 
+// Each scenario names its exact terminal contract. Completion observes only the
+// existing click's replies; the original UI and accounting checks follow it.
+async function completeConnectionAction(
+  button: Locator,
+  scenario:
+    | 'inspect-new'
+    | 'inspect-legacy'
+    | 'inspect-cancelled'
+    | 'begin-connected'
+    | 'begin-publication-refused'
+    | 'migration-held'
+    | 'migration-connected'
+    | 'cancel-migration'
+    | 'recover-publication'
+    | 'settings-disconnect'
+) {
+  const kind = {
+    'inspect-new': 'inspect',
+    'inspect-legacy': 'inspect',
+    'inspect-cancelled': 'inspect',
+    'begin-connected': 'begin',
+    'begin-publication-refused': 'begin',
+    'migration-held': 'migration',
+    'migration-connected': 'migration',
+    'cancel-migration': 'cancel',
+    'recover-publication': 'recover',
+    'settings-disconnect': 'settingsDisconnect'
+  } as const
+
+  const result = await fixture!.performSetupAction(kind[scenario], () => button.click())
+  const steps = result.steps as { method: string; phase: string; shape: Record<string, unknown> }[]
+  const count = { inspect: 3, begin: 4, migration: 7, cancel: 4, recover: 4, settingsDisconnect: 6 }
+  expect(steps).toHaveLength(count[kind[scenario]])
+  expect(steps.every(row => row.phase === 'result' && row.shape.result === 'object')).toBe(true)
+
+  for (const row of steps) {
+    expect(row.shape).toMatchObject({ requestOrganizationMatchesAction: true })
+
+    if (row.method === 'organization.teamSetup') {
+      expect(row.shape).toMatchObject({
+        state: scenario === 'settings-disconnect' ? 'configured' : 'available',
+        organizationMatches: true,
+        sourceMatchesAction: true
+      })
+    }
+
+    if (row.method === 'organization.setupSubscriptionStatus') {
+      expect(row.shape).toMatchObject({ canCancelValid: true })
+    }
+
+    if (row.method === 'organization.setupSubscriptionPolicy') {
+      expect(row.shape).toMatchObject({ state: 'available', organizationMatches: true, sourceMatchesAction: true })
+    }
+  }
+
+  const terminal = steps[scenario === 'settings-disconnect' ? 5 : steps.length - 2].shape
+  expect(terminal).toMatchObject({ connectionRevisionValid: true, operationRevisionMatchesConnection: true })
+
+  if (scenario === 'inspect-new') {
+    expect(terminal).toMatchObject({
+      connectionState: 'absent',
+      hostIdentityState: 'new',
+      stage: 'idle',
+      hasAttempt: false,
+      cleanupPending: false,
+      canMigrateHostIdentity: false
+    })
+  } else if (scenario === 'inspect-legacy') {
+    expect(terminal).toMatchObject({
+      connectionState: 'active',
+      hostIdentityState: 'migration_required',
+      stage: 'idle',
+      hasAttempt: false,
+      cleanupPending: false,
+      canMigrateHostIdentity: false
+    })
+  } else if (scenario === 'inspect-cancelled' || scenario === 'cancel-migration') {
+    expect(terminal).toMatchObject({
+      connectionState: 'disconnected',
+      hostIdentityState: 'migration_required',
+      stage: 'cancelled',
+      hasAttempt: true,
+      cleanupPending: false,
+      canCancel: false,
+      canMigrateHostIdentity: true
+    })
+
+    if (scenario === 'cancel-migration') {
+      expect(steps[0].shape).toMatchObject({
+        stage: 'cancelled',
+        cancelAttemptMatchesRequest: true,
+        requestSourceMatchesAction: true
+      })
+    }
+  } else if (scenario === 'begin-publication-refused') {
+    expect(steps[0].shape).toMatchObject({
+      stage: 'publication_uncertain',
+      hasAttempt: true,
+      requestSourceMatchesAction: true
+    })
+    expect(terminal).toMatchObject({
+      connectionState: 'disconnected',
+      hostIdentityState: 'current',
+      stage: 'publication_uncertain',
+      cleanupPending: true,
+      canCancel: false,
+      canMigrateHostIdentity: false,
+      operationState: 'recovery_required'
+    })
+  } else if (scenario === 'recover-publication') {
+    expect(steps[0].shape).toMatchObject({
+      state: 'local_retired',
+      remoteRevocation: 'unconfirmed',
+      requestSourceMatchesAction: true
+    })
+    expect(terminal).toMatchObject({
+      connectionState: 'disconnected',
+      hostIdentityState: 'current',
+      stage: 'locally_retired',
+      cleanupPending: false,
+      canCancel: false,
+      canMigrateHostIdentity: false,
+      operationState: 'none'
+    })
+  } else if (scenario === 'settings-disconnect') {
+    expect(steps[1].shape).toMatchObject({
+      connectionState: 'active',
+      hostIdentityState: 'current',
+      cleanupPending: false
+    })
+    expect(steps[2].shape).toMatchObject({
+      state: 'prepared',
+      preparedTicketValid: true,
+      requestRevisionMatchesAction: true,
+      requestSourceMatchesAction: true
+    })
+    expect(steps[3].shape).toMatchObject({
+      state: 'admitted',
+      executeTicketMatchesPrepared: true,
+      requestSourceMatchesAction: true,
+      remoteRevocation: 'unconfirmed'
+    })
+    expect(terminal).toMatchObject({
+      connectionState: 'disconnected',
+      hostIdentityState: 'current',
+      cleanupPending: false,
+      operationState: 'admitted'
+    })
+  } else {
+    const migration = scenario === 'migration-held' || scenario === 'migration-connected'
+    const begin = steps[migration ? 3 : 0].shape
+
+    expect(begin).toMatchObject({ requestSourceMatchesAction: true })
+
+    if (migration) {
+      expect(steps[1].shape).toMatchObject({
+        connectionState: 'disconnected',
+        hostIdentityState: 'migration_required',
+        cleanupPending: false,
+        canMigrateHostIdentity: true,
+        operationState: 'completed'
+      })
+      expect(begin).toMatchObject({ requestRevisionMatchesAction: true, requestSourceMatchesAction: true })
+      expect(steps[1].shape.canCancel === true).toBe(false)
+      expect(steps[1].shape).toMatchObject({ connectionRevisionValid: true, operationRevisionMatchesConnection: true })
+      expect(steps[1].shape).toMatchObject(
+        scenario === 'migration-held'
+          ? { stage: 'idle', hasAttempt: false }
+          : { stage: 'cancelled', hasAttempt: true, canCancel: false }
+      )
+    }
+
+    if (scenario === 'migration-held') {
+      expect(begin).toMatchObject({ stage: 'pending', hasAttempt: true })
+      expect(terminal).toMatchObject({
+        connectionState: 'disconnected',
+        hostIdentityState: 'migration_required',
+        stage: 'pending',
+        hasAttempt: true,
+        cleanupPending: false,
+        canCancel: true,
+        canMigrateHostIdentity: false
+      })
+    } else {
+      expect(begin).toMatchObject({ stage: 'connected', hasAttempt: true })
+      expect(terminal).toMatchObject({
+        connectionState: 'active',
+        hostIdentityState: 'current',
+        stage: 'connected',
+        cleanupPending: false,
+        canCancel: false,
+        canMigrateHostIdentity: false
+      })
+    }
+  }
+}
+
 async function activate(dialog: Locator, legacy: boolean) {
   const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
   const before = fixture!.snapshot()
   expect(before.generations).toHaveLength(legacy ? 1 : 0)
   fixture!.assertQuiet(0)
-  await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+  await completeConnectionAction(connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }), 'inspect-new')
 
   const consent = connection.getByRole('checkbox', {
     name: 'Allow this dedicated connection to be stored locally',
@@ -153,7 +350,7 @@ async function activate(dialog: Locator, legacy: boolean) {
   await expect(begin).toBeDisabled()
   expect(fixture!.events().filter(row => row.kind === 'consent')).toEqual([])
   await consent.check()
-  await begin.click()
+  await completeConnectionAction(begin, 'begin-connected')
   const load = connection.getByRole('button', { name: 'Load account models', exact: true })
   await expect(load).toBeEnabled({ timeout: 30_000 })
   expect(fixture!.hasPrivateStore()).toBe(true)
@@ -372,7 +569,7 @@ test.describe('host-native subscription setup', () => {
       expect(fixture.events()).toEqual(eventsBeforeSettings)
       expect(fixture.snapshot()).toEqual(after)
       fixture.assertQuiet(3)
-      await management.getByRole('button', { name: 'Disconnect setup connection', exact: true }).click()
+      await completeConnectionAction(management.getByRole('button', { name: 'Disconnect setup connection', exact: true }), 'settings-disconnect')
       await expect(management.getByText('Setup connection disconnected locally', { exact: true })).toBeVisible()
       await expect(
         management.getByText(
@@ -594,7 +791,7 @@ test.describe('host-native subscription setup', () => {
     const dialog = await openSetup(false)
     const before = fixture.snapshot()
     const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
-    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }), 'inspect-new')
 
     const consent = connection.getByRole('checkbox', {
       name: 'Allow this dedicated connection to be stored locally',
@@ -602,7 +799,7 @@ test.describe('host-native subscription setup', () => {
     })
 
     await consent.check()
-    await connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }), 'begin-publication-refused')
 
     const blocked = connection.getByText(
       'Setup cannot proceed with the current policy or uncertain request. Check status; no request will be resent automatically.',
@@ -627,7 +824,7 @@ test.describe('host-native subscription setup', () => {
     await expect(consent).toHaveCount(0)
     const recover = connection.getByRole('button', { name: 'Reconcile saved operation', exact: true })
     await expect(recover).toBeEnabled()
-    await recover.click()
+    await completeConnectionAction(recover, 'recover-publication')
     // Recover plus its setup/status/policy reads: four 15s envelopes + 5s UI.
     await expect(
       connection.getByText(
@@ -654,7 +851,7 @@ test.describe('host-native subscription setup', () => {
     const begin = connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
     await expect(begin).toBeDisabled()
     await consent.check()
-    await begin.click()
+    await completeConnectionAction(begin, 'begin-connected')
     const load = connection.getByRole('button', { name: 'Load account models', exact: true })
     await expect(load).toBeEnabled({ timeout: 65_000 })
     expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(2)
@@ -680,7 +877,7 @@ test.describe('host-native subscription setup', () => {
     const dialog = await openSetup(false)
     const before = fixture.snapshot()
     const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
-    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }), 'inspect-new')
 
     const consent = connection.getByRole('checkbox', {
       name: 'Allow this dedicated connection to be stored locally',
@@ -688,7 +885,7 @@ test.describe('host-native subscription setup', () => {
     })
 
     await consent.check()
-    await connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }), 'begin-publication-refused')
 
     const blocked = connection.getByText(
       'Setup cannot proceed with the current policy or uncertain request. Check status; no request will be resent automatically.',
@@ -762,7 +959,7 @@ test.describe('host-native subscription setup', () => {
     await expect(consent).toHaveCount(0)
     const recover = connection.getByRole('button', { name: 'Reconcile saved operation', exact: true })
     await expect(recover).toBeEnabled()
-    await recover.click()
+    await completeConnectionAction(recover, 'recover-publication')
     // Recover plus its setup/status/policy reads: four 15s envelopes + 5s UI.
     await expect(
       connection.getByText(
@@ -790,7 +987,7 @@ test.describe('host-native subscription setup', () => {
     const begin = connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
     await expect(begin).toBeDisabled()
     await consent.check()
-    await begin.click()
+    await completeConnectionAction(begin, 'begin-connected')
     const load = connection.getByRole('button', { name: 'Load account models', exact: true })
     await expect(load).toBeEnabled({ timeout: 65_000 })
     expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(2)
@@ -866,7 +1063,7 @@ test.describe('host-native subscription setup', () => {
     expect(history.generations[0]).toMatchObject({ idempotency_key: 'synthetic-legacy', dispatched: 1 })
     expect(history.subscriptionPolicy).toEqual([])
     fixture.assertQuiet(0)
-    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }), 'inspect-legacy')
     await expect(connection.getByRole('button', { name: 'Load account models', exact: true })).toBeEnabled()
     await expect(connection.getByRole('button', { name: 'Update identity and reconnect', exact: true })).toHaveCount(0)
     expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
@@ -915,7 +1112,7 @@ test.describe('host-native subscription setup', () => {
     fixture.assertQuiet(0)
     await consent.check()
     expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
-    await begin.click()
+    await completeConnectionAction(begin, 'migration-held')
     await expect(connection.getByRole('button', { name: 'Cancel sign-in', exact: true })).toBeEnabled()
     const firstConsent = fixture.events().filter(row => row.kind === 'consent')
     expect(firstConsent).toHaveLength(1)
@@ -934,7 +1131,7 @@ test.describe('host-native subscription setup', () => {
       method: 'organization.beginSetupSubscriptionHostMigration', phase: 'result'
     }))
     expect(fixture.diagnostic().rpc.rpc.some(row => row.method === 'organization.beginSetupSubscription')).toBe(false)
-    await connection.getByRole('button', { name: 'Cancel sign-in', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Cancel sign-in', exact: true }), 'cancel-migration')
     await expect(consent).not.toBeChecked()
     await expect(begin).toBeDisabled()
     expect(fixture.snapshot()).toEqual(oldPolicy)
@@ -947,7 +1144,7 @@ test.describe('host-native subscription setup', () => {
     await expect(dialog).toHaveCount(0)
     dialog = await openSetup(true)
     connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
-    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    await completeConnectionAction(connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }), 'inspect-cancelled')
     consent = connection.getByRole('checkbox', { name: migrationLabel, exact: true })
     begin = connection.getByRole('button', { name: 'Update identity and reconnect', exact: true })
     await expect(connection.getByText(disclosure, { exact: true })).toBeVisible()
@@ -956,7 +1153,7 @@ test.describe('host-native subscription setup', () => {
     expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(1)
     expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toEqual([])
     await consent.check()
-    await begin.click()
+    await completeConnectionAction(begin, 'migration-connected')
     await expect(connection.getByRole('button', { name: 'Load account models', exact: true })).toBeEnabled({ timeout: 30_000 })
     const consents = fixture.events().filter(row => row.kind === 'consent')
     expect(consents).toHaveLength(2)

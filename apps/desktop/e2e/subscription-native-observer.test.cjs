@@ -462,6 +462,18 @@ test('boundary sanitizer rejects unknown labels and retains row/count bounds', (
 })
 
 const setupPaths = {
+  inspect: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+  begin: ['beginSetupSubscription', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+  migration: [
+    'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy',
+    'beginSetupSubscriptionHostMigration', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'
+  ],
+  cancel: ['cancelSetupSubscription', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+  recover: ['recoverSetupSubscriptionOperation', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
+  settingsDisconnect: [
+    'teamSetup', 'setupSubscriptionStatus', 'prepareSetupSubscriptionOperation',
+    'executeSetupSubscriptionOperation', 'teamSetup', 'setupSubscriptionStatus'
+  ],
   policy: ['applySetupSubscriptionPolicy', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
   models: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy', 'setupSubscriptionModels', 'teamSetup'],
   disconnect: [
@@ -519,6 +531,7 @@ for (const kind of Object.keys(setupPaths)) {
       assert.equal(result.steps[3].shape.catalogConnectionMatchesPolicy, true)
     }
     await h.observer.close()
+    assert.deepEqual(h.commands, ['Network.enable'])
   })
 
   test(`${kind} never-settled terminal read refuses at the production deadline`, async () => {
@@ -539,10 +552,37 @@ for (const kind of Object.keys(setupPaths)) {
     assert.equal(actions, 1)
     assert.equal(h.timers.size, 0)
     await h.observer.close()
+    assert.deepEqual(h.commands, ['Network.enable'])
   })
 }
 
-for (const kind of ['models', 'policy']) {
+
+for (const kind of Object.keys(setupPaths)) {
+  test(`${kind} gives each completed step a fresh 15s window without resetting it on a delayed send`, async () => {
+    const h = await harness()
+    let actions = 0, settled = false
+    const observed = h.observer.performSetupAction(kind, async () => { actions++ })
+    observed.then(() => { settled = true }, () => { settled = true })
+    for (const [index, name] of setupPaths[kind].entries()) {
+      h.advance(7500)
+      h.send(index + 1, 'organization.' + name)
+      h.advance(7499)
+      await flush()
+      assert.equal(settled, false)
+      assert.equal(h.timers.size, 1)
+      if (index < setupPaths[kind].length - 1) h.receive(index + 1, setupReply(name))
+    }
+    h.advance(1)
+    await assert.rejects(observed, /subscription_operation_timeout/)
+    assert.equal(actions, 1)
+    assert.deepEqual(h.delays, setupPaths[kind].map(() => 15000))
+    assert.equal(h.timers.size, 0)
+    await h.observer.close()
+    assert.deepEqual(h.commands, ['Network.enable'])
+  })
+}
+
+for (const kind of Object.keys(setupPaths)) {
 for (const failure of [
   'wrong-first',
   'out-of-order',
@@ -586,6 +626,7 @@ for (const failure of [
     assert.equal(h.timers.size, 0)
     assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
     if (failure !== 'close') await h.observer.close()
+    assert.deepEqual(h.commands, ['Network.enable'])
   })
 }
 
@@ -595,7 +636,7 @@ test('setup action allowlist, old-pending and shared inference guard reject befo
   const h = await harness()
   let actions = 0
   await assert.rejects(
-    h.observer.performSetupAction('begin', async () => {
+    h.observer.performSetupAction('unknown', async () => {
       actions++
     }),
     /wait_unavailable/
@@ -843,23 +884,48 @@ for (const scenario of [
   })
 }
 
-for (let missing = 0; missing < setupPaths.policy.length; missing++) {
-  for (const failure of ['missing-send', 'missing-reply', 'error', 'malformed-envelope']) {
-    test(`policy step ${missing + 1} ${failure} fails without resending or extending its deadline`, async () => {
-      const h = await harness(), replies = policyReplies()
-      let clicks = 0
-      const action = h.observer.performSetupAction('policy', async () => {
+for (const kind of Object.keys(setupPaths)) {
+for (let missing = 0; missing < setupPaths[kind].length; missing++) {
+  for (const failure of ['missing-send', 'missing-reply', 'error', 'malformed-envelope', 'empty-envelope', 'error-fallback-teamSetup']) {
+    test(`${kind} step ${missing + 1} ${failure} fails without resending or extending its deadline`, async () => {
+      const h = await harness()
+      const replies = kind === 'policy' ? policyReplies().map(result => ({ result })) : setupPaths[kind].map(setupReply)
+      let clicks = 0, settled = false
+      const action = h.observer.performSetupAction(kind, async () => {
         clicks++
         for (let index = 0; index <= missing; index++) {
           if (index === missing && failure === 'missing-send') break
-          h.send(index + 1, 'organization.' + setupPaths.policy[index], undefined, index === 0 ? policyParams : {})
-          if (index < missing) h.receive(index + 1, { result: replies[index] })
-          else if (failure === 'error') h.receive(index + 1, { error: { code: 5076, message: secret, data: { reason: 'unavailable' } } })
-          else if (failure === 'malformed-envelope') h.receive(index + 1, { result: replies[index], error: {} })
+          h.send(index + 1, 'organization.' + setupPaths[kind][index], undefined,
+            kind === 'policy' && index === 0 ? policyParams : {})
+          if (index < missing) h.receive(index + 1, replies[index])
+          else if (failure === 'error' || failure === 'error-fallback-teamSetup') {
+            h.receive(index + 1, { error: { code: 5076, message: secret, data: { reason: 'unavailable' } } })
+            if (failure === 'error-fallback-teamSetup') {
+              h.send(100, 'organization.teamSetup')
+              h.receive(100, { result: { state: 'available', organizationId: secret, sourceRevision: secret } })
+              for (let remaining = index + 1; remaining < setupPaths[kind].length; remaining++) {
+                h.send(101 + remaining, 'organization.' + setupPaths[kind][remaining])
+                h.receive(101 + remaining, replies[remaining])
+              }
+            }
+          } else if (failure === 'malformed-envelope') h.receive(index + 1, { ...replies[index], error: {} })
+          else if (failure === 'empty-envelope') h.receive(index + 1, {})
         }
       })
+      action.then(() => { settled = true }, () => { settled = true })
       if (failure.startsWith('missing')) {
-        h.advance(14999)
+        // Unrelated and already-completed responses cannot fill the missing
+        // send/reply or restart the next step's existing renderer deadline.
+        h.advance(6000)
+        h.receive(999)
+        if (missing > 0) h.receive(missing, replies[missing - 1])
+        h.receive(missing + 1, replies[missing], 'unrelated-socket')
+        if (failure === 'missing-send') h.receive(missing + 1, replies[missing])
+        await flush()
+        assert.equal(settled, false)
+        h.advance(8999)
+        await flush()
+        assert.equal(settled, false)
         assert.equal(h.timers.size, 1)
         h.advance(1)
       }
@@ -867,10 +933,32 @@ for (let missing = 0; missing < setupPaths.policy.length; missing++) {
       assert.equal(clicks, 1)
       assert.equal(h.timers.size, 0)
       assert.ok(h.delays.every(delay => delay === 15000))
+      assert.equal(h.delays.length, missing + 1)
       assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
       await h.observer.close()
+      assert.deepEqual(h.commands, ['Network.enable'])
     })
   }
+}
+}
+
+for (const kind of Object.keys(setupPaths)) {
+  test(`${kind} refuses prior pending requests and a concurrent inference before its action`, async () => {
+    const h = await harness()
+    let actions = 0
+    h.send(1, 'organization.teamSetup')
+    await assert.rejects(h.observer.performSetupAction(kind, async () => { actions++ }), /wait_unavailable/)
+    h.receive(1)
+    const inference = h.observer.performOperation(method, async () => { h.send(2) })
+    await assert.rejects(h.observer.performSetupAction(kind, async () => { actions++ }), /wait_unavailable/)
+    h.receive(2)
+    await inference
+    await h.observer.close()
+    await assert.rejects(h.observer.performSetupAction(kind, async () => { actions++ }), /wait_unavailable/)
+    assert.equal(actions, 0)
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.commands, ['Network.enable'])
+  })
 }
 
 test('both actual policy helpers await completion before the original saved-copy assertion', () => {
@@ -916,4 +1004,412 @@ test('migration policy callers name the exact identity on each side of migration
   assert.equal((scenario.match(/await reviewMigrationPolicy\(connection, 'current', true\)/g) ?? []).length, 1)
   const activate = journeyParsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'activate').getText(journeyParsed)
   assert.match(activate, /await completePolicyApply\(apply, 'current'\)/)
+})
+
+// Run each connection contract through both actual layers: the CDP observer
+// computes the sanitized evidence, then the journey helper checks that evidence.
+const connectionHelpers = journeyParsed.statements.filter(
+  node => ts.isFunctionDeclaration(node) && node.name?.text === 'completeConnectionAction'
+)
+assert.equal(connectionHelpers.length, 1)
+const connectionHelper = ts.transpileModule(`(${connectionHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const connectionHelperWith = fixture => vm.runInNewContext(connectionHelper, {
+  fixture,
+  expect: value => ({
+    toHaveLength: count => assert.equal(value.length, count),
+    toBe: expected => assert.equal(value, expected),
+    toMatchObject: subset => matchSubset(value, subset)
+  })
+})
+const connectionScenarios = {
+  'inspect-new': 'inspect',
+  'inspect-legacy': 'inspect',
+  'inspect-cancelled': 'inspect',
+  'begin-connected': 'begin',
+  'begin-publication-refused': 'begin',
+  'migration-held': 'migration',
+  'migration-connected': 'migration',
+  'cancel-migration': 'cancel',
+  'recover-publication': 'recover',
+  'settings-disconnect': 'settingsDisconnect'
+}
+const connectionSource = 'd'.repeat(64)
+const connectionTicket = () => ({
+  version: 1,
+  sequence: '17',
+  nonce: 'a'.repeat(64),
+  kind: 'revoke',
+  bindingDigest: 'b'.repeat(64),
+  authorizationEpoch: '11111111-2222-4333-8444-555555555555',
+  priorStoreRevision: 7,
+  sourceRevision: connectionSource
+})
+const connectionReplies = scenario => {
+  const kind = connectionScenarios[scenario]
+  const status = (overrides = {}) => ({
+    connectionState: 'absent', hostIdentityState: 'new', stage: 'idle',
+    cleanupPending: false, canCancel: false, canMigrateHostIdentity: false,
+    connectionRevision: 7, operation: { state: 'none', revision: 7 }, ...overrides
+  })
+  let terminal = status()
+  if (scenario === 'inspect-legacy') terminal = status({ connectionState: 'active', hostIdentityState: 'migration_required' })
+  if (['inspect-cancelled', 'cancel-migration'].includes(scenario)) terminal = status({
+    connectionState: 'disconnected', hostIdentityState: 'migration_required', stage: 'cancelled',
+    attemptId: secret, canMigrateHostIdentity: true
+  })
+  if (['begin-connected', 'migration-connected'].includes(scenario)) terminal = status({
+    connectionState: 'active', hostIdentityState: 'current', stage: 'connected', attemptId: secret
+  })
+  if (scenario === 'begin-publication-refused') terminal = status({
+    connectionState: 'disconnected', hostIdentityState: 'current', stage: 'publication_uncertain',
+    attemptId: secret, cleanupPending: true, operation: { state: 'recovery_required', revision: 7 }
+  })
+  if (scenario === 'migration-held') terminal = status({
+    connectionState: 'disconnected', hostIdentityState: 'migration_required', stage: 'pending',
+    attemptId: secret, canCancel: true
+  })
+  if (scenario === 'recover-publication') terminal = status({
+    connectionState: 'disconnected', hostIdentityState: 'current', stage: 'locally_retired'
+  })
+  if (scenario === 'settings-disconnect') terminal = status({
+    connectionState: 'disconnected', hostIdentityState: 'current', operation: { state: 'admitted', revision: 7 }
+  })
+  const replies = setupPaths[kind].map(name => {
+    if (name === 'teamSetup' || name === 'setupSubscriptionPolicy') return {
+      state: scenario === 'settings-disconnect' ? 'configured' : 'available',
+      organizationId: secret, sourceRevision: scenario === 'settings-disconnect' ? connectionSource : secret
+    }
+    if (name === 'setupSubscriptionStatus') return structuredClone(terminal)
+    if (name === 'beginSetupSubscription' || name === 'beginSetupSubscriptionHostMigration') return {
+      stage: scenario === 'migration-held' ? 'pending' : scenario === 'begin-publication-refused' ? 'publication_uncertain' : 'connected',
+      attemptId: secret
+    }
+    if (name === 'cancelSetupSubscription') return { stage: 'cancelled', attemptId: secret }
+    if (name === 'recoverSetupSubscriptionOperation') return { state: 'local_retired', receipt: { remoteRevocation: 'unconfirmed' } }
+    if (name === 'prepareSetupSubscriptionOperation') return { state: 'prepared', verification: 'verified_current', ticket: connectionTicket() }
+    if (name === 'executeSetupSubscriptionOperation') return { state: 'admitted', ticket: connectionTicket(), receipt: { remoteRevocation: 'unconfirmed' } }
+    throw new Error('Unexpected synthetic connection method')
+  })
+  const params = replies.map(() => scenario === 'settings-disconnect' ? { sourceRevision: connectionSource } : {})
+  if (kind === 'migration') {
+    replies[1] = status({ connectionState: 'disconnected', hostIdentityState: 'migration_required',
+      canMigrateHostIdentity: true, operation: { state: 'completed', revision: 7 } })
+    if (scenario === 'migration-held') {
+      delete replies[1].canCancel // Valid first preflight: no durable attempt yet.
+    } else {
+      replies[1].stage = 'cancelled'
+      replies[1].attemptId = secret
+    }
+    params[3] = { expectedRevision: 7 }
+  }
+  if (kind === 'cancel') params[0] = { attemptId: secret }
+  if (kind === 'settingsDisconnect') {
+    replies[1] = status({ connectionState: 'active', hostIdentityState: 'current' })
+    params[2] = { kind: 'revoke', expectedRevision: 7, sourceRevision: connectionSource }
+    params[3] = { ticket: connectionTicket(), sourceRevision: connectionSource }
+  }
+  return { kind, replies, params, terminal: kind === 'settingsDisconnect' ? 5 : replies.length - 2 }
+}
+const assertConnectionPrivacy = h => {
+  for (const privateValue of [secret, nextSource, connectionSource, 'a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64), connectionTicket().authorizationEpoch]) {
+    assert.ok(!JSON.stringify(h.observer.read()).includes(privateValue))
+  }
+  assert.deepEqual(h.commands, ['Network.enable'])
+}
+
+for (const scenario of Object.keys(connectionScenarios)) {
+  test(`actual connection helper ${scenario} waits past 5s for its exact terminal reply and acts once`, async () => {
+    const h = await harness(), data = connectionReplies(scenario)
+    let clicks = 0, uiAssertions = 0
+    const completed = connectionHelperWith(h.observer)({ click: async () => {
+      clicks++
+      setupPaths[data.kind].forEach((name, index) => {
+        h.send(index + 1, 'organization.' + name, undefined, data.params[index])
+        if (index < data.replies.length - 1) h.receive(index + 1, { result: data.replies[index] })
+      })
+    } }, scenario).then(() => { uiAssertions++ })
+    h.advance(6000)
+    h.receive(999, { result: data.replies.at(-1) })
+    h.receive(data.replies.length, { result: data.replies.at(-1) }, 'unrelated-socket')
+    await flush()
+    assert.equal(uiAssertions, 0)
+    assert.equal(h.observer.read().pending, 1)
+    h.receive(data.replies.length, { result: data.replies.at(-1) })
+    await completed
+    assert.equal(uiAssertions, 1)
+    assert.equal(clicks, 1)
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.delays, data.replies.map(() => 15000))
+    if (data.kind === 'migration') {
+      const preflight = h.observer.read().rpc.filter(row => row.method === 'organization.setupSubscriptionStatus')[0]
+      assert.equal(preflight.shape.canCancel, scenario === 'migration-held' ? null : false)
+      assert.equal(preflight.shape.canCancelValid, true)
+    }
+    assertConnectionPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+const assertConnectionRejected = async (scenario, mutate) => {
+  const h = await harness(), data = connectionReplies(scenario)
+  mutate(data)
+  let clicks = 0, uiAssertions = 0
+  const completed = connectionHelperWith(h.observer)({ click: async () => {
+    clicks++
+    setupPaths[data.kind].forEach((name, index) => {
+      h.send(index + 1, 'organization.' + name, undefined, data.params[index])
+      h.receive(index + 1, data.envelopes?.[index] ?? { result: data.replies[index] })
+    })
+  } }, scenario).then(() => { uiAssertions++ })
+  await assert.rejects(completed)
+  assert.equal(clicks, 1)
+  assert.equal(uiAssertions, 0)
+  assert.equal(h.timers.size, 0)
+  assertConnectionPrivacy(h)
+  const evidence = h.observer.read()
+  await h.observer.close()
+  return evidence
+}
+
+for (const scenario of Object.keys(connectionScenarios)) {
+  const negatives = {
+    'rpc-refusal': data => { data.envelopes = { 0: { error: { code: 5076, message: secret, data: { reason: 'unavailable' } } } } },
+    'non-object-reply': data => { data.replies[data.terminal] = [] },
+    'wrong-organization': data => { data.replies[setupPaths[data.kind].indexOf('teamSetup')].organizationId = nextSource },
+    'team-refusal': data => { data.replies[setupPaths[data.kind].indexOf('teamSetup')].state = 'blocked' },
+    'invalid-revision': data => { data.replies[data.terminal].connectionRevision = -1 },
+    'missing-revision': data => { delete data.replies[data.terminal].connectionRevision },
+    'stale-operation-revision': data => { data.replies[data.terminal].operation.revision = 6 },
+    'cleanup-state-mismatch': data => { data.replies[data.terminal].cleanupPending = !data.replies[data.terminal].cleanupPending },
+    'unknown-identity': data => { data.replies[data.terminal].hostIdentityState = secret },
+    'null-terminal-cancelability': data => { data.replies[data.terminal].canCancel = null },
+    'malformed-terminal-cancelability': data => { data.replies[data.terminal].canCancel = secret },
+    'connection-state-mismatch': data => { data.replies[data.terminal].connectionState = data.replies[data.terminal].connectionState === 'active' ? 'disconnected' : 'active' }
+  }
+  if (scenario !== 'settings-disconnect') {
+    negatives['policy-source-drift'] = data => { data.replies.at(-1).sourceRevision = nextSource }
+    negatives['policy-refusal'] = data => { data.replies.at(-1).state = 'blocked' }
+    negatives['policy-organization-mismatch'] = data => { data.replies.at(-1).organizationId = nextSource }
+    negatives['terminal-stage-mismatch'] = data => { data.replies[data.terminal].stage = 'access_denied' }
+  } else negatives['terminal-team-source-drift'] = data => { data.replies[4].sourceRevision = nextSource }
+  for (const [failure, mutate] of Object.entries(negatives)) {
+    test(`actual connection helper ${scenario} refuses ${failure} before original UI assertions`, async () => {
+      await assertConnectionRejected(scenario, mutate)
+    })
+  }
+}
+
+for (const scenario of ['begin-connected', 'begin-publication-refused', 'cancel-migration', 'recover-publication']) {
+  for (const failure of ['wrong-initial-request-source', 'missing-initial-request-source', 'uniform-post-action-source-drift']) {
+    test(`actual connection helper ${scenario} refuses ${failure}`, async () => {
+      await assertConnectionRejected(scenario, data => {
+        if (failure === 'uniform-post-action-source-drift') {
+          for (const [index, name] of setupPaths[data.kind].entries()) {
+            if (name === 'teamSetup' || name === 'setupSubscriptionPolicy') data.replies[index].sourceRevision = nextSource
+          }
+        } else data.params[0].sourceRevision = failure === 'missing-initial-request-source' ? undefined : nextSource
+      })
+    })
+  }
+}
+
+for (const [scenario, kind] of Object.entries(connectionScenarios)) {
+  for (const [index, name] of setupPaths[kind].entries()) {
+    for (const failure of ['changed', 'missing']) {
+      test(`actual connection helper ${scenario} refuses ${failure} request organization at step ${index + 1}`, async () => {
+        const evidence = await assertConnectionRejected(scenario, data => {
+          data.params[index].expectedOrganizationId = failure === 'changed' ? nextSource : undefined
+          if (failure === 'changed') data.replies[index].organizationId = nextSource
+          else delete data.replies[index].organizationId
+        })
+        assert.equal(evidence.rpc[index].method, 'organization.' + name)
+        if (failure === 'missing') assert.equal(evidence.rpc[index].shape.requestOrganizationMatchesAction, null)
+        else {
+          // A changed first request becomes the anchor, so the next request
+          // must fail correlation. Later changed requests fail directly.
+          const mismatch = index === 0 ? 1 : index
+          assert.equal(evidence.rpc[mismatch].shape.requestOrganizationMatchesAction, false)
+          assert.equal(evidence.rpc[index].shape.organizationMatches, true)
+        }
+      })
+    }
+  }
+}
+
+for (const [expected, received] of [
+  ['inspect-new', 'inspect-legacy'], ['inspect-new', 'inspect-cancelled'],
+  ['inspect-legacy', 'inspect-new'], ['inspect-legacy', 'inspect-cancelled'],
+  ['inspect-cancelled', 'inspect-new'], ['inspect-cancelled', 'inspect-legacy'],
+  ['begin-connected', 'begin-publication-refused'], ['begin-publication-refused', 'begin-connected'],
+  ['migration-held', 'migration-connected'], ['migration-connected', 'migration-held']
+]) {
+  test(`actual connection helper ${expected} cannot accept the complete ${received} state`, async () => {
+    await assertConnectionRejected(expected, data => { data.replies = connectionReplies(received).replies })
+  })
+}
+
+for (const scenario of ['migration-held', 'migration-connected']) {
+  for (const [failure, mutate] of Object.entries({
+    'ineligible-preflight': data => { data.replies[1].canMigrateHostIdentity = false },
+    'wrong-preflight-identity': data => { data.replies[1].hostIdentityState = 'current' },
+    'wrong-preflight-stage': data => { data.replies[1].stage = scenario === 'migration-held' ? 'cancelled' : 'idle' },
+    'wrong-preflight-attempt-presence': data => {
+      if (scenario === 'migration-held') data.replies[1].attemptId = secret
+      else delete data.replies[1].attemptId
+    },
+    'invalid-preflight-revision': data => { data.replies[1].connectionRevision = -1 },
+    'stale-preflight-operation-revision': data => { data.replies[1].operation.revision = 6 },
+    'cancellable-preflight': data => { data.replies[1].canCancel = true },
+    'null-preflight-cancelability': data => { data.replies[1].canCancel = null },
+    'malformed-preflight-cancelability': data => { data.replies[1].canCancel = secret },
+    'wrong-request-source': data => { data.params[3].sourceRevision = nextSource },
+    'missing-request-source': data => { data.params[3].sourceRevision = undefined },
+    'unfinished-preflight-operation': data => { data.replies[1].operation.state = 'admitted' },
+    'stale-request-revision': data => { data.params[3].expectedRevision = 6 },
+    'missing-request-revision': data => { delete data.params[3].expectedRevision },
+    'missing-begin-attempt': data => { delete data.replies[3].attemptId },
+    'unknown-begin-stage': data => { data.replies[3].stage = secret },
+    'post-migration-source-drift': data => { data.replies[4].sourceRevision = nextSource },
+    'wrong-cancel-eligibility': data => { data.replies[data.terminal].canCancel = !data.replies[data.terminal].canCancel },
+    'wrong-migration-eligibility': data => { data.replies[data.terminal].canMigrateHostIdentity = true }
+  })) {
+    test(`actual connection helper ${scenario} refuses ${failure}`, async () => {
+      await assertConnectionRejected(scenario, mutate)
+    })
+  }
+}
+
+test('actual connection helper migration-connected refuses omitted cancellation state after Cancel', async () => {
+  await assertConnectionRejected('migration-connected', data => { delete data.replies[1].canCancel })
+})
+
+for (const scenario of ['begin-connected', 'begin-publication-refused']) {
+  for (const [failure, mutate] of Object.entries({
+    'missing-begin-attempt': data => { delete data.replies[0].attemptId },
+    'unknown-begin-stage': data => { data.replies[0].stage = secret },
+    'wrong-cancel-eligibility': data => { data.replies[data.terminal].canCancel = true },
+    'wrong-migration-eligibility': data => { data.replies[data.terminal].canMigrateHostIdentity = true }
+  })) {
+    test(`actual connection helper ${scenario} refuses ${failure}`, async () => {
+      await assertConnectionRejected(scenario, mutate)
+    })
+  }
+}
+
+for (const [failure, mutate] of Object.entries({
+  'mismatched-cancel-attempt': data => { data.replies[0].attemptId = nextSource },
+  'missing-cancel-request-attempt': data => { delete data.params[0].attemptId },
+  'missing-cancel-reply-attempt': data => { delete data.replies[0].attemptId },
+  'uncancelled-action-stage': data => { data.replies[0].stage = 'pending' },
+  'missing-passive-attempt': data => { delete data.replies[data.terminal].attemptId },
+  'still-cancellable': data => { data.replies[data.terminal].canCancel = true },
+  'ineligible-for-new-migration': data => { data.replies[data.terminal].canMigrateHostIdentity = false }
+})) {
+  test(`actual connection helper cancel-migration refuses ${failure}`, async () => {
+    await assertConnectionRejected('cancel-migration', mutate)
+  })
+}
+
+for (const [failure, mutate] of Object.entries({
+  'non-retired-recovery-result': data => { data.replies[0].state = 'completed' },
+  'wrong-revocation-receipt': data => { data.replies[0].receipt.remoteRevocation = 'confirmed' },
+  'missing-revocation-receipt': data => { delete data.replies[0].receipt },
+  'remaining-operation': data => { data.replies[data.terminal].operation.state = 'recovery_required' },
+  'still-cancellable': data => { data.replies[data.terminal].canCancel = true },
+  'migration-eligible': data => { data.replies[data.terminal].canMigrateHostIdentity = true }
+})) {
+  test(`actual connection helper recover-publication refuses ${failure}`, async () => {
+    await assertConnectionRejected('recover-publication', mutate)
+  })
+}
+
+for (const [failure, mutate] of Object.entries({
+  'inactive-preflight': data => { data.replies[1].connectionState = 'disconnected' },
+  'legacy-preflight': data => { data.replies[1].hostIdentityState = 'migration_required' },
+  'cleanup-preflight': data => { data.replies[1].cleanupPending = true },
+  'wrong-preparation-state': data => { data.replies[2].state = 'uncertain' },
+  'wrong-preparation-verification': data => { data.replies[2].verification = 'stale' },
+  'missing-ticket': data => { delete data.replies[2].ticket },
+  'extra-ticket-field': data => { data.replies[2].ticket.privateValue = secret },
+  'missing-ticket-field': data => { delete data.replies[2].ticket.nonce },
+  'wrong-ticket-version': data => { data.replies[2].ticket.version = 2 },
+  'invalid-ticket-sequence': data => { data.replies[2].ticket.sequence = '01' },
+  'above-int64-ticket-sequence': data => { data.replies[2].ticket.sequence = '9223372036854775808' },
+  'invalid-ticket-nonce': data => { data.replies[2].ticket.nonce = secret },
+  'invalid-ticket-binding': data => { data.replies[2].ticket.bindingDigest = secret },
+  'invalid-ticket-epoch': data => { data.replies[2].ticket.authorizationEpoch = secret },
+  'non-v4-ticket-epoch': data => { data.replies[2].ticket.authorizationEpoch = '11111111-2222-1333-8444-555555555555' },
+  'invalid-variant-ticket-epoch': data => { data.replies[2].ticket.authorizationEpoch = '11111111-2222-4333-4444-555555555555' },
+  'wrong-ticket-kind': data => { data.replies[2].ticket.kind = 'refresh' },
+  'wrong-request-kind': data => { data.params[2].kind = 'refresh' },
+  'wrong-ticket-source': data => { data.replies[2].ticket.sourceRevision = nextSource },
+  'wrong-ticket-revision': data => { data.replies[2].ticket.priorStoreRevision = 6 },
+  'wrong-request-revision': data => { data.params[2].expectedRevision = 6 },
+  'wrong-request-source': data => { data.params[2].sourceRevision = nextSource },
+  'wrong-request-and-ticket-source': data => { data.params[2].sourceRevision = nextSource; data.replies[2].ticket.sourceRevision = nextSource },
+  'matching-but-nonhex-source': data => {
+    data.params.forEach(params => { params.sourceRevision = secret })
+    for (const [index, name] of setupPaths[data.kind].entries()) {
+      if (name === 'teamSetup') data.replies[index].sourceRevision = secret
+    }
+    data.replies[2].ticket.sourceRevision = secret
+    data.params[3].ticket.sourceRevision = secret
+    data.replies[3].ticket.sourceRevision = secret
+  },
+  'missing-request-source': data => { data.params[2].sourceRevision = undefined },
+  'missing-request-revision': data => { delete data.params[2].expectedRevision },
+  'wrong-execution-request-source': data => { data.params[3].sourceRevision = nextSource },
+  'missing-execution-request-source': data => { data.params[3].sourceRevision = undefined },
+  'wrong-execution-ticket': data => { data.params[3].ticket.nonce = 'c'.repeat(64) },
+  'missing-execution-ticket': data => { delete data.params[3].ticket },
+  'altered-execution-reply-ticket': data => { data.replies[3].ticket.nonce = 'c'.repeat(64) },
+  'missing-execution-reply-ticket': data => { delete data.replies[3].ticket },
+  'altered-execution-request-and-reply-ticket': data => { data.params[3].ticket.nonce = 'c'.repeat(64); data.replies[3].ticket.nonce = 'c'.repeat(64) },
+  'wrong-execution-state': data => { data.replies[3].state = 'completed' },
+  'wrong-execution-revocation': data => { data.replies[3].receipt.remoteRevocation = 'confirmed' },
+  'missing-execution-receipt': data => { delete data.replies[3].receipt },
+  'wrong-passive-operation': data => { data.replies[data.terminal].operation.state = 'completed' }
+})) {
+  test(`actual connection helper settings-disconnect refuses ${failure}`, async () => {
+    const evidence = await assertConnectionRejected('settings-disconnect', mutate)
+    if (['above-int64-ticket-sequence', 'non-v4-ticket-epoch', 'invalid-variant-ticket-epoch', 'matching-but-nonhex-source'].includes(failure)) {
+      const prepared = evidence.rpc.find(row => row.method === 'organization.prepareSetupSubscriptionOperation')
+      assert.equal(prepared.shape.preparedTicketValid, false)
+      assert.equal(prepared.shape.requestSourceMatchesAction, true)
+      assert.equal(prepared.shape.requestRevisionMatchesAction, true)
+    }
+    if (['wrong-execution-request-source', 'missing-execution-request-source'].includes(failure)) {
+      const executed = evidence.rpc.find(row => row.method === 'organization.executeSetupSubscriptionOperation')
+      assert.equal(executed.shape.executeTicketMatchesPrepared, true)
+      assert.equal(executed.shape.requestSourceMatchesAction, failure === 'wrong-execution-request-source' ? false : null)
+    }
+  })
+}
+
+// Inspect real call expressions, rather than matching synthetic helper text.
+test('every connection action call site selects its explicit contract before the original UI checks', () => {
+  const scenarios = []
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'completeConnectionAction') {
+      assert.ok(ts.isAwaitExpression(node.parent))
+      assert.equal(node.arguments.length, 2)
+      assert.ok(ts.isStringLiteral(node.arguments[1]))
+      scenarios.push(node.arguments[1].text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(journeyParsed)
+  const counts = Object.fromEntries(Object.keys(connectionScenarios).map(scenario => [scenario, scenarios.filter(value => value === scenario).length]))
+  assert.deepEqual(counts, {
+    'inspect-new': 3, 'inspect-legacy': 1, 'inspect-cancelled': 1,
+    'begin-connected': 3, 'begin-publication-refused': 2,
+    'migration-held': 1, 'migration-connected': 1, 'cancel-migration': 1,
+    'recover-publication': 2, 'settings-disconnect': 1
+  })
+  assert.equal(scenarios.length, 16)
+  assert.doesNotMatch(journey, /await (begin|recover)\.click\(\)/)
+  assert.doesNotMatch(journey, /getByRole\('button', \{ name: '(Set up ChatGPT|Continue with ChatGPT|Disconnect setup connection|Cancel sign-in|Update identity and reconnect)'[^\n]+\.click\(\)/)
+  assert.doesNotMatch(connectionHelpers[0].getText(journeyParsed), /\.click\([^)]*\)[\s\S]*\.click\(/)
 })
