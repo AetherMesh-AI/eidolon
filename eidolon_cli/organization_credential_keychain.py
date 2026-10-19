@@ -40,6 +40,7 @@ class _MacAPI:
             'SecKeychainGetStatus': ([pointer, ctypes.POINTER(ctypes.c_uint32)], ctypes.c_int32),
             'SecItemAdd': ([pointer, ctypes.POINTER(pointer)], ctypes.c_int32),
             'SecItemCopyMatching': ([pointer, ctypes.POINTER(pointer)], ctypes.c_int32),
+            'SecItemDelete': ([pointer], ctypes.c_int32),
         }
         for name, (args, returns) in signatures.items():
             function = getattr(self.sec, name)
@@ -65,7 +66,7 @@ class _MacAPI:
             self.cf.CFRelease(reference)
 
     @contextmanager
-    def query(self, *, service, account, keychain, value=None):
+    def query(self, *, service, account, keychain, value=None, deleting=False):
         owned = []
         def text(value):
             item = self.cf.CFStringCreateWithCString(None, value.encode(), 0x08000100)
@@ -85,8 +86,9 @@ class _MacAPI:
                 array = self.cf.CFArrayCreate(None, items, 1, None)
                 owned.append(array)
                 pairs[self.constant('kSecMatchSearchList')] = array
-                pairs[self.constant('kSecReturnData')] = self.constant('kCFBooleanTrue')
-                pairs[self.constant('kSecMatchLimit')] = self.constant('kSecMatchLimitOne')
+                if not deleting:
+                    pairs[self.constant('kSecReturnData')] = self.constant('kCFBooleanTrue')
+                    pairs[self.constant('kSecMatchLimit')] = self.constant('kSecMatchLimitOne')
             else:
                 buffer = ctypes.create_string_buffer(value)
                 try:
@@ -158,3 +160,14 @@ class MacKeychainBackend:
             consumer(ctypes.string_at(api.cf.CFDataGetBytePtr(output), length))
         finally:
             api.cf.CFRelease(output)
+
+
+    def delete(self, reference, binding):
+        if reference != binding_reference(binding):
+            raise CredentialError('scope_denied')
+        api = self._require()
+        with api.keychain(self.keychain_path) as keychain, api.query(
+                service=self.service, account=reference, keychain=keychain, deleting=True) as query:
+            result = api.sec.SecItemDelete(query)
+            if result != -25300:  # errSecItemNotFound: already cleaned up.
+                api.check(result)

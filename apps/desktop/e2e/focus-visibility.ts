@@ -7,6 +7,12 @@ export async function verifyKeyboardFocus(page: Page, target: Locator, label: st
   await target.focus()
   await page.keyboard.press(approach === 'next' ? 'Tab' : 'Shift+Tab')
   await page.keyboard.press(approach === 'next' ? 'Shift+Tab' : 'Tab')
+
+  return expectKeyboardFocusVisible(target, label)
+}
+
+/** Assert the current focus without refocusing, scrolling, or traversing again. */
+export async function expectKeyboardFocusVisible(target: Locator, label: string) {
   await expect(target).toBeFocused()
   const evidence = await target.evaluate(element => {
     const style = getComputedStyle(element)

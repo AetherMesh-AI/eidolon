@@ -221,27 +221,193 @@ it.each([
 it('retains authoritative shared allowance on suggestions without counting attempts locally', async () => {
   const generationAllowance = { status: 'exhausted', remainingCalls: 0 }
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({ ...suggestion, generationAllowance })
+  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({
+    ...suggestion,
+    generationAllowance
+  })
 })
 
 it('accepts explicitly versioned split allowance while preserving operation-specific counters', async () => {
   const generationAllowance = {
-    policyVersion: 2, status: 'available', remainingCalls: 7,
+    policyVersion: 2,
+    status: 'available',
+    remainingCalls: 7,
     remainingByOperation: { improveTeamInput: 4, generateTeam: 3 }
   }
 
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({ ...suggestion, generationAllowance })
+  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({
+    ...suggestion,
+    generationAllowance
+  })
 })
 
 it.each([
   { policyVersion: 2, status: 'available', remainingCalls: 7 },
-  { policyVersion: 3, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 4, generateTeam: 3 } },
-  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 8, generateTeam: 3 } },
-  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: true, generateTeam: 3 } },
-  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 4, generateTeam: 3, legacy: 0 } },
+  {
+    policyVersion: 3,
+    status: 'available',
+    remainingCalls: 7,
+    remainingByOperation: { improveTeamInput: 4, generateTeam: 3 }
+  },
+  {
+    policyVersion: 2,
+    status: 'available',
+    remainingCalls: 7,
+    remainingByOperation: { improveTeamInput: 8, generateTeam: 3 }
+  },
+  {
+    policyVersion: 2,
+    status: 'available',
+    remainingCalls: 7,
+    remainingByOperation: { improveTeamInput: true, generateTeam: 3 }
+  },
+  {
+    policyVersion: 2,
+    status: 'available',
+    remainingCalls: 7,
+    remainingByOperation: { improveTeamInput: 4, generateTeam: 3, legacy: 0 }
+  },
   { status: 'available', remainingCalls: 3, remainingByOperation: { improveTeamInput: 3, generateTeam: 3 } }
 ])('rejects malformed split allowance %#', async generationAllowance => {
   const { client } = improvementClient({ ...suggestion, generationAllowance })
   await expect(client.improve(improvementSetup, improvementInput)).rejects.toThrow('invalid_allowance')
+})
+
+const savedRequestSetup = { ...improvementSetup, sourceRevision: 'a'.repeat(64) }
+
+const savedRequestInput = {
+  jobs: 'Research',
+  goals: 'A weekly report',
+  namingStyle: 'Short names',
+  operation: 'improve_jobs' as const
+}
+
+const savedRequest = {
+  version: 1 as const,
+  disposition: 'reconcile_unsent' as const,
+  idempotencyKey: 'original-key',
+  operation: savedRequestInput.operation,
+  sourceRevision: savedRequestSetup.sourceRevision!
+}
+
+it('keeps exact-input discovery read-only and confirms only the explicit local check with the original key', async () => {
+  const { client, request } = improvementClient({ pending: savedRequest, scope: {} })
+  await expect(client.inspectSubscriptionRequest(savedRequestSetup, savedRequestInput)).resolves.toEqual(savedRequest)
+  expect(request.mock.calls[0]).toEqual([
+    'organization.inspectSetupSubscriptionRequest',
+    {
+      expectedOrganizationId: savedRequestSetup.organizationId,
+      sourceRevision: savedRequestSetup.sourceRevision,
+      ...savedRequestInput
+    }
+  ])
+  request.mockResolvedValueOnce({ recovery: { ...savedRequest, disposition: 'retry_unsent' }, scope: {} })
+  const original = { ...savedRequestInput, idempotencyKey: savedRequest.idempotencyKey }
+  await expect(client.reconcileSubscriptionRequest(savedRequestSetup, original)).resolves.toEqual({
+    ...savedRequest,
+    disposition: 'retry_unsent'
+  })
+  expect(request.mock.calls[1]).toEqual([
+    'organization.reconcileSetupSubscriptionRequest',
+    {
+      expectedOrganizationId: savedRequestSetup.organizationId,
+      sourceRevision: savedRequestSetup.sourceRevision,
+      ...original,
+      confirmed: true
+    }
+  ])
+  request.mockResolvedValueOnce({ pending: null })
+  await expect(client.inspectSubscriptionRequest(savedRequestSetup, savedRequestInput)).resolves.toBeNull()
+  expect(request).toHaveBeenCalledTimes(3)
+})
+
+it.each(['shape', 'version', 'disposition', 'key', 'oversized_key', 'operation', 'source', 'extra'])(
+  'rejects %s discovery/check metadata rather than authorizing a new request',
+  async kind => {
+    const pending: Record<string, unknown> = { ...savedRequest }
+
+    if (kind === 'version') {
+      pending.version = 2
+    }
+
+    if (kind === 'disposition') {
+      pending.disposition = 'automatic_retry'
+    }
+
+    if (kind === 'key') {
+      pending.idempotencyKey = ''
+    }
+
+    if (kind === 'oversized_key') {
+      pending.idempotencyKey = 'x'.repeat(129)
+    }
+
+    if (kind === 'operation') {
+      pending.operation = 'improve_goals'
+    }
+
+    if (kind === 'source') {
+      pending.sourceRevision = 'b'.repeat(64)
+    }
+
+    if (kind === 'extra') {
+      pending.dispatched = false
+    }
+
+    const { client, request } = improvementClient(kind === 'shape' ? [] : { pending })
+    await expect(client.inspectSubscriptionRequest(savedRequestSetup, savedRequestInput)).rejects.toThrow(
+      'invalid_pending_request'
+    )
+    const recovery = { ...pending, disposition: kind === 'disposition' ? 'reconcile_unsent' : 'retry_unsent' }
+    request.mockResolvedValueOnce(kind === 'shape' ? [] : { recovery })
+    await expect(
+      client.reconcileSubscriptionRequest(savedRequestSetup, {
+        ...savedRequestInput,
+        idempotencyKey: savedRequest.idempotencyKey
+      })
+    ).rejects.toThrow('invalid_reconciled_request')
+    expect(request).toHaveBeenCalledTimes(2)
+  }
+)
+
+it.each(['resolve', 'reject'] as const)('fences a late local check %s after owner change', async outcome => {
+  let resolve!: (value: unknown) => void, reject!: (failure: unknown) => void
+  let key = 'owner-a'
+
+  let changed = () => {}
+
+  const request = vi.fn(
+    () =>
+      new Promise((yes, no) => {
+        resolve = yes
+        reject = no
+      })
+  )
+
+  const client = createTeamOnboardingClient(
+    () => ({ key, ownerKey: key, profile: 'default', eligible: true, request: request as never }),
+    listener => {
+      changed = listener
+
+      return () => {}
+    }
+  )
+
+  const check = client.reconcileSubscriptionRequest(savedRequestSetup, {
+    ...savedRequestInput,
+    idempotencyKey: savedRequest.idempotencyKey
+  })
+
+  key = 'owner-b'
+  changed()
+
+  if (outcome === 'resolve') {
+    resolve({ recovery: { ...savedRequest, disposition: 'retry_unsent' } })
+  } else {
+    reject({ code: 5076, data: { recovery: { ...savedRequest, disposition: 'retry_unsent' } } })
+  }
+
+  await expect(check).rejects.toThrow('stale')
+  expect(request).toHaveBeenCalledTimes(1)
 })

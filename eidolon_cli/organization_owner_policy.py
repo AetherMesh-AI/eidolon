@@ -3,13 +3,15 @@
 Identity is a precondition, never a routing key. Read/preview do not construct a
 store, provision identity, adopt policy, discover providers or start execution.
 """
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 import time
+
+from eidolon_cli.organization_ledger_writer import ledger_writer, PUBLICATION_WAIT_SECONDS
 
 from eidolon_cli.organization_config import OrganizationSettings, profile_configuration_scope
 from eidolon_cli.organization_metadata import _inspect, _uuid, _text
@@ -73,7 +75,8 @@ def _connection(home, *, write=False):
     if not path.exists():
         raise OwnerPolicyError('unconfigured')
     try:
-        with closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'),
+        with (ledger_writer(path, deadline=time.monotonic() + PUBLICATION_WAIT_SECONDS)
+              if write else nullcontext()), closing(sqlite3.connect(path.absolute().as_uri() + ('?mode=rw' if write else '?mode=ro'),
                                      uri=True, timeout=5 if write else .25, isolation_level=None)) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute('PRAGMA foreign_keys=ON' if write else 'PRAGMA query_only=ON')

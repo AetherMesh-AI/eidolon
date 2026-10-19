@@ -318,13 +318,46 @@ export function backendCommandMatches(command: unknown): boolean {
 }
 
 /** Coordinates all quit paths so asynchronous backend teardown runs once. */
-export function createBackendShutdownCoordinator(teardown: () => Promise<void> | void) {
+interface ShutdownChild {
+  once: (event: 'exit' | 'close', listener: () => void) => unknown
+}
+
+export function createBackendShutdownCoordinator<
+  TChild extends ShutdownChild = ShutdownChild
+>(teardown: (children: readonly TChild[]) => Promise<void> | void) {
   let completion: Promise<void> | undefined
+  const children = new Set<TChild>()
+
+  function assertCanStart(): void {
+    if (completion) {
+      throw new Error(
+        'Eidolon backend start was cancelled because Desktop is shutting down.'
+      )
+    }
+  }
 
   return {
+    assertCanStart,
+    // Factory, admission and handle retention are synchronous: shutdown cannot
+    // miss a child while its asynchronous identity claim or readiness is pending.
+    spawnChild(factory: () => TChild): TChild {
+      assertCanStart()
+      const child = factory()
+      children.add(child)
+
+      const release = () => {
+        children.delete(child)
+      }
+
+      child.once('exit', release)
+      // A failed spawn emits close without exit. It owns no surviving process.
+      child.once('close', release)
+
+      return child
+    },
     run(): Promise<void> {
       if (!completion) {
-        completion = Promise.resolve().then(teardown)
+        completion = Promise.resolve().then(() => teardown([...children]))
       }
 
       return completion
