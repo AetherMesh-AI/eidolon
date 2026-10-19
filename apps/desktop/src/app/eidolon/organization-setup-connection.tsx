@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 import { setupConnectionCopy } from '@/i18n/organization-setup-connection'
+import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscription'
 
 import { subscribeOrganizationDirectorySource } from './organization-directory-runtime'
 import {
@@ -58,7 +59,12 @@ function SetupConnectionPanel({ organizationId }: { organizationId: string }) {
   // eslint-disable-next-line no-restricted-syntax -- Own one captured socket for this keyed owner/organization panel.
   useEffect(() => {
     alive.current = true
-    const current = createOrganizationSetupConnectionClient(readOrganizationMetadataScope, subscribeOrganizationDirectorySource)
+
+    const current = createOrganizationSetupConnectionClient(
+      readOrganizationMetadataScope,
+      subscribeOrganizationDirectorySource
+    )
+
     client.current = current
     void run(value => value.inspect(organizationId))
 
@@ -71,26 +77,47 @@ function SetupConnectionPanel({ organizationId }: { organizationId: string }) {
 
   const status = snapshot?.status
   const disconnected = status?.connectionState === 'disconnected'
-  const canDisconnect = status && ['active', 'refreshing'].includes(status.connectionState)
+  const available = snapshot?.capability === 'available'
+  const canDisconnect = available && status && ['active', 'refreshing'].includes(status.connectionState)
 
-  return <>
-    {pending && <p role="status">{copy.loading}</p>}
-    {error && <p role="alert">{copy.error}</p>}
-    {snapshot && <>
-      <p role={status ? 'status' : 'alert'}>{status ? copy[status.connectionState] : copy.unknown}</p>
-      {status?.cleanupPending && <p role="status">{copy.cleanup}</p>}
-      {disconnected && <p>{copy.remoteUnknown}</p>}
-      {snapshot.setup.state === 'configured'
-        ? <p>{copy.setupFinished}</p>
-        : <><p>{copy.freshOnly}</p><Link to="/home">{copy.openSetup}</Link></>}
-    </>}
-    <div className="flex flex-wrap gap-2">
-      <Button disabled={pending} onClick={() => void run(value => value.inspect(organizationId))} variant="ghost">{copy.check}</Button>
-      {snapshot && <Button disabled={pending} onClick={() => void run(value => value.recover(snapshot))} variant="secondary">{copy.recover}</Button>}
-      {canDisconnect && <Button disabled={pending} onClick={() => void run(value => value.disconnect(snapshot!))} variant="secondary">{copy.disconnect}</Button>}
-    </div>
-    <p className="text-sm text-muted-foreground">{copy.disconnectNote}</p>
-  </>
+  return (
+    <>
+      {pending && <p role="status">{copy.loading}</p>}
+      {error && <p role="alert">{copy.error}</p>}
+      {snapshot?.capability === 'unavailable' && <p role="status">{setupSubscriptionCopy[locale].unsupported}</p>}
+      {available && (
+        <>
+          <p role={status ? 'status' : 'alert'}>{status ? copy[status.connectionState] : copy.unknown}</p>
+          {status?.cleanupPending && <p role="status">{copy.cleanup}</p>}
+          {disconnected && <p>{copy.remoteUnknown}</p>}
+          {snapshot.setup.state === 'configured' ? (
+            <p>{copy.setupFinished}</p>
+          ) : (
+            <>
+              <p>{copy.freshOnly}</p>
+              <Link to="/home">{copy.openSetup}</Link>
+            </>
+          )}
+        </>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={pending} onClick={() => void run(value => value.inspect(organizationId))} variant="ghost">
+          {copy.check}
+        </Button>
+        {available && (
+          <Button disabled={pending} onClick={() => void run(value => value.recover(snapshot))} variant="secondary">
+            {copy.recover}
+          </Button>
+        )}
+        {canDisconnect && (
+          <Button disabled={pending} onClick={() => void run(value => value.disconnect(snapshot!))} variant="secondary">
+            {copy.disconnect}
+          </Button>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground">{copy.disconnectNote}</p>
+    </>
+  )
 }
 
 export function OrganizationSetupConnectionSettings() {
@@ -100,15 +127,29 @@ export function OrganizationSetupConnectionSettings() {
   const metadata = view.descriptor?.state === 'ready' ? view.descriptor.metadata : null
   const eligible = scope.eligible && Boolean(metadata) && !view.error
 
-  return <section aria-label={copy.title} className="grid min-w-0 gap-4">
-    <h3 className="text-base font-medium">{copy.title}</h3>
-    <p className="text-sm text-muted-foreground">{copy.purpose}</p>
-    {eligible && metadata ? <SetupConnectionPanel
-      key={JSON.stringify([scope.key, scope.ownerKey, scope.profile, metadata.organizationId, metadata.owner.ownerId])}
-      organizationId={metadata.organizationId}
-    /> : <>
-      <p role="status">{copy.unavailable}</p>
-      <Button disabled={view.busy || !scope.eligible} onClick={() => void client.read()} variant="ghost">{copy.check}</Button>
-    </>}
-  </section>
+  return (
+    <section aria-label={copy.title} className="grid min-w-0 gap-4">
+      <h3 className="text-base font-medium">{copy.title}</h3>
+      <p className="text-sm text-muted-foreground">{copy.purpose}</p>
+      {eligible && metadata ? (
+        <SetupConnectionPanel
+          key={JSON.stringify([
+            scope.key,
+            scope.ownerKey,
+            scope.profile,
+            metadata.organizationId,
+            metadata.owner.ownerId
+          ])}
+          organizationId={metadata.organizationId}
+        />
+      ) : (
+        <>
+          <p role="status">{copy.unavailable}</p>
+          <Button disabled={view.busy || !scope.eligible} onClick={() => void client.read()} variant="ghost">
+            {copy.check}
+          </Button>
+        </>
+      )}
+    </section>
+  )
 }

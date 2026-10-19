@@ -65,7 +65,10 @@ const labels = {
     manual: 'Set up manually',
     preset: 'Research and writing',
     validate: 'Review changes',
-    unsupported: 'The selected Codex subscription is not supported for AI team setup yet.'
+    subscriptionIntro: 'Connect ChatGPT separately for Generate and Improve. Existing Codex sign-in is not used.',
+    subscriptionTitle: 'ChatGPT plan for setup',
+    unsupportedPlatform:
+      'This requires Eidolon running locally on a Mac. Linux, Windows and remote connections are not supported.'
   },
   ar: {
     setup: 'إعداد المؤسسة',
@@ -91,7 +94,9 @@ const labels = {
     manual: 'إعداد يدوي',
     preset: 'البحث والكتابة',
     validate: 'مراجعة التغييرات',
-    unsupported: 'اشتراك Codex المحدد غير مدعوم بعد لإعداد الفريق بالذكاء الاصطناعي.'
+    subscriptionIntro: 'اربط ChatGPT بشكل منفصل للتوليد والتحسين. لن يُستخدم تسجيل دخول Codex الحالي.',
+    subscriptionTitle: 'خطة ChatGPT للإعداد',
+    unsupportedPlatform: 'يتطلب تشغيل Eidolon محلياً على Mac. لا يُدعم Linux أو Windows أو الاتصال البعيد.'
   }
 }
 
@@ -604,7 +609,13 @@ p.write_text(yaml.safe_dump(config))
     )
     await expect(f.page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
     const dialog = await openSetup(f, locale)
-    await expect(dialog.getByRole('status')).toContainText(text.unsupported)
+    await expect(dialog.getByRole('status')).toContainText(text.subscriptionIntro)
+
+    if (process.platform !== 'darwin') {
+      const subscription = dialog.getByRole('region', { name: text.subscriptionTitle, exact: true })
+      await expect(subscription.getByText(text.unsupportedPlatform, { exact: true })).toBeVisible()
+    }
+
     const jobs = dialog.getByLabel(text.jobs, { exact: true })
     await expect(jobs).toBeEnabled()
     await jobs.fill('Keep my research description')

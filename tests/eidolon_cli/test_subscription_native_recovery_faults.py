@@ -227,12 +227,14 @@ def test_inference_guard_allows_unsent_history_but_requires_every_dispatched_mar
         assert edges.events == []
 
 
-def ancestor_probe_rig(home, monkeypatch, *, target=None, worker=False, wrong_code=False, fail_renewal=False):
+def ancestor_probe_rig(home, monkeypatch, *, target=None, worker=False, wrong_code=False, fail_renewal=False, kind='ancestor_churn_once', read_fds=None):
     from tests.eidolon_cli.subscription_native_fixture import AvailabilityProbe
     reads = []
     target = target or home.parent
     def native_edge(api, fstatx, fd, before, *, allow_directory_churn=False):
         reads.append(allow_directory_churn)
+        if read_fds is not None:
+            read_fds.append(fd)
         if fail_renewal and not allow_directory_churn:
             raise ValueError('Synthetic read failure')
         return os.fstat(fd), b'synthetic-complete-ACL'
@@ -265,7 +267,7 @@ def ancestor_probe_rig(home, monkeypatch, *, target=None, worker=False, wrong_co
     monkeypatch.setattr(filesystem, '_read_darwin_acl', native_edge)
     monkeypatch.setattr(store.SubscriptionStore, '_decrypt', decrypt)
     monkeypatch.setattr(store.SubscriptionStore, '_connect_ticket_grant', connect)
-    probe = AvailabilityProbe(home, 'ancestor_churn_once')
+    probe = AvailabilityProbe(home, kind)
     probe.install(monkeypatch.setattr)
     instance = object.__new__(store.SubscriptionStore)
     instance.profile = home
@@ -273,16 +275,20 @@ def ancestor_probe_rig(home, monkeypatch, *, target=None, worker=False, wrong_co
 
 
 @requires_descriptor
-def test_ancestor_probe_renews_real_sibling_change_once_then_cleans_outside_check(home, monkeypatch):
-    probe, instance, reads = ancestor_probe_rig(home, monkeypatch)
+@pytest.mark.parametrize('kind', ['ancestor_churn_once', 'ancestor_final_path_once'])
+def test_ancestor_probe_renews_real_sibling_change_once_then_cleans_before_connect_returns(home, monkeypatch, kind):
+    fds = []
+    probe, instance, reads = ancestor_probe_rig(home, monkeypatch, kind=kind, read_fds=fds)
     try:
         before = home.parent.stat()
         assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
         assert reads == [True, False] and probe.triggered and probe.renewed
-        assert not probe.restored and probe._child.is_dir()
+        assert len(fds) == 2 and fds[0] == fds[1]
+        assert probe._local.churn_pending is None and probe._local.injected_fd is None
+        assert probe.restored and not probe._child.exists()
         after = home.parent.stat()
         assert filesystem._directory_identity(before) == filesystem._directory_identity(after)
-        assert before.st_nlink != after.st_nlink
+        assert before.st_nlink == after.st_nlink
         probe.close()
         assert probe.restored and not probe._child.exists()
         assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
@@ -293,12 +299,13 @@ def test_ancestor_probe_renews_real_sibling_change_once_then_cleans_outside_chec
 
 @requires_descriptor
 @pytest.mark.parametrize('scope', ['wrong_path', 'wrong_thread', 'wrong_code', 'wrong_store', 'later_consent', 'not_consent'])
-def test_ancestor_probe_does_not_mutate_outside_exact_initial_consent_scope(home, monkeypatch, scope):
+@pytest.mark.parametrize('kind', ['ancestor_churn_once', 'ancestor_final_path_once'])
+def test_ancestor_probe_does_not_mutate_outside_exact_initial_consent_scope(home, monkeypatch, scope, kind):
     other = home / 'other'
     other.mkdir(mode=0o700)
     probe, instance, reads = ancestor_probe_rig(home, monkeypatch,
         target=other if scope == 'wrong_path' else None,
-        worker=scope == 'wrong_thread', wrong_code=scope == 'wrong_code')
+        worker=scope == 'wrong_thread', wrong_code=scope == 'wrong_code', kind=kind)
     try:
         if scope == 'wrong_store':
             instance.profile = other
@@ -313,15 +320,243 @@ def test_ancestor_probe_does_not_mutate_outside_exact_initial_consent_scope(home
 
 
 @requires_descriptor
-def test_ancestor_probe_removes_real_sibling_after_failed_renewal(home, monkeypatch):
-    probe, instance, reads = ancestor_probe_rig(home, monkeypatch, fail_renewal=True)
+@pytest.mark.parametrize('kind', ['ancestor_churn_once', 'ancestor_final_path_once'])
+def test_ancestor_probe_removes_real_sibling_after_failed_renewal(home, monkeypatch, kind):
+    probe, instance, reads = ancestor_probe_rig(home, monkeypatch, fail_renewal=True, kind=kind)
     try:
         with pytest.raises(ValueError):
             instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
         assert reads == [True, False] and probe.triggered and not probe.renewed
+        assert probe.restored and not probe._child.exists()
     finally:
         probe.close()
     assert probe.restored and not probe._child.exists()
+
+
+@requires_descriptor
+def test_ancestor_probe_reporting_cannot_mutate_later_real_acl_observation(home, monkeypatch):
+    import sys
+    probe, instance, reads = ancestor_probe_rig(home, monkeypatch)
+    edges = SyntheticEdges(home)
+    edges.availability_probe = probe
+    ready, finished = threading.Event(), threading.Event()
+    failures, observed = [], []
+
+    def report():
+        try:
+            assert ready.wait(5)
+            edges.report_availability_probe()
+        except BaseException as error:
+            failures.append(error)
+        finally:
+            finished.set()
+
+    original_lstat = Path.lstat
+    expected_code = filesystem._check_ancestor_acl.__code__
+    def lstat(path, *args, **kwargs):
+        frame = sys._getframe(1)
+        if (not observed and path == home.parent and frame.f_code is expected_code
+                and 'final_fd' in frame.f_locals and 'final_path' not in frame.f_locals):
+            before = frame.f_locals['final_fd']
+            ready.set()
+            assert finished.wait(5) and not failures
+            after = original_lstat(path, *args, **kwargs)
+            observed.append(tuple(a != b for a, b in zip(
+                filesystem._file_identity(before), filesystem._file_identity(after))))
+            return after
+        return original_lstat(path, *args, **kwargs)
+
+    worker = threading.Thread(target=report)
+    try:
+        assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
+        assert reads == [True, False]
+        worker.start()
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, 'lstat', lstat)
+            filesystem._check_ancestor_acl(home.parent, None, None)
+        assert observed == [(False,) * 7]
+        assert reads == [True, False, True]  # No second renewal was needed.
+        assert probe.restored and not probe._child.exists()
+        assert len(edges.events) == 1 and edges.events[0]['restored'] is True
+        edges.report_availability_probe()
+        assert len(edges.events) == 1
+    finally:
+        ready.set()
+        if worker.ident is not None:
+            worker.join(5)
+            assert not worker.is_alive() and not failures
+        probe.close()
+
+
+@requires_descriptor
+@pytest.mark.parametrize('mutation', ['replacement', 'nonempty'])
+def test_ancestor_probe_cleanup_refuses_changed_child_without_recursive_deletion(home, monkeypatch, mutation):
+    probe, instance, _ = ancestor_probe_rig(home, monkeypatch)
+    original_cleanup = probe._cleanup_ancestor
+    displaced = home.parent / 'preserved-original-sibling'
+
+    def change_then_cleanup():
+        if probe.triggered and not probe.restored:
+            if mutation == 'replacement':
+                probe._child.rename(displaced)
+                probe._child.mkdir(mode=0o700)
+            else:
+                (probe._child / 'preserved-child').mkdir(mode=0o700)
+        original_cleanup()
+
+    monkeypatch.setattr(probe, '_cleanup_ancestor', change_then_cleanup)
+    try:
+        with pytest.raises(AssertionError):
+            instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
+        assert probe.triggered and not probe.restored and probe._child.is_dir()
+        assert (displaced if mutation == 'replacement' else probe._child / 'preserved-child').is_dir()
+    finally:
+        # Explicit test-owned empty directories only; the fixture never recurses.
+        import errno
+        pinned_fd = probe._parent_fd
+        monkeypatch.setattr(probe, '_cleanup_ancestor', original_cleanup)
+        with pytest.raises(AssertionError):
+            probe.close()
+        assert probe._parent_fd is None
+        with pytest.raises(OSError) as closed:
+            os.fstat(pinned_fd)
+        assert closed.value.errno == errno.EBADF
+        if mutation == 'nonempty':
+            (probe._child / 'preserved-child').rmdir()
+        probe._child.rmdir()
+        if displaced.exists():
+            displaced.rmdir()
+
+
+@requires_descriptor
+def test_ancestor_probe_cleanup_refuses_rebound_parent_path_and_closes_pinned_fd(home, monkeypatch):
+    probe, instance, _ = ancestor_probe_rig(home, monkeypatch)
+    original_cleanup = probe._cleanup_ancestor
+    parent = home.parent
+    displaced = parent.with_name(parent.name + '-preserved')
+    def replace_parent():
+        parent.rename(displaced)
+        parent.mkdir(mode=0o700)
+        original_cleanup()
+    monkeypatch.setattr(probe, '_cleanup_ancestor', replace_parent)
+    try:
+        with pytest.raises(AssertionError):
+            instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
+        assert probe.triggered and not probe.restored
+        assert (displaced / probe._child.name).is_dir()
+        assert not (parent / probe._child.name).exists()
+    finally:
+        parent.rmdir()  # The replacement is deliberately empty and test-owned.
+        displaced.rename(parent)
+        monkeypatch.setattr(probe, '_cleanup_ancestor', original_cleanup)
+        probe.close()
+    assert probe.restored and probe._parent_fd is None
+
+
+@requires_descriptor
+def test_ancestor_probe_cleanup_finishes_inside_real_outer_store_lock(home, monkeypatch):
+    probe, instance, _ = ancestor_probe_rig(home, monkeypatch)
+    store.SubscriptionStore.__init__(instance, home, backend=object())
+    # Isolate grant/state parsing only. _connect_payload and its real flock
+    # remain intact, including the wrapper's exact placement before release.
+    monkeypatch.setattr(instance, '_validate', lambda *_: None)
+    monkeypatch.setattr(instance, '_cas', lambda *_: None)
+    monkeypatch.setattr(instance, '_state', lambda: {'phase': 'disconnected', 'revision': 0, 'binding': None})
+    ready, finished = threading.Event(), threading.Event()
+    failures, outcomes = [], []
+    other = store.SubscriptionStore(home, backend=object())
+
+    def inspect():
+        try:
+            assert ready.wait(5)
+            with pytest.raises(store.StoreError) as error:
+                with other._locked(nonblocking=True):
+                    pytest.fail('Initial consent must still hold the real store lock')
+            outcomes.append(error.value.reason)
+        except BaseException as error:
+            failures.append(error)
+        finally:
+            finished.set()
+
+    original_cleanup = probe._cleanup_ancestor
+    def checked_cleanup():
+        original_cleanup()
+        assert probe.restored and not probe._child.exists()
+        ready.set()
+        assert finished.wait(5) and not failures
+
+    monkeypatch.setattr(probe, '_cleanup_ancestor', checked_cleanup)
+    worker = threading.Thread(target=inspect)
+    worker.start()
+    try:
+        assert instance._connect_payload(None, store._GRANT_PREFIX + b'synthetic', 0) == 'unchanged'
+        assert outcomes == ['connection_unavailable']
+        with other._locked():
+            assert probe.restored and not probe._child.exists()
+    finally:
+        ready.set()
+        worker.join(5)
+        assert not worker.is_alive() and not failures
+        original_cleanup()
+        monkeypatch.setattr(probe, '_cleanup_ancestor', original_cleanup)
+        probe.close()
+
+
+@requires_descriptor
+@pytest.mark.parametrize('authority', ['code_clone', 'globals_copy'])
+def test_final_path_probe_rejects_nonexact_helper_authority(home, monkeypatch, authority):
+    from types import FunctionType
+    probe, instance, reads = ancestor_probe_rig(home, monkeypatch, kind='ancestor_final_path_once')
+    original = filesystem._check_ancestor_acl
+    code = original.__code__.replace() if authority == 'code_clone' else original.__code__
+    namespace = dict(vars(filesystem)) if authority == 'globals_copy' else vars(filesystem)
+    monkeypatch.setattr(filesystem, '_check_ancestor_acl', FunctionType(code, namespace))
+    try:
+        assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
+        assert reads == [True] and not probe.triggered and not probe._child.exists()
+        assert probe._local.churn_pending is None and probe._local.injected_fd is None
+    finally:
+        probe.close()
+
+
+@requires_descriptor
+def test_final_path_probe_clears_pending_fd_when_observation_exits_before_path_read(home, monkeypatch):
+    import sys
+    probe, instance, reads = ancestor_probe_rig(home, monkeypatch, kind='ancestor_final_path_once')
+    original_fstat = os.fstat
+    expected_code = filesystem._check_ancestor_acl.__code__
+    interrupted = []
+    def fstat(fd):
+        caller = sys._getframe(1)
+        if (caller.f_code is expected_code and caller.f_globals is vars(filesystem)
+                and caller.f_lineno == 83 and getattr(probe._local, 'churn_pending', None) is not None):
+            interrupted.append(True)
+            raise OSError('Synthetic interruption before final path')
+        return original_fstat(fd)
+    monkeypatch.setattr(os, 'fstat', fstat)
+    try:
+        with pytest.raises(OSError):
+            instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
+        assert interrupted == [True] and reads == [True]
+        assert not probe.triggered and not probe._child.exists()
+        assert probe._local.churn_pending is None and probe._local.injected_fd is None
+        home.parent.lstat()  # A later unrelated read cannot reuse the old FD.
+        assert not probe.triggered
+    finally:
+        probe.close()
+
+
+def test_final_path_probe_source_site_is_first_path_observation_after_final_fd():
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(filesystem))
+    helper = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '_check_ancestor_acl')
+    assignments = [node for node in ast.walk(helper) if isinstance(node, ast.Assign)]
+    first_fd = next(node for node in assignments if any(isinstance(target, ast.Name) and target.id == 'final_fd' for target in node.targets))
+    first_path = next(node for node in assignments if any(isinstance(target, ast.Name) and target.id == 'final_path' for target in node.targets))
+    assert first_fd.lineno == 83 and first_path.lineno == 84
+    assert ast.unparse(first_fd.value) == 'os.fstat(fd)'
+    assert ast.unparse(first_path.value) == 'Path(path).lstat()'
 
 
 def test_scheduler_probe_uses_real_same_ledger_writer_and_causal_queue_release(home, monkeypatch):

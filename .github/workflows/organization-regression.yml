@@ -423,6 +423,7 @@ jobs:
               },
               'filesystem-junit.xml': {
                   'test_native_darwin_empty_acl_is_accepted_without_permission_changes',
+                  'test_native_darwin_ancestor_revalidates_final_path_sibling_change',
                   'test_native_darwin_ancestor_revalidates_complete_deny_acl[unchanged-deny]',
                   'test_native_darwin_ancestor_revalidates_complete_deny_acl[changed-deny-rights]',
               },

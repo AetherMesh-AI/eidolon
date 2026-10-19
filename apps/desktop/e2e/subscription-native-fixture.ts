@@ -693,7 +693,8 @@ export async function setupNativeSubscription(
     legacy?: boolean
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once'
-    availabilityProbe?: 'ancestor_churn_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
+    availabilityProbe?:
+      'ancestor_churn_once' | 'ancestor_final_path_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
   } = {}
 ) {
   const sandbox = createSandbox('subscription-native')

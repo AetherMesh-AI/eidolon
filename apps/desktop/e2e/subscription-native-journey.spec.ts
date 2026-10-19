@@ -145,7 +145,7 @@ test.describe('host-native subscription setup', () => {
     test(`${legacy ? 'legacy-empty' : 'fresh'} profile consents, chooses policy, reviews Improve, generates and explicitly creates`, async () => {
       fixture = await setupNativeSubscription({
         legacy,
-        availabilityProbe: legacy ? 'scheduler_writer_once' : 'ancestor_churn_once'
+        availabilityProbe: legacy ? 'scheduler_writer_once' : 'ancestor_final_path_once'
       })
       const dialog = await openSetup(legacy)
       const before = await activate(dialog, legacy)
@@ -156,7 +156,7 @@ test.describe('host-native subscription setup', () => {
       const probes = fixture.events().filter(row => row.kind === 'availability-probe')
       expect(probes).toHaveLength(1)
       expect(probes[0]).toMatchObject({
-        probe: legacy ? 'scheduler_writer_once' : 'ancestor_churn_once',
+        probe: legacy ? 'scheduler_writer_once' : 'ancestor_final_path_once',
         triggered: true,
         restored: true,
         renewed: !legacy,

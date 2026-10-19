@@ -83,9 +83,17 @@ def _check_ancestor_acl(path, api, fstatx):
         final_fd = os.fstat(fd)
         final_path = Path(path).lstat()
         if (_directory_identity(final_fd) != _directory_identity(before)
-                or _directory_identity(final_path) != _directory_identity(before)
-                or _file_identity(final_path) != _file_identity(final_fd)):
+                or _directory_identity(final_path) != _directory_identity(before)):
             raise StoreError('unsafe_filesystem')
+        if _file_identity(final_path) != _file_identity(final_fd):
+            # A first metadata-only drift can also occur between the final FD
+            # and path reads. Any earlier drift has already spent the renewal.
+            if (renewed_at_open or _file_identity(native) != _file_identity(before)
+                    or _file_identity(final_fd) != _file_identity(before)):
+                raise StoreError('unsafe_filesystem')
+            final_fd = final_path
+            if _file_identity(os.fstat(fd)) != _file_identity(final_fd):
+                raise StoreError('unsafe_filesystem')
         if renewed_at_open:
             if _file_identity(final_fd) != _file_identity(baseline):
                 raise StoreError('unsafe_filesystem')

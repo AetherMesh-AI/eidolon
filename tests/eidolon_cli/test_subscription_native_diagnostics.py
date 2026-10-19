@@ -399,7 +399,7 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
         for code, line, comparison in [
                 (filesystem._checked_acl_descriptor.__wrapped__.__code__, 55, 'final_fd'),
                 (filesystem._checked_acl_descriptor.__wrapped__.__code__, 56, 'final_path'),
-                (filesystem._read_darwin_acl.__code__, 143, 'native_acl')]:
+                (filesystem._read_darwin_acl.__code__, 151, 'native_acl')]:
             parent.f_code, parent.f_lineno = code, line
             diagnostics.trace(frame, 'return', tuple(changed))
             assert diagnostics.rows[-1]['identity']['comparison'] == comparison
@@ -417,8 +417,28 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
     assert str(home) not in encoded
 
 
+def use_exact_sqlite_factory(monkeypatch, path):
+    """Keep the observer's exact class proof under CI's opt-in connect wrapper.
+
+    The timing plugin substitutes a subclass only when no factory is requested.
+    Pass an explicit base factory through that wrapper for these holder proofs;
+    do not broaden the observer's trust or bypass connection instrumentation.
+    """
+    import sqlite3
+    connect = sqlite3.connect
+
+    def explicit_factory(*args, **kwargs):
+        if (args and type(args[0]) is type(path) and args[0] == path
+                and len(args) <= 5 and 'factory' not in kwargs):
+            kwargs['factory'] = sqlite3.Connection
+        return connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', explicit_factory)
+
+
 def test_real_coordinated_writer_deadline_blocks_dispatch_body_and_records_safe_primary_code(tmp_path, monkeypatch):
     from contextlib import contextmanager
+    import sqlite3
     import time
     from eidolon_cli import organization_setup_subscription_admission as admission
     from eidolon_cli.organization_store import OrganizationStore
@@ -430,6 +450,7 @@ def test_real_coordinated_writer_deadline_blocks_dispatch_body_and_records_safe_
     evidence.mkdir()
     store = OrganizationStore.__new__(OrganizationStore)
     store.path, store.settings = home / 'organization' / 'state.db', object()
+    use_exact_sqlite_factory(monkeypatch, store.path)
     diagnostics = BoundaryDiagnostics(evidence, home=home)
     results, body_calls, failures = [], [], []
 
@@ -455,7 +476,8 @@ def test_real_coordinated_writer_deadline_blocks_dispatch_body_and_records_safe_
         try:
             # Actual OrganizationStore._write is the same transaction helper used
             # by the idle scheduler. Its yielded connection proves acquisition.
-            with store._write():
+            with store._write() as connection:
+                assert type(connection) is sqlite3.Connection
                 assert len(diagnostics.ledger_holders) == 1
                 worker = threading.Thread(target=dispatch)
                 worker.start()
@@ -541,10 +563,12 @@ def test_ledger_holder_observer_requires_acquired_exact_code_and_clears_on_exit(
 
     store = module.OrganizationStore.__new__(module.OrganizationStore)
     store.path, store.settings = tmp_path / 'synthetic-private-ledger.db', object()
+    use_exact_sqlite_factory(monkeypatch, store.path)
     diagnostics = BoundaryDiagnostics(tmp_path)
     diagnostics.install()
     try:
-        with store._write():
+        with store._write() as connection:
+            assert type(connection) is sqlite3.Connection
             assert len(diagnostics.ledger_holders) == 1
         assert diagnostics.ledger_holders == {}
         with pytest.raises(RuntimeError):
@@ -579,6 +603,67 @@ def test_ledger_holder_observer_requires_acquired_exact_code_and_clears_on_exit(
     assert 'synthetic-private-' not in encoded
 
 
+def test_ledger_holder_observer_rejects_connection_subclass_at_real_yield(tmp_path, monkeypatch):
+    import sqlite3
+    from eidolon_cli.organization_store import OrganizationStore
+
+    class CustomConnection(sqlite3.Connection):
+        pass
+
+    # A different connection wrapper can return its own subclass. Even at the
+    # real acquired _write yield, the observer must not trust that new class.
+    connect = sqlite3.connect
+    def custom_connect(*args, **kwargs):
+        return connect(*args, **{**kwargs, 'factory': CustomConnection})
+
+    monkeypatch.setattr(sqlite3, 'connect', custom_connect)
+    store = OrganizationStore.__new__(OrganizationStore)
+    store.path, store.settings = tmp_path / 'synthetic-private-ledger.db', object()
+    use_exact_sqlite_factory(monkeypatch, store.path)
+    diagnostics = BoundaryDiagnostics(tmp_path)
+    diagnostics.install()
+    try:
+        assert diagnostics.enabled
+        with store._write() as connection:
+            assert type(connection) is CustomConnection
+            assert diagnostics.ledger_holders == {}
+        assert diagnostics.ledger_holders == {}
+    finally:
+        diagnostics.close()
+    assert 'synthetic-private-' not in json.dumps(read_trace(tmp_path))
+
+
+def test_exact_sqlite_factory_keeps_timing_and_nonselected_connections_instrumented(tmp_path, monkeypatch):
+    from contextlib import closing
+    import sqlite3
+    from scripts.ci.organization_sqlite_diagnostics import install
+
+    class CustomConnection(sqlite3.Connection):
+        pass
+
+    events = []
+    restore = install(events.append)
+    path = tmp_path / 'selected-ledger.db'
+    try:
+        with monkeypatch.context() as patch:
+            use_exact_sqlite_factory(patch, path)
+            with closing(sqlite3.connect(path)) as selected:
+                assert type(selected) is sqlite3.Connection
+            with closing(sqlite3.connect(tmp_path / 'other-ledger.db')) as other:
+                assert isinstance(other, sqlite3.Connection)
+                assert type(other) is not sqlite3.Connection
+            with closing(sqlite3.connect(path, factory=CustomConnection)) as custom:
+                assert type(custom) is CustomConnection
+            with closing(sqlite3.connect(path, 5.0, 0, None, True, CustomConnection)) as positional:
+                assert type(positional) is CustomConnection
+            starts = [row for row in events if row['phase'] == 'connect' and row['boundary'] == 'start']
+            ends = [row for row in events if row['phase'] == 'connect' and row['boundary'] == 'end']
+            assert len(starts) == len(ends) == 4
+            assert all('errorType' not in row for row in ends)
+    finally:
+        restore()
+
+
 def test_extracted_identity_source_sites_and_selected_stat_locals_are_exact(tmp_path):
     import ast
     import inspect
@@ -591,13 +676,16 @@ def test_extracted_identity_source_sites_and_selected_stat_locals_are_exact(tmp_
         52: ('acl_descriptor', 'initial_fd', 'before'),
         55: ('acl_descriptor', 'final_fd', 'before'),
         56: ('acl_descriptor', 'final_path', 'before'),
-        143: ('native_acl_read', 'native_acl', 'before'),
+        151: ('native_acl_read', 'native_acl', 'before'),
         77: ('ancestor_acl', 'initial_fd', 'before'),
-        87: ('ancestor_acl', 'final_path', 'final_fd'),
-        93: ('ancestor_acl', 'native_acl', 'before'),
-        96: ('ancestor_acl', 'final_fd', 'before'),
-        102: ('ancestor_acl', 'final_fd', 'final_fd'),
-        103: ('ancestor_acl', 'final_path', 'final_fd'),
+        88: ('ancestor_acl', 'final_path', 'final_fd'),
+        91: ('ancestor_acl', 'native_acl', 'before'),
+        92: ('ancestor_acl', 'final_fd', 'before'),
+        95: ('ancestor_acl', 'final_fd', 'final_fd'),
+        101: ('ancestor_acl', 'native_acl', 'before'),
+        104: ('ancestor_acl', 'final_fd', 'before'),
+        110: ('ancestor_acl', 'final_fd', 'final_fd'),
+        111: ('ancestor_acl', 'final_path', 'final_fd'),
     }
     observer_tree = ast.parse(inspect.getsource(BoundaryDiagnostics))
     assignment = next(node for node in ast.walk(observer_tree)

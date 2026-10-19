@@ -266,8 +266,26 @@ def _encoded_acl(entries, *, flags=0):
                        for qualifier, tag_flags, rights in entries))
 
 
+def _before_first_final_path(monkeypatch, path, action):
+    """Run one real mutation after the pinned FD read, before its path read."""
+    original_lstat = Path.lstat
+    calls = []
+
+    def lstat(target, *args, **kwargs):
+        caller = sys._getframe(1)
+        if (target == path and caller.f_code is module._check_ancestor_acl.__code__
+                and 'final_fd' in caller.f_locals and 'final_path' not in caller.f_locals
+                and not calls):
+            calls.append(True)
+            action()
+        return original_lstat(target, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    return calls
+
+
 @pytest.mark.parametrize('present,tags', [(0, []), (32, []), (32, [2]), (32, [2] * 128)])
-@pytest.mark.parametrize('when', ['initial_fd', 'native_acl', 'final_fd'])
+@pytest.mark.parametrize('when', ['initial_fd', 'native_acl', 'final_fd', 'final_path'])
 def test_ancestor_sibling_churn_renews_complete_acl_once_on_same_fd(
         tmp_path, monkeypatch, pinned_acl_api, present, tags, when):
     config, calls, _ = pinned_acl_api
@@ -291,6 +309,8 @@ def test_ancestor_sibling_churn_renews_complete_acl_once_on_same_fd(
         config['before_native'] = lambda fd: sibling.mkdir() if not sibling.exists() else None
     if when == 'final_fd':
         config['after_read'] = lambda fd, count: sibling.mkdir() if count == 1 else None
+    if when == 'final_path':
+        _before_first_final_path(monkeypatch, path, sibling.mkdir)
     module.check_darwin_acl(path, ancestor=True)
     after = path.stat()
     assert module._directory_identity(after) == module._directory_identity(before)
@@ -314,13 +334,15 @@ def test_stable_ancestor_needs_only_one_complete_acl_read(tmp_path, pinned_acl_a
     assert len([call for call in calls if call[0] == 'query']) == 1
 
 
+@pytest.mark.parametrize('first', ['final_fd', 'final_path'])
 @pytest.mark.parametrize('when', ['native_acl', 'final_fd', 'final_path'])
 def test_second_ancestor_churn_fails_closed_without_third_observation(
-        tmp_path, monkeypatch, pinned_acl_api, when):
+        tmp_path, monkeypatch, pinned_acl_api, when, first):
     config, calls, _ = pinned_acl_api
     path = tmp_path / 'ancestor'
     path.mkdir()
-    config['after_read'] = lambda fd, count: (path / f'sibling-{count}').mkdir() if count == 1 or when == 'final_fd' else None
+    config['after_read'] = lambda fd, count: (path / f'sibling-{count}').mkdir() if (
+        count == 1 and first == 'final_fd' or count == 2 and when == 'final_fd') else None
     if when == 'native_acl':
         config['before_native'] = lambda fd: (path / 'second').mkdir() if len(config['reads']) == 1 else None
     if when == 'final_path':
@@ -335,6 +357,8 @@ def test_second_ancestor_churn_fails_closed_without_third_observation(
             return original_lstat(self, *args, **kwargs)
 
         monkeypatch.setattr(Path, 'lstat', lstat)
+    if first == 'final_path':
+        _before_first_final_path(monkeypatch, path, lambda: (path / 'sibling-1').mkdir())
     with pytest.raises(StoreError, match='unsafe_filesystem'):
         module.check_darwin_acl(path, ancestor=True)
     assert len([call for call in calls if call[0] == 'stat']) == 2
@@ -373,9 +397,10 @@ def test_ancestor_never_renews_security_identity_change(tmp_path, monkeypatch, p
     assert len([call for call in calls if call[0] == 'stat']) <= (2 if when == 'renewed_fd' else 1)
 
 
+@pytest.mark.parametrize('when', ['final_fd', 'final_path'])
 @pytest.mark.parametrize('change', ['replacement', 'symlink', 'mode', 'allow_acl', 'deny_rights', 'deny_qualifier', 'deny_inheritance', 'acl_flags', 'order', 'remove_acl', 'empty_acl'])
 def test_ancestor_revalidation_rejects_path_security_and_complete_acl_changes(
-        tmp_path, pinned_acl_api, change):
+        tmp_path, monkeypatch, pinned_acl_api, change, when):
     config, calls, _ = pinned_acl_api
     path = tmp_path / 'ancestor'
     path.mkdir(mode=0o700)
@@ -413,7 +438,10 @@ def test_ancestor_revalidation_rejects_path_security_and_complete_acl_changes(
                 entries = []
             config['snapshot'] = _encoded_acl(entries, flags=(1 << 16) if change == 'acl_flags' else 0)
 
-    config['after_read'] = mutate
+    if when == 'final_fd':
+        config['after_read'] = mutate
+    else:
+        _before_first_final_path(monkeypatch, path, lambda: mutate(config['reads'][0][0], 1))
     try:
         with pytest.raises(StoreError, match='unsafe_filesystem'):
             module.check_darwin_acl(path, ancestor=True)
@@ -425,7 +453,8 @@ def test_ancestor_revalidation_rejects_path_security_and_complete_acl_changes(
         os.fstat(config['reads'][0][0])
 
 
-def test_ancestor_revalidation_distinguishes_absence_from_present_empty_acl(tmp_path, pinned_acl_api):
+@pytest.mark.parametrize('when', ['final_fd', 'final_path'])
+def test_ancestor_revalidation_distinguishes_absence_from_present_empty_acl(tmp_path, monkeypatch, pinned_acl_api, when):
     config, _, _ = pinned_acl_api
     config['present'] = 0
 
@@ -434,7 +463,10 @@ def test_ancestor_revalidation_distinguishes_absence_from_present_empty_acl(tmp_
             (tmp_path / 'sibling').mkdir()
             config['present'] = 32
 
-    config['after_read'] = present_after_read
+    if when == 'final_fd':
+        config['after_read'] = present_after_read
+    else:
+        _before_first_final_path(monkeypatch, tmp_path, lambda: present_after_read(config['reads'][0][0], 1))
     with pytest.raises(StoreError, match='unsafe_filesystem'):
         module.check_darwin_acl(tmp_path, ancestor=True)
     assert config['reads'][0][1][1] is None
@@ -482,7 +514,8 @@ def test_ancestor_exception_never_accepts_other_path_kinds(tmp_path, pinned_acl_
     assert not any(call[0] == 'stat' for call in calls)
 
 
-@pytest.mark.parametrize('windows', [('initial_fd', 'native_acl'), ('initial_fd', 'final_fd'), ('native_acl', 'final_fd')])
+@pytest.mark.parametrize('windows', [('initial_fd', 'native_acl'), ('initial_fd', 'final_fd'), ('native_acl', 'final_fd'),
+                                   ('initial_fd', 'final_path'), ('native_acl', 'final_path'), ('final_fd', 'final_path')])
 def test_each_first_drift_consumes_the_only_renewal(tmp_path, monkeypatch, pinned_acl_api, windows):
     config, calls, api = pinned_acl_api
     real_open = os.open
@@ -498,6 +531,8 @@ def test_each_first_drift_consumes_the_only_renewal(tmp_path, monkeypatch, pinne
         config['before_native'] = lambda fd: (tmp_path / 'native').mkdir()
     if 'final_fd' in windows:
         config['after_read'] = lambda fd, count: (tmp_path / 'final').mkdir()
+    if 'final_path' in windows:
+        _before_first_final_path(monkeypatch, tmp_path, lambda: (tmp_path / 'path').mkdir())
     with pytest.raises(StoreError, match='unsafe_filesystem'):
         module.check_darwin_acl(tmp_path, ancestor=True)
     assert len([call for call in calls if call[0] == 'stat']) == 1
@@ -538,13 +573,14 @@ def test_target_metadata_remains_strict_after_complete_acl_read(tmp_path, pinned
         os.fstat(config['reads'][0][0])
 
 
+@pytest.mark.parametrize('when', ['final_fd', 'final_path'])
 @pytest.mark.parametrize('change', [
     {'stat_result': -1, 'present': 0}, {'query_result': -1, 'present': 0},
     {'present': -1}, {'get_result': -1, 'acl': None}, {'acl': None}, {'acl': 1},
     {'valid_result': -1}, {'init': None}, {'entry_error': True},
     {'tags': [2] * 129}, {'copy_result': -1},
 ])
-def test_ancestor_renewal_api_failure_never_reuses_first_acl(tmp_path, pinned_acl_api, change):
+def test_ancestor_renewal_api_failure_never_reuses_first_acl(tmp_path, monkeypatch, pinned_acl_api, change, when):
     config, calls, _ = pinned_acl_api
 
     def fail_second(fd, count):
@@ -552,7 +588,10 @@ def test_ancestor_renewal_api_failure_never_reuses_first_acl(tmp_path, pinned_ac
             (tmp_path / 'sibling').mkdir()
             config.update(change)
 
-    config['after_read'] = fail_second
+    if when == 'final_fd':
+        config['after_read'] = fail_second
+    else:
+        _before_first_final_path(monkeypatch, tmp_path, lambda: fail_second(config['reads'][0][0], 1))
     with pytest.raises(StoreError, match='filesystem_protection_unavailable'):
         module.check_darwin_acl(tmp_path, ancestor=True)
     assert len(config['reads']) == 1
@@ -658,8 +697,9 @@ def test_native_darwin_ancestor_revalidates_complete_deny_acl(tmp_path, monkeypa
         chmod_fixture('-N')
 
 
+@pytest.mark.parametrize('when', ['final_fd', 'final_path'])
 @pytest.mark.parametrize('change_acl', [False, True])
-def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, monkeypatch, pinned_acl_api, change_acl):
+def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, monkeypatch, pinned_acl_api, change_acl, when):
     """Synthetic ctime-only metadata; real sibling churn is covered separately."""
     from types import SimpleNamespace
     config, calls, api = pinned_acl_api
@@ -703,7 +743,10 @@ def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, monkeypa
     monkeypatch.setattr(Path, 'lstat', lstat)
     for symbol in ('fstatx_np', 'fstatx_np$INODE64'):
         monkeypatch.setattr(api, symbol, fstatx)
-    config['after_read'] = change_ctime
+    if when == 'final_fd':
+        config['after_read'] = change_ctime
+    else:
+        _before_first_final_path(monkeypatch, tmp_path, lambda: change_ctime(config['reads'][0][0], 1))
     if change_acl:
         with pytest.raises(StoreError, match='unsafe_filesystem'):
             module.check_darwin_acl(tmp_path, ancestor=True)
@@ -717,3 +760,90 @@ def test_ctime_only_ancestor_drift_requires_same_complete_acl(tmp_path, monkeypa
     assert (config['reads'][0][1][1] != config['reads'][1][1][1]) == change_acl
     for operation in ('stat', 'query', 'get', 'copy', 'free_acl', 'free_fsec'):
         assert sum(call[0] == operation for call in calls) == 2
+
+
+@pytest.mark.parametrize('when,field', [
+    (when, field)
+    for when, fields in (
+        ('final_path', ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid')),
+        ('fresh_fd', ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_ctime_ns')),
+    )
+    for field in fields
+] + [('fresh_fd', 'original')])
+def test_final_path_renewal_requires_fresh_descriptor_and_original_security(
+        tmp_path, monkeypatch, pinned_acl_api, when, field):
+    """Synthetic hostile metadata cannot select or change a fresh baseline."""
+    from types import SimpleNamespace
+    config, calls, _ = pinned_acl_api
+    real_fstat, real_lstat = os.fstat, Path.lstat
+    original = tmp_path.lstat()
+    changed = []
+    churn = []
+
+    def altered(info):
+        values = {key: getattr(info, key) for key in (
+            'st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_ctime_ns')}
+        if field == 'original':
+            values = {key: getattr(original, key) for key in values}
+        else:
+            values[field] += 1
+        changed.append(True)
+        return SimpleNamespace(**values)
+
+    def fstat(fd):
+        info = real_fstat(fd)
+        caller = sys._getframe(1)
+        if churn and not changed and caller.f_code is module._check_ancestor_acl.__code__:
+            return altered(info)
+        return info
+
+    def lstat(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        caller = sys._getframe(1)
+        if (path == tmp_path and caller.f_code is module._check_ancestor_acl.__code__
+                and 'final_fd' in caller.f_locals and 'final_path' not in caller.f_locals):
+            return altered(info)
+        return info
+
+    if when == 'final_path':
+        monkeypatch.setattr(Path, 'lstat', lstat)
+    else:
+        churn = _before_first_final_path(monkeypatch, tmp_path, lambda: (tmp_path / 'sibling').mkdir())
+        monkeypatch.setattr(module.os, 'fstat', fstat)
+    with pytest.raises(StoreError, match='unsafe_filesystem'):
+        module.check_darwin_acl(tmp_path, ancestor=True)
+    assert changed == [True]
+    assert len(config['reads']) == 1
+    assert sum(call[0] == 'stat' for call in calls) == 1
+    with pytest.raises(OSError):
+        real_fstat(config['reads'][0][0])
+
+
+@pytest.mark.macos_only
+def test_native_darwin_ancestor_revalidates_final_path_sibling_change(tmp_path, monkeypatch):
+    """Real Darwin ACL snapshots around one final-FD-to-path sibling mkdir."""
+    if sys.platform != 'darwin':
+        pytest.skip('Native final-path ACL proof requires macOS')
+    path = tmp_path / 'native-final-path-ancestor'
+    path.mkdir(mode=0o700)
+    before = path.lstat()
+    real_read = module._read_darwin_acl
+    reads = []
+
+    def read(*args, **kwargs):
+        result = real_read(*args, **kwargs)
+        reads.append((args[2], result))
+        return result
+
+    monkeypatch.setattr(module, '_read_darwin_acl', read)
+    mutations = _before_first_final_path(monkeypatch, path, lambda: (path / 'sibling').mkdir(mode=0o700))
+    module.check_darwin_acl(path, ancestor=True)
+    after = path.lstat()
+    assert mutations == [True] and len(reads) == 2 and reads[0][0] == reads[1][0]
+    assert module._directory_identity(before) == module._directory_identity(after)
+    assert (before.st_nlink, before.st_ctime_ns) != (after.st_nlink, after.st_ctime_ns)
+    assert [module._file_identity(result[0]) for _, result in reads] == [
+        module._file_identity(before), module._file_identity(after)]
+    assert reads[0][1][1] == reads[1][1][1]
+    with pytest.raises(OSError):
+        os.fstat(reads[0][0])

@@ -294,13 +294,16 @@ class BoundaryDiagnostics:
         sites = {('acl_descriptor', 52): ('initial_fd', 'before'),
                  ('acl_descriptor', 55): ('final_fd', 'before'),
                  ('acl_descriptor', 56): ('final_path', 'before'),
-                 ('native_acl_read', 143): ('native_acl', 'before'),
+                 ('native_acl_read', 151): ('native_acl', 'before'),
                  ('ancestor_acl', 77): ('initial_fd', 'before'),
-                 ('ancestor_acl', 87): ('final_path', 'final_fd'),
-                 ('ancestor_acl', 93): ('native_acl', 'before'),
-                 ('ancestor_acl', 96): ('final_fd', 'before'),
-                 ('ancestor_acl', 102): ('final_fd', 'final_fd'),
-                 ('ancestor_acl', 103): ('final_path', 'final_fd')}
+                 ('ancestor_acl', 88): ('final_path', 'final_fd'),
+            ('ancestor_acl', 91): ('native_acl', 'before'),
+            ('ancestor_acl', 92): ('final_fd', 'before'),
+            ('ancestor_acl', 95): ('final_fd', 'final_fd'),
+                 ('ancestor_acl', 101): ('native_acl', 'before'),
+                 ('ancestor_acl', 104): ('final_fd', 'before'),
+                 ('ancestor_acl', 110): ('final_fd', 'final_fd'),
+                 ('ancestor_acl', 111): ('final_path', 'final_fd')}
         selected = sites.get((self.stage(parent), parent.f_lineno)) if parent else None
         site, baseline_name = selected if selected is not None else (None, None)
         if (site is None or not lane or type(value) is not tuple or len(value) != 7
@@ -622,7 +625,7 @@ class RecoveryFaults:
 class AvailabilityProbe:
     """Causal, one-shot local interference without replacing safety decisions."""
     def __init__(self, home, kind):
-        if kind not in {'ancestor_churn_once', 'scheduler_writer_once', 'scheduler_cleanup_once'}:
+        if kind not in {'ancestor_churn_once', 'ancestor_final_path_once', 'scheduler_writer_once', 'scheduler_cleanup_once'}:
             raise ValueError('Unknown synthetic availability probe')
         self.home = Path(home).resolve(strict=True)
         self.kind = kind
@@ -634,6 +637,8 @@ class AvailabilityProbe:
         self._holder = None
         self._gate = None
         self._child = None
+        self._child_identity = self._ancestor_identity = None
+        self._parent_fd = None
         self._failures = []
         self.operation_thread = None
         self.cleanup_refused = False
@@ -643,7 +648,7 @@ class AvailabilityProbe:
         self._cleanup_finished = self._operation_finished = self._notified = False
 
     def install(self, patch):
-        if self.kind == 'ancestor_churn_once':
+        if self.kind in {'ancestor_churn_once', 'ancestor_final_path_once'}:
             self._install_ancestor(patch)
         else:
             self._install_scheduler(patch)
@@ -655,11 +660,20 @@ class AvailabilityProbe:
         pinned = ancestor.lstat()
         assert stat.S_ISDIR(pinned.st_mode) and pinned.st_uid == os.geteuid()
         assert not stat.S_IMODE(pinned.st_mode) & 0o022
+        self._ancestor_identity = filesystem._directory_identity(pinned)
         self._child = ancestor / 'synthetic-subscription-sibling'
         assert not self._child.exists()
+        parent_fd = os.open(ancestor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            assert filesystem._file_identity(os.fstat(parent_fd)) == filesystem._file_identity(pinned)
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        self._parent_fd = parent_fd
         original_connect = store.SubscriptionStore._connect_ticket_grant
         original_decrypt = store.SubscriptionStore._decrypt
         original_read = filesystem._read_darwin_acl
+        original_lstat = Path.lstat
         ancestor_code = filesystem._check_ancestor_acl.__code__
 
         @wraps(original_connect)
@@ -673,7 +687,15 @@ class AvailabilityProbe:
             try:
                 return original_connect(instance, binding, secret, state)
             finally:
-                self._local.consent_store = previous
+                try:
+                    if selected:
+                        self._local.churn_pending = self._local.injected_fd = None
+                        # The real _connect_payload still holds its store lock.
+                        # Finish both mutations before another caller can read
+                        # the published grant; later reporting is read-only.
+                        self._cleanup_ancestor()
+                finally:
+                    self._local.consent_store = previous
 
         @wraps(original_decrypt)
         def decrypt(instance, state):
@@ -682,16 +704,36 @@ class AvailabilityProbe:
             previous = getattr(self._local, 'decrypt_store', None)
             if selected:
                 self._local.decrypt_store = instance
+                self._local.churn_pending = self._local.injected_fd = None
             try:
                 return original_decrypt(instance, state)
             finally:
+                if selected:
+                    self._local.churn_pending = self._local.injected_fd = None
                 self._local.decrypt_store = previous
+
+        def mutate(fd, before):
+            current = os.fstat(fd)
+            assert filesystem._file_identity(current) == filesystem._file_identity(before)
+            assert filesystem._directory_identity(current) == filesystem._directory_identity(pinned)
+            assert filesystem._directory_identity(ancestor.lstat()) == self._ancestor_identity
+            assert filesystem._directory_identity(os.fstat(self._parent_fd)) == self._ancestor_identity
+            os.mkdir(self._child.name, mode=0o700, dir_fd=self._parent_fd)
+            self._child_identity = filesystem._file_identity(os.stat(
+                self._child.name, dir_fd=self._parent_fd, follow_symlinks=False))
+            self.triggered = True
+            self._local.injected_fd = fd
+            after = os.fstat(fd)
+            assert filesystem._directory_identity(after) == filesystem._directory_identity(before)
+            assert after.st_nlink != before.st_nlink
 
         @wraps(original_read)
         def read(api, fstatx, fd, before, *, allow_directory_churn=False):
             result = original_read(api, fstatx, fd, before, allow_directory_churn=allow_directory_churn)
+            caller = sys._getframe(1)
             selected = (getattr(self._local, 'decrypt_store', None) is not None
-                and sys._getframe(1).f_code is ancestor_code and type(before) is os.stat_result)
+                and caller.f_code is ancestor_code and caller.f_globals is vars(filesystem)
+                and type(before) is os.stat_result)
             if not selected:
                 return result
             current = os.fstat(fd)
@@ -699,23 +741,40 @@ class AvailabilityProbe:
                 return result
             with self._lock:
                 if self.triggered:
-                    if not allow_directory_churn:
+                    if not allow_directory_churn and getattr(self._local, 'injected_fd', None) == fd:
                         self.renewed = True
                     return result
                 if not allow_directory_churn:
                     return result
                 assert filesystem._file_identity(current) == filesystem._file_identity(before)
                 assert filesystem._directory_identity(current) == filesystem._directory_identity(pinned)
-                self._child.mkdir(mode=0o700)
-                self.triggered = True
-                after = os.fstat(fd)
-                assert filesystem._directory_identity(after) == filesystem._directory_identity(before)
-                assert after.st_nlink != before.st_nlink
+                if self.kind == 'ancestor_final_path_once':
+                    self._local.churn_pending = (fd, before)
+                else:
+                    mutate(fd, before)
             return result
+
+        @wraps(original_lstat)
+        def lstat(path, *args, **kwargs):
+            caller = sys._getframe(1)
+            pending = getattr(self._local, 'churn_pending', None)
+            if (type(path) is type(ancestor) and path == ancestor
+                    and caller.f_code is ancestor_code and caller.f_globals is vars(filesystem)
+                    and caller.f_lineno == 84
+                    and getattr(self._local, 'decrypt_store', None) is not None
+                    and type(pending) is tuple and len(pending) == 2
+                    and type(pending[0]) is int and type(pending[1]) is os.stat_result):
+                self._local.churn_pending = None
+                with self._lock:
+                    if not self.triggered:
+                        mutate(*pending)
+            return original_lstat(path, *args, **kwargs)
 
         patch(store.SubscriptionStore, '_connect_ticket_grant', connect)
         patch(store.SubscriptionStore, '_decrypt', decrypt)
         patch(filesystem, '_read_darwin_acl', read)
+        if self.kind == 'ancestor_final_path_once':
+            patch(Path, 'lstat', lstat)
 
     def _install_scheduler(self, patch):
         from eidolon_cli import organization_setup_subscription_admission as admission
@@ -834,14 +893,30 @@ class AvailabilityProbe:
                 self.on_finished()
             self.finished.set()
 
+    def _cleanup_ancestor(self):
+        from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+        with self._lock:
+            if self._child is not None and self.triggered and not self.restored:
+                assert filesystem._directory_identity(self._child.parent.lstat()) == self._ancestor_identity
+                assert filesystem._directory_identity(os.fstat(self._parent_fd)) == self._ancestor_identity
+                assert filesystem._file_identity(os.stat(
+                    self._child.name, dir_fd=self._parent_fd, follow_symlinks=False)) == self._child_identity
+                # Static replacement is refused; rmdir is nonrecursive. These
+                # APIs do not provide an atomic compare-and-remove operation.
+                os.rmdir(self._child.name, dir_fd=self._parent_fd)
+                self.restored = True
+
     def close(self):
         self._release.set()
         if self._holder is not None:
             self._holder.join(5)
             assert not self._holder.is_alive() and not self._failures
-        if self._child is not None and self.triggered and not self.restored:
-            self._child.rmdir()  # After the complete callback, outside ACL snapshots.
-            self.restored = True
+        try:
+            self._cleanup_ancestor()
+        finally:
+            if self._parent_fd is not None:
+                os.close(self._parent_fd)
+                self._parent_fd = None
 
 
 class SyntheticEdges:
