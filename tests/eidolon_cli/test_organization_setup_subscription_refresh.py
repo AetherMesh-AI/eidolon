@@ -14,7 +14,7 @@ import jwt
 import pytest
 
 from eidolon_cli import organization_setup_subscription_auth as auth
-from eidolon_cli.organization_setup_subscription_store import TrustedBinding, StoreError
+from eidolon_cli.organization_setup_subscription_store import TrustedBinding, StoreError, SubscriptionStore
 
 
 class Lease:
@@ -39,7 +39,7 @@ class Lease:
 
 @pytest.fixture
 def refresh_rig():
-    rig = SimpleNamespace(live=True, fresh=True, authority=False, calls=[], commits=[], guards=[],
+    rig = SimpleNamespace(live=True, fresh=True, authority=False, calls=[], commits=[], guards=[], metadata_reads=[],
                           epoch=str(uuid.uuid4()), ticket=None, stage='none')
     binding = TrustedBinding(str(uuid.uuid4()), '/synthetic/profile', str(uuid.uuid4()),
                              str(uuid.uuid4()), str(uuid.uuid4()), 'oaiapp_synthetic', 'synthetic-account')
@@ -65,6 +65,9 @@ def refresh_rig():
             return binding, self.revision
         def returning_binding(self):
             return binding
+        def _binding_digest(self, checked):
+            assert checked == binding
+            return SubscriptionStore._binding_digest(checked)
         def prepare_ticket(self, checked, revision, *, kind, source_revision, owner_guard, cancel):
             assert checked == binding and rig.authority and owner_guard() is True and not cancel.is_set()
             if rig.ticket is not None:
@@ -137,8 +140,13 @@ def refresh_rig():
         assert not rig.authority and rig.store.phase == 'refreshing'
         rig.calls.append((url, form))
         return dict(rig.tokens)
+    def host_identity_state(digest):
+        assert not rig.authority and digest == SubscriptionStore._binding_digest(binding)
+        rig.metadata_reads.append(digest)
+        return 'current'
     rig.service = auth.SubscriptionAuthService(rig.store,
-        SimpleNamespace(installation_id=lambda: binding.host_id, inspect=lambda: None), owner, synthetic=True, http=http)
+        SimpleNamespace(installation_id=lambda: binding.host_id, inspect=lambda: None,
+                        host_identity_state=host_identity_state), owner, synthetic=True, http=http)
     return rig
 
 
@@ -358,7 +366,12 @@ def test_lost_prepare_ack_and_unused_ticket_restart_never_sends(refresh_rig):
     assert rig.service.prepare_operation('refresh', 1) == first
     restarted = auth.SubscriptionAuthService(rig.store, rig.service._host, rig.service._owner,
         synthetic=True, http=rig.service._http)
-    hint = restarted.status()['operation']
+    before = (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, dict(rig.ticket))
+    status = restarted.status()
+    hint = status['operation']
+    assert status['hostIdentityState'] == 'current' and not status['canMigrateHostIdentity']
+    assert rig.metadata_reads == [SubscriptionStore._binding_digest(rig.store.returning_binding())]
+    assert (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, rig.ticket) == before
     assert hint['ticket'] == first['ticket'] and hint['verification'] == 'metadata_only'
     assert restarted.reconcile_operation(hint['ticket'])['state'] == 'prepared'
     assert not rig.calls and not rig.commits
@@ -417,8 +430,33 @@ def test_passive_status_does_not_prepare_verify_grant_or_recover(refresh_rig):
     def forbidden(*args, **kwargs):
         raise AssertionError('Passive status attempted mutation or native grant access')
     rig.store.prepare_ticket = rig.store.grant_descriptor = rig.store.reconcile_transition = forbidden
-    assert rig.service.status()['operation']['ticket'] == ticket
-    assert not rig.calls
+    before = (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, dict(rig.ticket))
+    status = rig.service.status()
+    assert status['operation']['ticket'] == ticket
+    assert status['hostIdentityState'] == 'current' and not status['canMigrateHostIdentity']
+    assert rig.metadata_reads == [SubscriptionStore._binding_digest(rig.store.returning_binding())]
+    assert (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, rig.ticket) == before
+    assert not rig.calls and not rig.commits
+
+
+def test_passive_host_metadata_recovery_preserves_refresh_ticket(refresh_rig):
+    rig = refresh_rig
+    ticket = rig.service.prepare_operation('refresh', 1)['ticket']
+    read = rig.service._host.host_identity_state
+    def unavailable(digest):
+        read(digest)
+        raise auth.HostError('recovery_required')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Passive recovery attempted mutation or native grant access')
+    rig.service._host.host_identity_state = unavailable
+    rig.store.prepare_ticket = rig.store.grant_descriptor = rig.store.reconcile_transition = forbidden
+    before = (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, dict(rig.ticket))
+    status = rig.service.status()
+    assert status['operation']['ticket'] == ticket
+    assert status['hostIdentityState'] == 'recovery_required' and not status['canMigrateHostIdentity']
+    assert rig.metadata_reads == [SubscriptionStore._binding_digest(rig.store.returning_binding())]
+    assert (rig.store.phase, rig.store.revision, rig.epoch, rig.stage, rig.ticket) == before
+    assert not rig.calls and not rig.commits
 
 
 def test_old_source_ticket_local_cleanup_never_authorizes_execute_or_catalog(refresh_rig):
