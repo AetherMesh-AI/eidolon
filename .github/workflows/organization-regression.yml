@@ -666,10 +666,10 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # Packaged-shell acceptance is separate from the stock-Electron native lane.
-  # The Python runtime is an explicitly pinned checkout, not an installed user runtime.
+  # Packaging preserves the main-only build identity policy. PRs have no packaged-product verdict.
   packaged-macos:
-    name: Organization packaged Eidolon journey (macOS)
+    name: Organization actual-main packaged Eidolon journey (macOS)
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:
@@ -680,6 +680,8 @@ jobs:
         working-directory: source
     env:
       EIDOLON_PACKAGED_PROOF_SHA: ${{ github.sha }}
+      EIDOLON_PACKAGED_HARNESS_SHA: ${{ github.sha }}
+      EIDOLON_PACKAGED_EVENT_SHA: ${{ github.sha }}
       PYTHONDONTWRITEBYTECODE: '1'
       OPENAI_API_KEY: ''
       OPENROUTER_API_KEY: ''
@@ -692,18 +694,29 @@ jobs:
           path: source
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify exact source and native host before packaging
+      - name: Verify exact product, harness and native host
         run: |
           set -euo pipefail
           mkdir -p ../packaged-macos-proof
           test "$(uname -s)" = Darwin
           test -x /usr/bin/sandbox-exec
-          test "$(git rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
-          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
-          test -z "$(git status --porcelain --untracked-files=all)"
-          git rev-parse HEAD 'HEAD^{tree}' > ../packaged-macos-proof/source.txt
+          product="$PWD"
+          harness="$PWD"
+          test "$(git -C "$product" rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          test "$(git -C "$harness" rev-parse HEAD)" = "$EIDOLON_PACKAGED_HARNESS_SHA"
+          test "$(git -C "$product" rev-parse refs/remotes/origin/main)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          for name in product harness; do
+            checkout="${!name}"
+            test "$(git -C "$checkout" write-tree)" = "$(git -C "$checkout" rev-parse 'HEAD^{tree}')"
+            test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+            git -C "$checkout" rev-parse HEAD 'HEAD^{tree}' > "../packaged-macos-proof/$name-source.txt"
+          done
+          printf 'EIDOLON_PACKAGED_PRODUCT_ROOT=%s\n' "$product" >> "$GITHUB_ENV"
+          printf 'EIDOLON_PACKAGED_HARNESS_ROOT=%s\n' "$harness" >> "$GITHUB_ENV"
+          printf 'EIDOLON_PACKAGED_PROOF_TREE=%s\n' "$(git -C "$product" rev-parse 'HEAD^{tree}')" >> "$GITHUB_ENV"
+          printf 'EIDOLON_PACKAGED_HARNESS_TREE=%s\n' "$(git -C "$harness" rev-parse 'HEAD^{tree}')" >> "$GITHUB_ENV"
+          printf '%s\n' "$EIDOLON_PACKAGED_EVENT_SHA" > ../packaged-macos-proof/event-sha.txt
           { sw_vers; uname -a; } > ../packaged-macos-proof/host.txt
-          # This lane never consumes signing or notarization credentials.
           for name in CSC_LINK CSC_KEY_PASSWORD CSC_NAME APPLE_NOTARY_PROFILE APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
             test -z "${!name:-}" || { echo "Unexpected signing configuration: $name" >&2; exit 1; }
           done
@@ -715,13 +728,16 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Install locked source dependencies
+      - name: Install locked product and harness dependencies
         run: |
           set -euo pipefail
+          cmp "$EIDOLON_PACKAGED_PRODUCT_ROOT/package-lock.json" "$EIDOLON_PACKAGED_HARNESS_ROOT/package-lock.json"
           python -m pip install uv==0.12.23
-          uv sync --locked --python 3.12 --extra dev
-          npm ci
-          printf 'HERMES_PYTHON=%s/.venv/bin/python\n' "$PWD" >> "$GITHUB_ENV"
+          (cd "$EIDOLON_PACKAGED_PRODUCT_ROOT" && GITHUB_SHA="$EIDOLON_PACKAGED_PROOF_SHA" uv sync --locked --python 3.12 --extra dev && GITHUB_SHA="$EIDOLON_PACKAGED_PROOF_SHA" npm ci)
+          if test "$EIDOLON_PACKAGED_HARNESS_ROOT" != "$EIDOLON_PACKAGED_PRODUCT_ROOT"; then
+            (cd "$EIDOLON_PACKAGED_HARNESS_ROOT" && npm ci)
+          fi
+          printf 'HERMES_PYTHON=%s/.venv/bin/python\n' "$EIDOLON_PACKAGED_PRODUCT_ROOT" >> "$GITHUB_ENV"
       - name: Verify packaged resolver, negative controls and desktop types
         working-directory: source/apps/desktop
         run: |
@@ -729,27 +745,30 @@ jobs:
           node --test scripts/check-packaged-macos-proof.test.cjs 2>&1 | tee ../../../packaged-macos-proof/gate-tests.log
           npx vitest run --project electron e2e/packaged-binary.unit.test.ts 2>&1 | tee ../../../packaged-macos-proof/resolver-tests.log
           npm run typecheck 2>&1 | tee ../../../packaged-macos-proof/typecheck.log
-      - name: Build the actual Eidolon app without publishing
-        working-directory: source/apps/desktop
+      - name: Build the actual-main Eidolon app without publishing
         run: |
           set -euo pipefail
+          cd "$EIDOLON_PACKAGED_PRODUCT_ROOT"
+          test "$(git rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EIDOLON_PACKAGED_PROOF_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
-          # Existing supported command and signing behavior. No release or signing overrides.
-          npm run pack 2>&1 | tee ../../../packaged-macos-proof/pack.log
-          node --input-type=module <<'JS'
-          import fs from 'node:fs'
-          import path from 'node:path'
-          import { createHash } from 'node:crypto'
-          import { execFileSync } from 'node:child_process'
-          const root = fs.realpathSync('../..')
-          const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
-          const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-          const expected = { commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), root,
-            electron: pkg.build.electronVersion, arch: process.arch,
-            mainSha256: hash('dist/electron-main.mjs'), rendererSha256: hash('dist/index.html') }
-          fs.writeFileSync('../../../packaged-macos-proof/expected.json', JSON.stringify(expected, null, 2) + '\n')
-          JS
+          # Event identity stays separate; only product build commands get product HEAD.
+          GITHUB_SHA="$EIDOLON_PACKAGED_PROOF_SHA" "$HERMES_PYTHON" eidolon_cli/eidolon_version.py --require-verified > ../packaged-macos-proof/product-identity.json
+          cd apps/desktop
+          # Existing command and signing policy, including --dir and --publish never.
+          GITHUB_SHA="$EIDOLON_PACKAGED_PROOF_SHA" npm run pack 2>&1 | tee ../../../packaged-macos-proof/pack.log
+      - name: Verify actual-main freshness immediately before launch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          observation="$(gh api repos/AetherMesh-AI/Eidolon/git/ref/heads/main --jq '[.ref,.object.sha] | @tsv')"
+          IFS=$'\t' read -r ref tip <<< "$observation"
+          test "$ref" = refs/heads/main
+          test "$tip" = "$EIDOLON_PACKAGED_PROOF_SHA" || { echo 'Actual main changed; refusing stale product proof' >&2; exit 1; }
+          verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'EIDOLON_PACKAGED_REMOTE_MAIN=%s\nEIDOLON_PACKAGED_MAIN_VERIFIED_AT=%s\n' "$tip" "$verified_at" >> "$GITHUB_ENV"
+          printf '{"repository":"AetherMesh-AI/Eidolon","ref":"refs/heads/main","remoteTip":"%s","verifiedAt":"%s"}\n' "$tip" "$verified_at" > ../packaged-macos-proof/main-freshness.json
       - name: Require real packaged startup and synthetic subscription journey
         timeout-minutes: 8
         working-directory: source/apps/desktop
@@ -758,24 +777,32 @@ jobs:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: |
           set -euo pipefail
+          node scripts/check-packaged-macos-proof.cjs --write-expected "$EIDOLON_PACKAGED_HARNESS_ROOT" ../../../packaged-macos-proof/expected.json
           npx playwright test e2e/subscription-native-journey.spec.ts --grep 'host-native subscription setup fresh profile consents, chooses policy, reviews Improve, generates and explicitly creates$' --workers=1 --retries=0 --global-timeout=420000 2>&1 | tee ../../../packaged-macos-proof/playwright.log
-      - name: Require exact packaged, native ABI, backend and teardown receipts
+      - name: Require product, harness, native ABI, backend and teardown receipts
         if: ${{ always() && !cancelled() }}
         run: |
           set -euo pipefail
           node apps/desktop/scripts/check-packaged-macos-proof.cjs apps/desktop/playwright-report/results.json ../packaged-macos-proof/expected.json ../packaged-macos-proof/accepted.json
-      - name: Verify source integrity after packaged acceptance
+      - name: Verify both source identities after packaged acceptance
         if: always()
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
-          git rev-parse HEAD 'HEAD^{tree}' > ../packaged-macos-proof/final-source.txt
-          cmp ../packaged-macos-proof/source.txt ../packaged-macos-proof/final-source.txt
-          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
-          git diff --exit-code
-          git diff --cached --exit-code
-          git status --short > ../packaged-macos-proof/worktree-status.txt
-      - name: Retain packaged acceptance evidence
+          product="$EIDOLON_PACKAGED_PRODUCT_ROOT"
+          harness="$EIDOLON_PACKAGED_HARNESS_ROOT"
+          test "$(git -C "$product" rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          test "$(git -C "$harness" rev-parse HEAD)" = "$EIDOLON_PACKAGED_HARNESS_SHA"
+          for name in product harness; do
+            checkout="${!name}"
+            git -C "$checkout" rev-parse HEAD 'HEAD^{tree}' > "../packaged-macos-proof/final-$name-source.txt"
+            cmp "../packaged-macos-proof/$name-source.txt" "../packaged-macos-proof/final-$name-source.txt"
+            test "$(git -C "$checkout" write-tree)" = "$(git -C "$checkout" rev-parse 'HEAD^{tree}')"
+            git -C "$checkout" diff --exit-code
+            git -C "$checkout" diff --cached --exit-code
+            git -C "$checkout" status --short > "../packaged-macos-proof/$name-worktree-status.txt"
+            test ! -s "../packaged-macos-proof/$name-worktree-status.txt"
+          done
+      - name: Retain actual-main packaged acceptance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -1008,14 +1035,26 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 2
     steps:
-      - name: Require standard, directory, owner policy, native and packaged subscription acceptance
+      - name: Require native gates and event-appropriate actual-main packaging
         env:
           STANDARD_RESULT: ${{ needs.desktop-native.result }}
           DIRECTORY_RESULT: ${{ needs.directory-acceptance.result }}
           OWNER_POLICY_RESULT: ${{ needs.owner-policy-acceptance.result }}
           SUBSCRIPTION_RESULT: ${{ needs.subscription-native-macos.result }}
           PACKAGED_RESULT: ${{ needs.packaged-macos.result }}
-        run: test "$STANDARD_RESULT" = success && test "$DIRECTORY_RESULT" = success && test "$OWNER_POLICY_RESULT" = success && test "$SUBSCRIPTION_RESULT" = success && test "$PACKAGED_RESULT" = success
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "$STANDARD_RESULT" = success
+          test "$DIRECTORY_RESULT" = success
+          test "$OWNER_POLICY_RESULT" = success
+          test "$SUBSCRIPTION_RESULT" = success
+          case "$EVENT_NAME:$EVENT_REF:$PACKAGED_RESULT" in
+            pull_request:refs/pull/*/merge:skipped) echo 'Packaged product acceptance is main-only; PR has no packaged verdict' ;;
+            push:refs/heads/main:success|workflow_dispatch:refs/heads/main:success) ;;
+            *) echo 'Missing or unsuccessful event-appropriate packaged gate' >&2; exit 1 ;;
+          esac
 
   workspace-gallery:
     name: Workspace gallery (${{ matrix.group }}, Linux)

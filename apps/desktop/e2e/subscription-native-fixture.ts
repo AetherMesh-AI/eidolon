@@ -17,12 +17,15 @@ import {
 } from './fixtures'
 import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer } from './mock-server'
-import { switchPython } from './organization-switch-fixture'
+import { packagedSources } from './packaged-sources'
 import { cleanupSubscriptionFixture, createSubscriptionLifecycle } from './subscription-native-lifecycle'
 import { createSubscriptionSandbox } from './subscription-native-sandbox'
 import { expect } from './test'
 
-const root = path.resolve(import.meta.dirname, '../../..')
+const root = process.env.EIDOLON_TEST_PACKAGED_APP === '1'
+  ? packagedSources().product.root
+  : path.resolve(import.meta.dirname, '../../..')
+const switchPython = path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 export const subscriptionModel = 'synthetic-subscription-model'
 export const suggestedJobs = 'Prepare clear studio drafts for owner review.'
 export const suggestedGoals = 'Deliver reviewed drafts with explicit acceptance criteria.'
@@ -723,7 +726,8 @@ export async function setupNativeSubscription(
       'ancestor_churn_once' | 'ancestor_final_path_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
   } = {}
 ) {
-  const sandbox = createSubscriptionSandbox(root)
+  // Keep packaged acceptance state outside both immutable source checkouts.
+  const sandbox = createSubscriptionSandbox(options.packaged ? path.dirname(root) : root)
   // The production protected-store rejects symlink ancestors, including /var on macOS.
   sandbox.root = realpathSync(sandbox.root)
   sandbox.hermesHome = realpathSync(sandbox.hermesHome)
@@ -832,9 +836,12 @@ export async function setupNativeSubscription(
 
     delete env.EIDOLON_HOME
     launchAttempted = true
-    // The packaged lane explicitly uses this checkout's guarded Python runtime.
+    // The packaged lane explicitly uses the product checkout's guarded Python runtime.
     // It never exercises first-install bootstrap or an installed user profile.
-    if (options.packaged) { env.HERMES_DESKTOP_PYTHON = switchPython }
+    if (options.packaged) {
+      env.HERMES_DESKTOP_PYTHON = switchPython
+      env.HERMES_DESKTOP_HERMES_ROOT = root
+    }
 
     launch = options.packaged
       ? await launchPackagedDesktop(env)

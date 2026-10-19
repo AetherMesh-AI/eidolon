@@ -12,23 +12,21 @@ import type * as NodePty from 'node-pty'
 
 import type { Sandbox } from './fixtures'
 import { requirePackagedBinary } from './packaged-binary'
+import { packagedSources } from './packaged-sources'
 
-const { validateReceipt } = createRequire(import.meta.url)('../scripts/check-packaged-macos-proof.cjs') as {
-  validateReceipt: (receipt: unknown, expected: { commit: string; tree: string; root: string; electron: string; arch: string; mainSha256: string; rendererSha256: string }) => unknown
+const { validateReceipt, makeExpected } = createRequire(import.meta.url)('../scripts/check-packaged-macos-proof.cjs') as {
+  validateReceipt: (receipt: unknown, expected: unknown) => unknown
+  makeExpected: (harnessRoot: string) => { adapters: unknown }
 }
 
-const root = realpathSync(path.resolve(import.meta.dirname, '../../..'))
-const desktop = path.join(root, 'apps/desktop')
+const harnessRoot = realpathSync(path.resolve(import.meta.dirname, '../../..'))
 const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex')
 
 export async function packagedMacosProof(app: ElectronApplication, page: Page, sandbox: Sandbox) {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
-  const commit = git('rev-parse', 'HEAD')
-  const tree = git('rev-parse', 'HEAD^{tree}')
-  assert.equal(commit, process.env.EIDOLON_PACKAGED_PROOF_SHA, 'Packaged acceptance requires the exact CI source')
-  assert.equal(git('diff', '--name-only'), '')
-  assert.equal(git('diff', '--cached', '--name-only'), '')
-  assert.equal(git('write-tree'), tree)
+  const sources = packagedSources()
+  const { root, commit, tree } = sources.product
+  const desktop = path.join(root, 'apps/desktop')
+  const expected = makeExpected(harnessRoot)
   const executable = requirePackagedBinary(path.join(desktop, 'release'))
 
   const renderer = fileURLToPath(page.url())
@@ -153,16 +151,16 @@ print(json.dumps(rows))
   })) as unknown
 
   const receipt = {
-    version: 1, scope: 'packaged-shell-exact-checkout-backend', source: { commit, tree, clean: true },
+    version: 2, scope: 'actual-main-packaged-shell-exact-product-checkout-backend',
+    source: { commit, tree, clean: true, mainTip: sources.product.mainTip },
+    harness: sources.harness, eventCommit: sources.eventCommit, freshness: sources.freshness, adapters: expected.adapters,
     ...runtime,
     bundle: { ...runtime.bundle, executableName },
     backend: { kind: 'controlled-checkout', root, python, liveGateways,
       cliSha256: hash(path.join(root, 'eidolon_cli/main.py')), gatewaySha256: hash(path.join(root, 'tui_gateway/server.py')) },
   }
 
-  const metadata = JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8'))
-  validateReceipt(receipt, { commit, tree, root, electron: metadata.build.electronVersion, arch: process.arch,
-    mainSha256: hash(path.join(desktop, 'dist/electron-main.mjs')), rendererSha256: hash(path.join(desktop, 'dist/index.html')) })
+  validateReceipt(receipt, expected)
 
   return receipt
 }

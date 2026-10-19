@@ -31,6 +31,7 @@ import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer, type MockServerOptions } from './mock-server'
 import { mockProviderConfig } from './mock-provider-config'
 import { packagedBinaryPath, requirePackagedBinary } from './packaged-binary'
+import { packagedSources } from './packaged-sources'
 import { installErrorBannerGuard } from './test'
 
 const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
@@ -520,7 +521,8 @@ export async function launchPackagedDesktop(env: Record<string, string>): Promis
     throw new Error('Packaged subscription acceptance requires native macOS')
   }
 
-  const binary = requirePackagedBinary(RELEASE_ROOT)
+  const sources = packagedSources()
+  const binary = requirePackagedBinary(path.join(sources.product.root, 'apps/desktop/release'))
 
   for (const key of ['HERMES_DESKTOP_BOOT_FAKE', 'HERMES_DESKTOP_BOOT_FAKE_ERROR', 'HERMES_DESKTOP_DEV_SERVER', 'ELECTRON_RUN_AS_NODE']) {
     if (env[key]) {
@@ -528,7 +530,7 @@ export async function launchPackagedDesktop(env: Record<string, string>): Promis
     }
   }
 
-  if (env.HERMES_DESKTOP_HERMES_ROOT !== REPO_ROOT || !env.HOME || env.HOME === process.env.HOME ||
+  if (env.HERMES_DESKTOP_HERMES_ROOT !== sources.product.root || !env.HOME || env.HOME === process.env.HOME ||
       !env.HERMES_HOME || !env.HERMES_DESKTOP_USER_DATA_DIR || !env.EIDOLON_FRESH_TEAM_GUARD_DIR) {
     throw new Error('Packaged acceptance requires its isolated synthetic backend fixture')
   }

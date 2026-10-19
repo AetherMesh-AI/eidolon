@@ -224,34 +224,57 @@ orphan debits, replay refusal, scope pins, execution fences, explicit periods,
 manual observation pacing, and passive read compatibility. These fixtures never
 activate a user's installation or call a paid provider.
 
-## Packaged macOS acceptance boundary
+## Actual-main packaged macOS acceptance boundary
 
-The `Organization packaged Eidolon journey (macOS)` job runs the existing
-`npm run pack` command, with publishing disabled by the existing packager wrapper.
-It does not modify signing, notarization, release configuration or user machines.
-The required desktop aggregate fails if this job fails, is cancelled or is skipped.
+`Organization actual-main packaged Eidolon journey (macOS)` runs on main pushes
+and explicit main dispatches. The existing native build identity policy permits
+actual main, not unmerged PR products. The desktop aggregate permits exactly the
+intentional packaged-job skip on a pull-request merge event; that is no packaged
+product verdict. Main push/dispatch requires packaged success. Failure, cancellation,
+unexpected event or missing result fails the aggregate. Product changes need a
+real-main rerun after merge before claiming packaged acceptance.
 
-It launches the actual `Eidolon.app/Contents/MacOS/Eidolon` output, with no source
-app argument or stock-Electron fallback. Missing bundles fail. The fresh
-subscription journey runs exactly once with retries disabled: synthetic consent,
-credential and provider edges, policy review, Improve review/apply/discard, explicit
-team creation and local disconnect. The owner flow, gateway, protected store and
-packaged renderer remain real. Every profile, HOME and userData directory is
-disposable; existing network guards install before renderer creation.
+The job runs the existing `npm run pack` command (`--dir`, `--publish never`) and
+preserves signing, notarization, release and provenance policy. It verifies product
+HEAD equals the real origin/main tip, and separately verifies GitHub's main ref
+immediately before launch with the existing read-only job token. A moved main tip
+fails explicitly; the workflow never silently substitutes newer source or creates
+synthetic main refs. The token is confined to that metadata step. Only product
+build commands receive the verified product HEAD as `GITHUB_SHA`; the original
+event identity is retained independently.
 
-This proves the packaged shell against an explicitly selected Python runtime in
-the exact tested checkout. It does not prove first-install backend downloads,
-an installed user's profile, production OAuth registration or grants, live
-provider calls, release signing, notarization or an installed/live acceptance run.
+The acceptance harness and packaged product each have an immutable commit/tree
+identity. They normally match in the main job. A temporary proof may use a newer
+harness to test an explicitly pinned actual-main product; that does not validate
+unmerged product changes. Both checkouts must stay clean. Dependencies are locked,
+and separate checkouts must have identical npm lockfiles. The executable, bundled
+main/renderer and Python backend belong to the product checkout. Electron network
+and passive-update adapters and the Python provider guard belong to the harness;
+the synthetic subscription-edge module belongs to the product test checkout.
+Receipts identify and hash those adapters. Harness source is never a fallback
+Python application root.
 
-Required receipts bind source commit/tree and the clean bundle stamp to the
-actual executable, app resources, renderer and main hashes. Bundled node-pty must
-resolve inside the bundle, load its native module under the packaged Electron ABI,
-and complete real PTY I/O. The live Python gateway must use the expected checkout
-venv and source path with the synthetic guard installed. Teardown must report
-settled processes and a removed sandbox. The report gate rejects missing, skipped,
-retried, duplicated or substituted tests and malformed runtime evidence; its
-negative controls run in the same job. Evidence is uploaded outside the checkout.
+The fixture launches `Eidolon.app/Contents/MacOS/Eidolon`, with no source app
+argument, fake boot or stock-Electron fallback. Missing bundles fail. The fresh
+subscription journey runs once with zero retries: synthetic consent, credential
+and provider edges, policy review, Improve review/apply/discard, explicit team
+creation and local disconnect. The owner flow, gateway, protected store and
+packaged renderer remain real. Profile, HOME and userData directories are
+disposable; network guards install before renderer creation.
+
+This proves the actual-main packaged shell against the explicitly selected Python
+runtime in the exact product checkout. It does not prove first-install backend
+downloads, installed profiles, production OAuth registration/grants, live provider
+calls, release signing/notarization or installed/live acceptance.
+
+Receipts bind product, harness and event identities, remote-main freshness and the
+clean bundle stamp to actual executable/resources/main/renderer paths and hashes.
+Bundled node-pty must resolve inside the bundle, load under the packaged Electron
+ABI and complete real PTY I/O. The live Python gateway must use the product venv
+and source path with synthetic guards installed. Teardown requires settled
+processes and a removed sandbox. The gate rejects missing, skipped, retried,
+duplicated or substituted tests and malformed runtime evidence. Its negative
+controls run in the same job. Evidence stays outside both checkouts.
 
 `launch-packaged-app.spec.ts` remains optional fake-boot visual smoke for broad E2E
 runs. Its skip or visual outcome never counts as packaged macOS acceptance.
