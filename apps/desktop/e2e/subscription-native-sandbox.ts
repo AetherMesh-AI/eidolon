@@ -30,7 +30,7 @@ function directory(location: string, uid: number, privateMode = false): number[]
   return identity(value)
 }
 
-interface RemainingEntries {
+export interface RemainingEntries {
   state: 'observed' | 'removed' | 'identity_unverified' | 'inspection_failed'
   truncated: boolean
   counts: { home: number; userData: number; userHome: number; evidence: number; observer: number; other: number }
