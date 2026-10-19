@@ -1,0 +1,1007 @@
+name: Native install diagnostic (not acceptance)
+'on':
+  push:
+    branches:
+    - proof/pr208-native-install-diagnostic-20261019
+  workflow_dispatch: {}
+permissions:
+  contents: read
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+jobs:
+  diagnostic:
+    name: Observe one unchanged npm install
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: 8ee62f7356a5274ebd5bbc61c1144d479fb7f369
+        fetch-depth: 2
+    - name: Verify exact unmodified source before diagnostic
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/pr208-native-install-evidence"
+        test "$(uname -s)" = Linux
+        test "$(git rev-parse HEAD)" = 8ee62f7356a5274ebd5bbc61c1144d479fb7f369
+        test "$(git rev-parse HEAD^{tree})" = 296ccba6612cbff2ec81480c1eaff95668624d2a
+        test "$(git rev-parse HEAD^1)" = 6c071ecac21ee8143b2d34a43b1670e159f0811e
+        test "$(git rev-parse HEAD^2)" = 75da4f1b0081bbd9933b8af0b0d893d0e21db16c
+        test "$(git write-tree)" = 296ccba6612cbff2ec81480c1eaff95668624d2a
+        git diff --exit-code
+        git diff --cached --exit-code
+        { git rev-parse HEAD HEAD^{tree} HEAD^1 HEAD^2; git write-tree; } > "$RUNNER_TEMP/pr208-native-install-evidence/source.txt"
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: '24'
+        cache: npm
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.12'
+    - name: Install locked Python runtime and test dependencies
+      run: |
+        python -m pip install uv==0.12.23
+        uv sync --locked --python 3.12 --extra dev
+        uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+    - name: Prepare bounded compiler observer outside checkout
+      run: |
+        set -euo pipefail
+        HELPERS="$RUNNER_TEMP/pr208-native-install-helpers"
+        mkdir -p "$HELPERS" "$RUNNER_TEMP/pr208-native-install-evidence/compiler"
+        cat > "$HELPERS/compiler_observer.py" <<'PR208_DIAGNOSTIC_HELPER_0'
+        #!/usr/bin/env python3
+        """Bounded diagnostic compiler observer. Standard library only; never repairs builds.
+
+        prepare resolves the diagnostic compiler before wrapper injection. The generated
+        launcher preserves argv boundaries and the selected driver's argv[0], but executes
+        the pinned real path. It does not establish the failed runner's compiler identity.
+
+        Snapshots are bounded samples, not proof of bytes consumed by the compiler.
+        Only the output directory and sanitize outputs are intended for publication;
+        the private launcher/runtime config must remain outside uploaded artifacts.
+        """
+        import argparse
+        import errno
+        import hashlib
+        import json
+        import os
+        from pathlib import Path
+        import re
+        import shlex
+        import signal
+        import stat
+        import subprocess
+        import sys
+        import tempfile
+        import threading
+        import time
+        import unicodedata
+
+        SCHEMA = 1
+        HEADER_NAMES = ("node_api.h", "node_api_types.h", "js_native_api.h", "js_native_api_types.h", "node_version.h")
+        HEADER_CAP = 1024 * 1024
+        TRACE_CAP = 128 * 1024
+        RECORD_CAP = 64 * 1024
+        MAX_INVOCATIONS = 64
+        ARG_CAP = 256
+        SECRET_NAME = re.compile(r"secret|password|passwd|credential|authorization|(?:api|access|private|ssh)[_-]?key|token", re.I)
+        SENSITIVE_LINE = re.compile(r"secret|password|passwd|credential|authorization|(?:api|access|private|ssh)[_-]?key|(?:auth|access|refresh|session|id|github|gh|npm)[_-]?token|\btoken\b|gh[pousr]_[A-Za-z0-9]|github_pat_|AKIA[A-Z0-9]{16}|-----BEGIN", re.I)
+        URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s<>\"']+", re.I)
+        ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+        SAFE_FLAGS = frozenset(("-c", "-E", "-S", "-o", "-I", "-isystem", "-iquote", "-include", "-imacros", "-x", "-H", "-pipe", "-pthread", "-fPIC", "-fpic", "-fno-exceptions", "-fno-rtti", "-fexceptions", "-frtti", "-MMD", "-MD", "-MP", "-MF", "-MT", "-MQ", "-shared", "-v", "--version", "-dumpversion", "-dumpmachine", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", "-w", "-g", "-g0", "-g1", "-g2", "-g3", "-O0", "-O1", "-O2", "-O3", "-Os", "-Oz"))
+        SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".c++", ".C", ".m", ".mm", ".i", ".ii")
+        CONSUMES_VALUE = frozenset(("-D", "-U", "-o", "-I", "-isystem", "-iquote", "-include", "-imacros", "-x", "-MF", "-MT", "-MQ", "-isysroot", "--sysroot", "-idirafter", "-iprefix", "-iwithprefix", "-iwithprefixbefore", "-B", "-L", "-l", "-Xclang", "-Xpreprocessor", "-Xassembler", "-Xlinker"))
+
+
+        API_MACROS = frozenset(("NAPI_VERSION", "NAPI_EXPERIMENTAL", "NAPI_DISABLE_CPP_EXCEPTIONS", "NAPI_CPP_EXCEPTIONS", "NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS", "NODE_API_NO_EXTERNAL_BUFFERS_ALLOWED", "NODE_API_EXPERIMENTAL_NOGC_ENV_OPT_OUT", "NODE_ADDON_API_ENABLE_MAYBE"))
+
+
+        def safe_error(exc):
+            """Closed categories only; never exception text or user-controlled class names."""
+            category = "Exception"
+            for cls in (FileNotFoundError, PermissionError, OSError, ValueError, TypeError, RuntimeError, MemoryError):
+                if isinstance(exc, cls):
+                    category = cls.__name__
+                    break
+            try:
+                number = getattr(exc, "errno", None)
+            except Exception:
+                number = None
+            return {"type": category, "errno": number if type(number) is int and 0 <= number <= 4096 else None}
+
+
+        def redact_text(text):
+            """Remove credential-bearing lines, URL payloads, known secret values, controls.
+
+            Unknown values in compiler argv are omitted separately, rather than trusting
+            this contextual sanitizer. Environment names/values are never dumped.
+            """
+            text = unicodedata.normalize("NFKC", ANSI.sub("", str(text)))
+            text = "".join(c for c in text if c in "\n\t" or (ord(c) >= 32 and ord(c) != 127))
+            secrets = sorted({v for k, v in os.environ.items() if SECRET_NAME.search(k) and v}, key=len, reverse=True)
+            for value in secrets:
+                text = text.replace(value, "[REDACTED_VALUE]")
+            text = re.sub(r"-----BEGIN[^\n]*-----.*?(?:-----END[^\n]*-----|\Z)", "[REDACTED_BLOCK]", text, flags=re.S)
+            lines = []
+            redact_next_line = False
+            for line in text.splitlines(keepends=True):
+                ending = "\n" if line.endswith("\n") else ""
+                if redact_next_line or SENSITIVE_LINE.search(line):
+                    redact_next_line = bool(re.search(r"(?:secret|password|passwd|credential|authorization|token|api[_-]?key)[\s:=]*$", line, re.I))
+                    lines.append("[REDACTED_SENSITIVE_LINE]" + ending)
+                else:
+                    line = URL.sub("[REDACTED_URL]", line)
+                    # Macro definitions can contain arbitrary credentials or private data.
+                    if re.search(r"(?:^|\s)-D(?:\s|\S)", line):
+                        lines.append("[REDACTED_MACRO_LINE]" + ending)
+                    else:
+                        lines.append(line)
+            return "".join(lines)
+
+
+        def redacted_argv(args):
+            result = []
+            for arg in args[:ARG_CAP]:
+                if arg == "":
+                    result.append("")
+                elif arg in SAFE_FLAGS or re.fullmatch(r"-std=(?:gnu\+\+|c\+\+|gnu|c)(?:98|03|11|14|17|20|23|26|89|90|99|2a|2b|2c)", arg):
+                    result.append(arg)
+                else:
+                    # No arbitrary argument values, paths, defines, or response-file text.
+                    result.append("[ARGUMENT_OMITTED]")
+            return {"values": result, "total_count": len(args), "omitted_count": max(0, len(args) - ARG_CAP)}
+
+
+        def atomic_bytes(path, data):
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".capture-", dir=str(path.parent))
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                os.replace(temporary, path)
+            finally:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
+
+
+        def atomic_json(path, value, cap=RECORD_CAP):
+            encoded = (json.dumps(value, sort_keys=True, ensure_ascii=True) + "\n").encode("ascii")
+            if len(encoded) > cap:
+                # No partial JSON; make the capture loss explicit.
+                value = {"schema": SCHEMA, "status": "record_truncated", "record_cap_bytes": cap, "encoded_bytes": len(encoded), "returncode": value.get("returncode")}
+                encoded = (json.dumps(value, sort_keys=True) + "\n").encode("ascii")
+            atomic_bytes(path, encoded)
+
+
+        def sanitize_bytes(raw, max_bytes, input_truncated=False):
+            # Drop a cut last line before redaction, preventing partial secrets at the cap.
+            cut_line = False
+            if input_truncated and raw and not raw.endswith(b"\n"):
+                raw = raw.rsplit(b"\n", 1)[0] + b"\n" if b"\n" in raw else b""
+                cut_line = True
+            text = raw.decode("utf-8", "replace")
+            redacted = redact_text(text).encode("utf-8")
+            output_truncated = len(redacted) > max_bytes
+            if output_truncated:
+                redacted = redacted[:max_bytes]
+                redacted = redacted.rsplit(b"\n", 1)[0] + b"\n" if b"\n" in redacted else b""
+            return redacted, {"input_truncated": bool(input_truncated), "incomplete_last_line_discarded": cut_line, "output_truncated": output_truncated, "utf8_replacement": "\ufffd" in text, "output_bytes": len(redacted), "cap_bytes": max_bytes}
+
+
+        def sanitize_file(input_path, output_path, max_bytes=2 * 1024 * 1024):
+            if not 1 <= max_bytes <= 16 * 1024 * 1024:
+                raise ValueError("capture cap out of range")
+            meta = {"schema": SCHEMA}
+            try:
+                # Avoid unbounded blocking on devices/FIFOs and do not follow final symlinks.
+                flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+                if Path(input_path).is_symlink():
+                    raise OSError(errno.ELOOP, "symlink input")
+                fd = os.open(input_path, flags)
+                with os.fdopen(fd, "rb") as stream:
+                    before = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(before.st_mode):
+                        raise OSError(errno.EINVAL, "nonregular input")
+                    raw = stream.read(max_bytes + 1)
+                    after = os.fstat(stream.fileno())
+                truncated = len(raw) > max_bytes or before.st_size > max_bytes
+                payload, bounds = sanitize_bytes(raw[:max_bytes], max_bytes, truncated)
+                meta.update(bounds)
+                meta.update(status="ok", input_size=before.st_size, input_bytes_read=min(len(raw), max_bytes), changed_during_read=stat_identity(before) != stat_identity(after))
+            except Exception as exc:
+                payload = b""
+                meta.update(status="missing" if isinstance(exc, FileNotFoundError) else "unreadable", error=safe_error(exc), output_bytes=0, cap_bytes=max_bytes)
+            atomic_bytes(output_path, payload)
+            atomic_json(str(output_path) + ".meta.json", meta)
+            return meta
+
+
+        def stat_identity(info):
+            return {"device": info.st_dev, "inode": info.st_ino, "size": info.st_size, "mtime_ns": info.st_mtime_ns, "ctime_ns": info.st_ctime_ns, "mode": stat.S_IMODE(info.st_mode)}
+
+
+        def snapshot_header(path, label, cap=HEADER_CAP):
+            """Open every path component with no-follow, hash only a capped regular file."""
+            record = {"label": label, "cap_bytes": cap, "interpretation": "sample_not_compiler_consumption"}
+            descriptors = []
+            try:
+                if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
+                    record["status"] = "nofollow_unsupported"
+                    return record
+                parts = Path(os.path.abspath(path)).parts
+                directory = os.open(parts[0], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                descriptors.append(directory)
+                for part in parts[1:-1]:
+                    entry = os.stat(part, dir_fd=directory, follow_symlinks=False)
+                    if stat.S_ISLNK(entry.st_mode):
+                        record.update(status="symlink_component", component_index=len(descriptors))
+                        return record
+                    directory = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                    descriptors.append(directory)
+                before_name = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+                record["path_before"] = stat_identity(before_name)
+                if stat.S_ISLNK(before_name.st_mode):
+                    record["status"] = "symlink"
+                    return record
+                if not stat.S_ISREG(before_name.st_mode):
+                    record["status"] = "nonregular"
+                    return record
+                fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                descriptors.append(fd)
+                before = os.fstat(fd)
+                record["fd_before"] = stat_identity(before)
+                if not stat.S_ISREG(before.st_mode):
+                    record["status"] = "nonregular"
+                    return record
+                remaining = cap
+                digest = hashlib.sha256()
+                consumed = 0
+                while remaining:
+                    chunk = os.read(fd, min(65536, remaining))
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    consumed += len(chunk)
+                    remaining -= len(chunk)
+                extra = os.read(fd, 1)
+                after = os.fstat(fd)
+                record["fd_after"] = stat_identity(after)
+                try:
+                    after_name = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+                    record["path_after"] = stat_identity(after_name)
+                except OSError as exc:
+                    record["path_after_error"] = safe_error(exc)
+                changed = not (record["path_before"] == record["fd_before"] == record["fd_after"] == record.get("path_after"))
+                record.update(status="ok", bytes_hashed=consumed, sha256=digest.hexdigest(), hash_scope="prefix" if extra else "complete", truncated=bool(extra), changed_during_read=changed)
+            except Exception as exc:
+                record.update(status="missing" if isinstance(exc, FileNotFoundError) else "unreadable", error=safe_error(exc))
+            finally:
+                for fd in reversed(descriptors):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+            return record
+
+
+        def header_snapshots(config):
+            records = [snapshot_header(os.path.join(config["node_headers"], name), "node/" + name, config["header_cap"]) for name in HEADER_NAMES]
+            records.append(snapshot_header(config["addon_header"], "node-addon-api/napi.h", config["header_cap"]))
+            return records
+
+
+        def compiler_identity(selected):
+            selected = os.path.abspath(selected)
+            chain = []
+            current = selected
+            for _ in range(32):
+                info = os.lstat(current)
+                entry = {"path": redact_text(current), "stat": stat_identity(info), "symlink": stat.S_ISLNK(info.st_mode)}
+                if not stat.S_ISLNK(info.st_mode):
+                    chain.append(entry)
+                    break
+                target = os.readlink(current)
+                entry["target"] = redact_text(target)
+                chain.append(entry)
+                current = os.path.abspath(os.path.join(os.path.dirname(current), target))
+            else:
+                raise OSError(errno.ELOOP, "compiler symlink loop")
+            actual = os.path.realpath(selected)
+            info = os.stat(actual)
+            if not stat.S_ISREG(info.st_mode) or not os.access(actual, os.X_OK):
+                raise OSError(errno.EACCES, "compiler is not executable")
+            identity = {"selected_path": redact_text(selected), "actual_path": redact_text(actual), "symlink_chain": chain, "actual_stat": stat_identity(info), "identity_claim": "diagnostic_selection_only"}
+            # Compiler binary identity, bounded independently of header snapshots.
+            identity["binary_sample"] = snapshot_header(actual, "compiler_executable", 64 * 1024 * 1024)
+            return selected, actual, identity
+
+
+        def source_inputs(args):
+            candidates = []
+            skip = False
+            for arg in args:
+                if skip:
+                    skip = False
+                    continue
+                if arg in CONSUMES_VALUE:
+                    skip = True
+                    continue
+                if not arg.startswith("-") and arg.endswith(SOURCE_SUFFIXES):
+                    candidates.append(arg)
+            return candidates
+
+
+        def target_labels(config, args):
+            addon = Path(os.path.abspath(config["addon_header"]))
+            if addon.parts[-3:] != ("node_modules", "node-addon-api", "napi.h"):
+                return []
+            expected = addon.parents[2] / "node_modules" / "node-pty" / "src" / "unix" / "pty.cc"
+            expected = os.path.realpath(expected)
+            if any(os.path.realpath(os.path.abspath(path)) == expected for path in source_inputs(args)):
+                return ["node-pty/src/unix/pty.cc"]
+            return []
+
+
+        def api_macros(args):
+            # These are ordered direct-argv observations, never effective preprocessor
+            # state: response files, driver passthrough, environment and headers may differ.
+            values = {}
+            omitted = set()
+            undefined = set()
+            unparsed = set()
+            for arg in args:
+                if arg.startswith("@"):
+                    unparsed.add("response_file")
+                if arg.startswith("-Wp,") or arg == "-Xpreprocessor":
+                    unparsed.add("preprocessor_passthrough")
+                if arg == "-Xclang" or arg.startswith(("-specs=", "--specs=", "-fplugin=")):
+                    unparsed.add("driver_passthrough")
+            index = 0
+            while index < len(args):
+                arg = args[index]
+                definition = None
+                operation = None
+                if arg in CONSUMES_VALUE and arg not in ("-D", "-U"):
+                    index += 2
+                    continue
+                if arg in ("-D", "-U") and index + 1 < len(args):
+                    operation = arg
+                    index += 1
+                    definition = args[index]
+                elif arg.startswith(("-D", "-U")):
+                    operation = arg[:2]
+                    definition = arg[2:]
+                if definition is not None:
+                    name, sep, value = definition.partition("=")
+                    if name in API_MACROS:
+                        if operation == "-U" and not sep:
+                            values.pop(name, None)
+                            omitted.discard(name)
+                            undefined.add(name)
+                        elif operation == "-D":
+                            undefined.discard(name)
+                            if not sep or value.lower() in ("true", "false"):
+                                values[name] = (not sep) or value.lower() == "true"
+                                omitted.discard(name)
+                            elif re.fullmatch(r"[0-9]{1,9}", value):
+                                values[name] = int(value)
+                                omitted.discard(name)
+                            else:
+                                values.pop(name, None)
+                                omitted.add(name)
+                        else:
+                            unparsed.add("invalid_undefine")
+                index += 1
+            return {"node_api_macros": values, "node_api_macro_values_omitted": sorted(omitted), "node_api_macros_undefined": sorted(undefined), "node_api_macro_unparsed_inputs": sorted(unparsed), "node_api_macro_observation": "direct_argv_only_not_effective_preprocessor_state"}
+
+
+        def should_trace(args):
+            if not any(x in args for x in ("-c", "-E", "-S")):
+                return False
+            if any(x in ("--version", "--help", "-###") or x.startswith(("-print-", "-dump")) for x in args):
+                return False
+            candidates = source_inputs(args)
+            if not candidates:
+                return False
+            for path in candidates:
+                lower = path.lower()
+                base = os.path.basename(lower)
+                if any(part in lower for part in ("conftest", "try_compile", "cmakescratch", "cmakefiles/cmaketmp", "compilerid", "compiler_abi", "compilerabi")) or base in ("test.c", "test.cc", "test.cpp", "a.out.c"):
+                    return False
+            return True
+
+
+        def reserve_slot(output_dir, count):
+            root = Path(output_dir)
+            root.mkdir(parents=True, exist_ok=True)
+            for index in range(count):
+                slot = root / ("invocation-%03d" % index)
+                try:
+                    slot.mkdir()
+                    return slot
+                except FileExistsError:
+                    continue
+            atomic_json(root / "overflow.json", {"schema": SCHEMA, "status": "invocation_capture_limit", "max_invocations": count})
+            return None
+
+
+        def drain_passthrough(source):
+            """Emergency no-capture path using the stream reader, still byte preserving."""
+            while True:
+                chunk = source.read1(65536)
+                if not chunk:
+                    return
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(2, view)
+                    view = view[written:]
+
+
+        class StderrTee:
+            def __init__(self, source, cap):
+                self.source = source
+                self.cap = cap
+                self.buffer = bytearray()
+                self.total_bytes = 0
+                self.read_error = None
+                self.forward_error = None
+                self.capture_error = None
+                self.fallback_error = None
+                self.thread = threading.Thread(target=self.run_safe, daemon=True)
+
+            def drain(self):
+                while True:
+                    chunk = os.read(self.source.fileno(), 65536)
+                    if not chunk:
+                        break
+                    self.total_bytes += len(chunk)
+                    remaining = self.cap - len(self.buffer)
+                    if remaining > 0 and self.capture_error is None:
+                        try:
+                            self.buffer.extend(chunk[:remaining])
+                        except Exception as exc:
+                            self.capture_error = safe_error(exc)
+                    if self.forward_error is None:
+                        view = memoryview(chunk)
+                        try:
+                            while view:
+                                written = os.write(2, view)
+                                view = view[written:]
+                        except OSError as exc:
+                            self.forward_error = safe_error(exc)
+
+            def run_safe(self):
+                try:
+                    self.drain()
+                except Exception as exc:
+                    self.read_error = safe_error(exc)
+                    try:
+                        drain_passthrough(self.source)
+                    except Exception as fallback:
+                        self.fallback_error = safe_error(fallback)
+                finally:
+                    try:
+                        self.source.close()
+                    except OSError:
+                        pass
+
+            def capture(self):
+                # Compiler descendants may keep stderr open. Never wait forever for capture.
+                if self.thread.ident is not None:
+                    self.thread.join(timeout=2.0)
+                incomplete = self.thread.is_alive()
+                raw = bytes(self.buffer)
+                data, meta = sanitize_bytes(raw, self.cap, self.total_bytes > self.cap or incomplete)
+                meta.update(total_stderr_bytes=self.total_bytes, drain_incomplete=incomplete, read_error=self.read_error, forward_error=self.forward_error, capture_error=self.capture_error, fallback_error=self.fallback_error)
+                return data, meta
+
+
+        def return_like_child(code):
+            if code < 0 and os.name == "posix":
+                sig = -code
+                if sig not in (getattr(signal, "SIGKILL", None), getattr(signal, "SIGSTOP", None)):
+                    signal.signal(sig, signal.SIG_DFL)
+                if hasattr(signal, "pthread_sigmask"):
+                    signal.pthread_sigmask(signal.SIG_UNBLOCK, {sig})
+                os.kill(os.getpid(), sig)
+                return 128 + sig  # Fallback only if the platform did not terminate.
+            return code
+
+
+        def run_compiler(config, args):
+            record = {"schema": SCHEMA, "pid": os.getpid(), "started_ns": time.time_ns(), "argv": redacted_argv(args), "identity_claim": "diagnostic_selection_only"}
+            slot = None
+            try:
+                slot = reserve_slot(config["output_dir"], config["max_invocations"])
+            except Exception as exc:
+                record["artifact_error"] = safe_error(exc)
+            trace = should_trace(args)
+            record["include_trace_added"] = trace and "-H" not in args
+            record["include_trace_eligible"] = trace
+            try:
+                record["target_labels"] = target_labels(config, args)
+                record.update(api_macros(args))
+            except Exception as exc:
+                record["argument_observation_error"] = safe_error(exc)
+            try:
+                record["header_before"] = header_snapshots(config)
+            except Exception as exc:
+                record["header_before_error"] = safe_error(exc)
+            try:
+                record["compiler_at_invocation"] = stat_identity(os.stat(config["actual_compiler"]))
+                record["compiler_metadata_matches_prepare"] = record["compiler_at_invocation"] == config["compiler_stat"]
+            except Exception as exc:
+                record["compiler_identity_error"] = safe_error(exc)
+            child = None
+            pending_signals = []
+            original_handlers = {}
+
+            def forward(sig, frame):
+                if child is None:
+                    pending_signals.append(sig)
+                else:
+                    try:
+                        child.send_signal(sig)
+                    except ProcessLookupError:
+                        pass
+
+            for name in ("SIGTERM", "SIGINT", "SIGHUP", "SIGQUIT"):
+                sig = getattr(signal, name, None)
+                if sig is not None:
+                    original_handlers[sig] = signal.signal(sig, forward)
+            tee = None
+            try:
+                forwarded = list(args)
+                if record["include_trace_added"]:
+                    forwarded.insert(0, "-H")
+                # executable pins resolution; argv[0] preserves c++/clang++ driver semantics.
+                child = subprocess.Popen([config["selected_compiler"]] + forwarded, executable=config["actual_compiler"], stderr=subprocess.PIPE if trace else None)
+            except OSError as exc:
+                record["launch_error"] = safe_error(exc)
+                code = 127 if exc.errno == errno.ENOENT else 126
+            else:
+                for sig in pending_signals:
+                    try:
+                        child.send_signal(sig)
+                    except ProcessLookupError:
+                        pass
+                if trace:
+                    try:
+                        tee = StderrTee(child.stderr, config["trace_cap"])
+                    except Exception as exc:
+                        record["tee_init_error"] = safe_error(exc)
+                        try:
+                            drain_passthrough(child.stderr)
+                        except Exception as fallback:
+                            record["tee_fallback_error"] = safe_error(fallback)
+                        finally:
+                            child.stderr.close()
+                    else:
+                        try:
+                            tee.thread.start()
+                        except Exception as exc:
+                            # Drain this same child synchronously if thread startup fails.
+                            record["tee_start_error"] = safe_error(exc)
+                            tee.run_safe()
+                code = child.wait()
+            finally:
+                for sig, handler in original_handlers.items():
+                    signal.signal(sig, handler)
+            record["returncode"] = code
+            record["completed_ns"] = time.time_ns()
+            try:
+                record["header_after"] = header_snapshots(config)
+            except Exception as exc:
+                record["header_after_error"] = safe_error(exc)
+            if tee is not None:
+                try:
+                    trace_data, trace_meta = tee.capture()
+                    record["stderr_capture"] = trace_meta
+                    if slot is not None:
+                        atomic_bytes(slot / "stderr.sanitized.log", trace_data)
+                except Exception as exc:
+                    record["trace_capture_error"] = safe_error(exc)
+            if slot is not None:
+                try:
+                    atomic_json(slot / "record.json", record)
+                except Exception:
+                    pass  # The compiler/npm status is always authoritative.
+            return return_like_child(code)
+
+
+        def prepare(args):
+            output = Path(args.output_dir)
+            output.mkdir(parents=True, exist_ok=True)
+            try:
+                selected, actual, identity = compiler_identity(args.compiler)
+            except Exception as exc:
+                status = {"schema": SCHEMA, "status": "compiler_unavailable", "error": safe_error(exc)}
+                atomic_json(output / "prepare.json", status)
+                print(json.dumps(status, sort_keys=True))
+                return 127
+            wrapper = Path(os.path.abspath(args.wrapper))
+            if selected == str(wrapper) or actual == os.path.realpath(wrapper):
+                raise ValueError("wrapper must not replace selected compiler")
+            config = {"schema": SCHEMA, "selected_compiler": selected, "actual_compiler": actual, "compiler_stat": identity["actual_stat"], "output_dir": str(output.absolute()), "node_headers": os.path.abspath(args.node_headers), "addon_header": os.path.abspath(args.addon_header), "header_cap": HEADER_CAP, "trace_cap": TRACE_CAP, "max_invocations": MAX_INVOCATIONS}
+            config_path = str(wrapper) + ".private.json"
+            atomic_json(config_path, config)
+            os.chmod(config_path, 0o600)
+            command = [sys.executable, os.path.abspath(__file__), "run", "--config", config_path, "--"]
+            launcher = "#!/bin/sh\nexec " + " ".join(shlex.quote(x) for x in command) + ' "$@"\n'
+            atomic_bytes(wrapper, launcher.encode("utf-8"))
+            os.chmod(wrapper, 0o700)
+            identity.update(schema=SCHEMA, status="ready", header_names=list(HEADER_NAMES) + ["node-addon-api/napi.h"], limits={"header_bytes": HEADER_CAP, "trace_bytes": TRACE_CAP, "record_bytes": RECORD_CAP, "max_invocations": MAX_INVOCATIONS}, caveats=["Observer timing and -H change the diagnostic invocation.", "Snapshots do not establish the bytes consumed by the compiler.", "Diagnostic compiler identity is not evidence of failed-runner identity.", "Do not publish the private runtime config or launcher."])
+            atomic_json(output / "prepare.json", identity)
+            print(json.dumps({"schema": SCHEMA, "status": "ready", "identity_claim": "diagnostic_selection_only"}, sort_keys=True))
+            return 0
+
+
+        def main(argv=None):
+            parser = argparse.ArgumentParser(description=__doc__)
+            sub = parser.add_subparsers(dest="command", required=True)
+            init = sub.add_parser("prepare")
+            for option in ("compiler", "output-dir", "wrapper", "node-headers", "addon-header"):
+                init.add_argument("--" + option, required=True)
+            run = sub.add_parser("run")
+            run.add_argument("--config", required=True)
+            run.add_argument("args", nargs=argparse.REMAINDER)
+            sanitize = sub.add_parser("sanitize")
+            sanitize.add_argument("--input", required=True)
+            sanitize.add_argument("--output", required=True)
+            sanitize.add_argument("--max-bytes", type=int, default=2 * 1024 * 1024)
+            args = parser.parse_args(argv)
+            if args.command == "prepare":
+                return prepare(args)
+            if args.command == "sanitize":
+                meta = sanitize_file(args.input, args.output, args.max_bytes)
+                print(json.dumps(meta, sort_keys=True))
+                return 0 if meta["status"] == "ok" else 1
+            with open(args.config, encoding="utf-8") as stream:
+                config = json.load(stream)
+            forwarded = args.args[1:] if args.args[:1] == ["--"] else args.args
+            return run_compiler(config, forwarded)
+
+
+        if __name__ == "__main__":
+            try:
+                raise SystemExit(main())
+            except Exception as exc:
+                # Do not emit a traceback containing argument/config/exception values.
+                print(json.dumps({"status": "observer_error", "error": safe_error(exc)}, sort_keys=True), file=sys.stderr)
+                raise SystemExit(126)
+        PR208_DIAGNOSTIC_HELPER_0
+        test "$(sha256sum "$HELPERS/compiler_observer.py" | cut -d " " -f 1)" = 98dc0f309b24762dc840c00eff3db1a588c3faaf305f0ec78485f50ab6660fc8
+        cat > "$HELPERS/collect_install.py" <<'PR208_DIAGNOSTIC_HELPER_1'
+        #!/usr/bin/env python3
+        """Sanitize bounded npm evidence after one install; never run npm itself."""
+        from __future__ import annotations
+
+        import argparse
+        import json
+        from pathlib import Path
+        import subprocess
+        import sys
+
+        MAX_DEBUG_FILES = 16
+        MAX_LOG_BYTES = 1_048_576
+
+
+        def collect(observer: Path, output: Path, console: Path, debug: Path, status: int) -> dict:
+            output.mkdir(parents=True, exist_ok=True)
+            results = []
+            collection_failed = False
+            debug_list_failed = False
+            try:
+                files = sorted(p for p in debug.glob('*-debug-0.log') if p.is_file())
+            except OSError:
+                files = []
+                debug_list_failed = True
+            selected = files[-MAX_DEBUG_FILES:]
+            sources = [('console.log', console)] + [
+                (f'npm-debug-{i:02d}.log', p) for i, p in enumerate(selected)
+            ]
+            for name, source in sources:
+                try:
+                    completed = subprocess.run(
+                        [sys.executable, str(observer), 'sanitize', '--input', str(source),
+                         '--output', str(output / name), '--max-bytes', str(MAX_LOG_BYTES)],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                    )
+                    code = completed.returncode
+                except OSError:
+                    code = None
+                failed = code != 0
+                collection_failed |= failed
+                results.append({'name': name, 'sanitizeExitCode': code, 'failed': failed})
+            receipt = {
+                'version': 1,
+                'npmCommand': ['npm', 'ci'],
+                'npmExitCode': status,
+                'installRuns': 1,
+                'debugFilesObserved': len(files),
+                'debugFilesSelected': len(selected),
+                'debugSelectionTruncated': len(files) > MAX_DEBUG_FILES,
+                'debugListingFailed': debug_list_failed,
+                'collectionFailed': collection_failed or debug_list_failed,
+                'maxLogBytes': MAX_LOG_BYTES,
+                'logs': results,
+            }
+            (output / 'install-result.json').write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n')
+            return receipt
+
+
+        def main() -> int:
+            parser = argparse.ArgumentParser()
+            for name in ('observer', 'output', 'console', 'debug'):
+                parser.add_argument('--' + name, type=Path, required=True)
+            parser.add_argument('--status', type=int, required=True)
+            args = parser.parse_args()
+            receipt = collect(args.observer, args.output, args.console, args.debug, args.status)
+            print(json.dumps({'collectionFailed': receipt['collectionFailed'],
+                              'debugSelectionTruncated': receipt['debugSelectionTruncated']}))
+            return 1 if receipt['collectionFailed'] else 0
+
+
+        if __name__ == '__main__':
+            raise SystemExit(main())
+        PR208_DIAGNOSTIC_HELPER_1
+        test "$(sha256sum "$HELPERS/collect_install.py" | cut -d " " -f 1)" = f56ee4630a8ff261cee6950eb5be95a8467ce9f947c4886958416307d9d6b211
+        cat > "$HELPERS/check_evidence.py" <<'PR208_DIAGNOSTIC_HELPER_2'
+        #!/usr/bin/env python3
+        """Validate complete bounded diagnostic evidence; does not declare product acceptance."""
+        from __future__ import annotations
+        import hashlib
+        import json
+        from pathlib import Path
+        import re
+        import sys
+
+        SOURCE = [
+            '8ee62f7356a5274ebd5bbc61c1144d479fb7f369',
+            '296ccba6612cbff2ec81480c1eaff95668624d2a',
+            '6c071ecac21ee8143b2d34a43b1670e159f0811e',
+            '75da4f1b0081bbd9933b8af0b0d893d0e21db16c',
+            '296ccba6612cbff2ec81480c1eaff95668624d2a',
+        ]
+        HEADERS = {'node/node_api.h', 'node/node_api_types.h', 'node/js_native_api.h',
+                   'node/js_native_api_types.h', 'node/node_version.h', 'node-addon-api/napi.h'}
+        API_MACROS = {'NAPI_VERSION', 'NAPI_EXPERIMENTAL', 'NAPI_DISABLE_CPP_EXCEPTIONS',
+                      'NAPI_CPP_EXCEPTIONS', 'NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS',
+                      'NODE_API_NO_EXTERNAL_BUFFERS_ALLOWED', 'NODE_API_EXPERIMENTAL_NOGC_ENV_OPT_OUT',
+                      'NODE_ADDON_API_ENABLE_MAYBE'}
+
+
+        def header_sample(row):
+            assert isinstance(row, dict)
+            assert set(row) <= {'label', 'cap_bytes', 'interpretation', 'status', 'component_index',
+                                'path_before', 'fd_before', 'fd_after', 'path_after', 'path_after_error',
+                                'bytes_hashed', 'sha256', 'hash_scope', 'truncated', 'changed_during_read', 'error'}
+            assert row['label'] in HEADERS
+            assert row['cap_bytes'] == 1048576 and type(row['cap_bytes']) is int
+            assert row['interpretation'] == 'sample_not_compiler_consumption'
+            assert row['status'] in {'ok', 'missing', 'unreadable', 'nofollow_unsupported',
+                                     'symlink_component', 'symlink', 'nonregular'}
+            for name in ('path_before', 'fd_before', 'fd_after', 'path_after'):
+                if name in row:
+                    assert set(row[name]) == {'device', 'inode', 'size', 'mtime_ns', 'ctime_ns', 'mode'}
+                    assert all(type(value) is int for value in row[name].values())
+            for name in ('error', 'path_after_error'):
+                if name in row:
+                    error = row[name]
+                    assert set(error) == {'type', 'errno'}
+                    assert error['type'] in {'OSError', 'FileNotFoundError', 'PermissionError',
+                                              'ValueError', 'TypeError', 'RuntimeError', 'MemoryError', 'Exception'}
+                    assert error['errno'] is None or type(error['errno']) is int
+            if row['status'] == 'ok':
+                assert type(row['bytes_hashed']) is int and 0 <= row['bytes_hashed'] <= 1048576
+                assert isinstance(row['sha256'], str) and re.fullmatch('[0-9a-f]{64}', row['sha256'])
+                assert type(row['truncated']) is bool and type(row['changed_during_read']) is bool
+                assert row['hash_scope'] == ('prefix' if row['truncated'] else 'complete')
+                assert all(name in row for name in ('path_before', 'fd_before', 'fd_after'))
+                assert ('path_after' in row) != ('path_after_error' in row)
+            elif row['status'] in {'missing', 'unreadable'}:
+                assert 'error' in row
+            elif row['status'] == 'symlink_component':
+                assert type(row['component_index']) is int and row['component_index'] > 0
+
+
+        def read_json(path):
+            assert path.is_file() and not path.is_symlink()
+            assert path.stat().st_size <= 131072
+            value = json.loads(path.read_text())
+            assert isinstance(value, dict)
+            return value
+
+
+        def verify(root):
+            for name in ('source.txt', 'final-source.txt'):
+                assert (root / name).read_text().splitlines() == SOURCE
+            assert (root / 'runtime.txt').read_text().splitlines() == ['v24.21.0', '11.19.0', 'Python 3.12.15']
+            assert (root / 'collection-exit.txt').read_text() == '0\n'
+            install = read_json(root / 'logs' / 'install-result.json')
+            assert type(install['version']) is int and install['version'] == 1
+            assert type(install['npmExitCode']) is int and 0 <= install['npmExitCode'] <= 255
+            assert install['npmCommand'] == ['npm', 'ci']
+            assert type(install['installRuns']) is int and install['installRuns'] == 1
+            assert install['collectionFailed'] is False and install['debugListingFailed'] is False
+            assert type(install['debugSelectionTruncated']) is bool
+            assert install['debugSelectionTruncated'] is False
+            assert type(install['debugFilesSelected']) is int and 1 <= install['debugFilesSelected'] <= 16
+            assert isinstance(install['logs'], list) and 1 <= len(install['logs']) <= 17
+            assert len(install['logs']) == install['debugFilesSelected'] + 1
+            assert len({row['name'] for row in install['logs']}) == len(install['logs'])
+            assert install['logs'][0]['name'] == 'console.log'
+            for row in install['logs']:
+                assert set(row) == {'name', 'sanitizeExitCode', 'failed'}
+                assert row['name'] == 'console.log' or (
+                    row['name'].startswith('npm-debug-') and len(row['name']) == 16
+                    and row['name'][10:12].isdigit() and row['name'].endswith('.log'))
+                assert type(row['sanitizeExitCode']) is int and row['sanitizeExitCode'] == 0
+                assert row['failed'] is False
+                meta = read_json(root / 'logs' / (row['name'] + '.meta.json'))
+                assert meta['status'] == 'ok'
+                assert type(meta['output_bytes']) is int and 0 <= meta['output_bytes'] <= 1048576
+                assert meta['cap_bytes'] == 1048576 and type(meta['cap_bytes']) is int
+                payload = root / 'logs' / row['name']
+                assert payload.is_file() and not payload.is_symlink()
+                assert payload.stat().st_size == meta['output_bytes']
+                for flag in ('input_truncated', 'output_truncated', 'incomplete_last_line_discarded',
+                             'utf8_replacement', 'changed_during_read'):
+                    assert meta[flag] is False
+            compiler = root / 'compiler'
+            prepare = read_json(compiler / 'prepare.json')
+            assert prepare['status'] == 'ready'
+            assert prepare['identity_claim'] == 'diagnostic_selection_only'
+            assert prepare['limits'] == {'header_bytes': 1048576, 'trace_bytes': 131072,
+                                         'record_bytes': 65536, 'max_invocations': 64}
+            assert not (compiler / 'overflow.json').exists()
+            slots = sorted(compiler.glob('invocation-*'))
+            assert 1 <= len(slots) <= 64
+            traced = 0
+            pty_traced = 0
+            expected_files = {'source.txt', 'final-source.txt', 'runtime.txt', 'collection-exit.txt',
+                              'logs/install-result.json', 'compiler/prepare.json'}
+            for row in install['logs']:
+                expected_files.add('logs/' + row['name'])
+                expected_files.add('logs/' + row['name'] + '.meta.json')
+            for slot in slots:
+                expected_files.add(str((slot / 'record.json').relative_to(root)))
+                record = read_json(slot / 'record.json')
+                assert type(record['schema']) is int and record['schema'] == 1
+                assert record['identity_claim'] == 'diagnostic_selection_only'
+                assert type(record['returncode']) is int
+                assert record.get('status') != 'record_truncated'
+                for key in ('artifact_error', 'compiler_identity_error', 'launch_error', 'trace_capture_error',
+                            'argument_observation_error', 'header_before_error', 'header_after_error',
+                            'tee_init_error', 'tee_start_error', 'tee_fallback_error'):
+                    assert key not in record
+                assert record['compiler_metadata_matches_prepare'] is True
+                for phase in ('header_before', 'header_after'):
+                    assert isinstance(record[phase], list) and len(record[phase]) == 6
+                    assert {row['label'] for row in record[phase]} == HEADERS
+                    for row in record[phase]:
+                        header_sample(row)
+                assert type(record['include_trace_added']) is bool
+                assert type(record['include_trace_eligible']) is bool
+                assert isinstance(record['target_labels'], list)
+                assert record['target_labels'] in ([], ['node-pty/src/unix/pty.cc'])
+                assert record['node_api_macro_observation'] == 'direct_argv_only_not_effective_preprocessor_state'
+                assert isinstance(record['node_api_macros'], dict)
+                assert set(record['node_api_macros']) <= API_MACROS
+                assert all(type(value) in (int, bool) and 0 <= value <= 999999999
+                           for value in record['node_api_macros'].values())
+                for key in ('node_api_macro_values_omitted', 'node_api_macros_undefined'):
+                    assert isinstance(record[key], list) and set(record[key]) <= API_MACROS
+                    assert len(record[key]) == len(set(record[key]))
+                assert isinstance(record['node_api_macro_unparsed_inputs'], list)
+                assert set(record['node_api_macro_unparsed_inputs']) <= {
+                    'response_file', 'preprocessor_passthrough', 'driver_passthrough', 'invalid_undefine'}
+                if record['include_trace_eligible']:
+                    traced += 1
+                    pty_traced += record['target_labels'] == ['node-pty/src/unix/pty.cc']
+                    capture = record['stderr_capture']
+                    for flag in ('input_truncated', 'output_truncated', 'drain_incomplete',
+                                 'utf8_replacement', 'incomplete_last_line_discarded'):
+                        assert capture[flag] is False
+                    assert capture['read_error'] is None and capture['forward_error'] is None
+                    assert capture['capture_error'] is None and capture['fallback_error'] is None
+                    assert (slot / 'stderr.sanitized.log').is_file()
+                    assert type(capture['output_bytes']) is int and 0 <= capture['output_bytes'] <= 131072
+                    assert capture['cap_bytes'] == 131072 and type(capture['cap_bytes']) is int
+                    assert (slot / 'stderr.sanitized.log').stat().st_size == capture['output_bytes']
+                    expected_files.add(str((slot / 'stderr.sanitized.log').relative_to(root)))
+            assert traced >= 1
+            assert pty_traced >= 1
+            files = []
+            actual_files = set()
+            total = 0
+            for path in sorted(root.rglob('*')):
+                assert not path.is_symlink()
+                if not path.is_file() or path.name == 'evidence-manifest.json':
+                    continue
+                data = path.read_bytes()
+                total += len(data)
+                assert total <= 32 * 1024 * 1024
+                relative = str(path.relative_to(root))
+                actual_files.add(relative)
+                assert relative in expected_files
+                assert '.private.' not in relative and not relative.endswith('.py')
+                files.append({'path': relative, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            assert actual_files == expected_files
+            receipt = {'version': 1, 'scope': 'diagnostic_only', 'source': SOURCE,
+                       'npmExitCode': install['npmExitCode'], 'compilerInvocations': len(slots),
+                       'tracedInvocations': traced, 'ptyTracedInvocations': pty_traced,
+                       'bytes': total, 'files': files}
+            (root / 'evidence-manifest.json').write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n')
+            return receipt
+
+
+        if __name__ == '__main__':
+            result = verify(Path(sys.argv[1]))
+            print(json.dumps({key: result[key] for key in
+                             ('scope', 'npmExitCode', 'compilerInvocations', 'tracedInvocations', 'bytes')}))
+        PR208_DIAGNOSTIC_HELPER_2
+        test "$(sha256sum "$HELPERS/check_evidence.py" | cut -d " " -f 1)" = b9b248975467421698da65c956480aa0327d5c956bd5281319bd7e377093fedf
+        test -z "${CXX:-}"
+        CXX_SELECTED="$(command -v c++)"
+        test -n "$CXX_SELECTED"
+        NODE_VERSION="$(node --version)"
+        test "$NODE_VERSION" = v24.21.0
+        python "$HELPERS/compiler_observer.py" prepare --compiler "$CXX_SELECTED" --output-dir "$RUNNER_TEMP/pr208-native-install-evidence/compiler" --wrapper "$HELPERS/cxx-observer" --node-headers "$HOME/.cache/node-gyp/${NODE_VERSION#v}/include/node" --addon-header "$PWD/node_modules/node-addon-api/napi.h"
+        { node --version; npm --version; python --version; } > "$RUNNER_TEMP/pr208-native-install-evidence/runtime.txt"
+    - name: Observe original npm ci once (diagnostic only)
+      run: |
+        set -uo pipefail
+        HELPERS="$RUNNER_TEMP/pr208-native-install-helpers"
+        RAW="$RUNNER_TEMP/pr208-native-install-console.raw"
+        DIAG="$RUNNER_TEMP/pr208-native-install-evidence"
+        export CXX="$HELPERS/cxx-observer"
+        set +e
+        npm ci > "$RAW" 2>&1
+        npm_status=$?
+        python "$HELPERS/collect_install.py" --observer "$HELPERS/compiler_observer.py"   --output "$DIAG/logs" --console "$RAW" --debug "$HOME/.npm/_logs" --status "$npm_status"
+        collection_status=$?
+        printf '%s
+        ' "$collection_status" > "$DIAG/collection-exit.txt"
+        rm -f -- "$RAW"
+        exit "$npm_status"
+    - name: Verify source and index remain unchanged
+      if: always()
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/pr208-native-install-evidence"
+        test "$(uname -s)" = Linux
+        test "$(git rev-parse HEAD)" = 8ee62f7356a5274ebd5bbc61c1144d479fb7f369
+        test "$(git rev-parse HEAD^{tree})" = 296ccba6612cbff2ec81480c1eaff95668624d2a
+        test "$(git rev-parse HEAD^1)" = 6c071ecac21ee8143b2d34a43b1670e159f0811e
+        test "$(git rev-parse HEAD^2)" = 75da4f1b0081bbd9933b8af0b0d893d0e21db16c
+        test "$(git write-tree)" = 296ccba6612cbff2ec81480c1eaff95668624d2a
+        git diff --exit-code
+        git diff --cached --exit-code
+        { git rev-parse HEAD HEAD^{tree} HEAD^1 HEAD^2; git write-tree; } > "$RUNNER_TEMP/pr208-native-install-evidence/final-source.txt"
+    - name: Validate diagnostic completeness without claiming acceptance
+      if: always()
+      run: |
+        set -euo pipefail
+        test "$(cat "$RUNNER_TEMP/pr208-native-install-evidence/collection-exit.txt")" = 0
+        python "$RUNNER_TEMP/pr208-native-install-helpers/check_evidence.py" "$RUNNER_TEMP/pr208-native-install-evidence"
+    - name: Preserve only sanitized bounded diagnostic evidence
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: native-install-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/pr208-native-install-evidence
+        if-no-files-found: error
+        retention-days: 7
