@@ -1144,3 +1144,316 @@ def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path,
         assert not any(event['kind'] in {'consent', 'oauth-exchange', 'responses'} for event in edges.events)
     finally:
         edges.close()
+
+
+# Diagnostic-only controls: no provider, production budget or retry changes.
+def injector_rows(diagnostics):
+    return [row for row in diagnostics.rows if row.get('stage') == 'fault_injector']
+
+
+def test_injector_trace_sites_match_unchanged_source():
+    import inspect
+    source = inspect.getsource(RecoveryFaults._call_locked).splitlines()
+    expected = {3: "with closing(sqlite3.connect(", 4: "writer.execute('BEGIN IMMEDIATE')",
+        5: 'self.triggered += 1', 7: 'return function(prepared)',
+        9: 'writer.rollback()', 10: 'self.restored += 1'}
+    assert set(expected) == set(fixture.BoundaryDiagnostics._INJECTOR_LINES)
+    for offset, fragment in expected.items():
+        assert fragment in source[offset]
+
+
+@pytest.mark.parametrize('cooperating', [False, True])
+def test_injector_acquisition_contention_is_observed_without_callback_retry_or_trigger(
+        home, tmp_path, monkeypatch, cooperating):
+    import time
+    from contextlib import nullcontext
+    from eidolon_cli import organization_ledger_writer as writers
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    held, release = threading.Event(), threading.Event()
+    failures, calls = [], []
+    path = home / 'organization' / 'state.db'
+    def contender():
+        try:
+            with (writers.ledger_writer(path, deadline=time.monotonic() + 5)
+                  if cooperating else nullcontext()):
+                with closing(sqlite3.connect(path, timeout=0)) as conn:
+                    conn.execute('BEGIN IMMEDIATE')
+                    held.set()
+                    assert release.wait(5)
+                    conn.rollback()
+        except BaseException as error:
+            failures.append(error)
+            held.set()
+    monkeypatch.setattr(generation, 'complete_subscription', lambda value: calls.append(value) or 'returned')
+    faults.install(monkeypatch.setattr)
+    bound = object.__new__(admission._Admission)
+    bound.home = home
+    prepared = object.__new__(transport.PreparedSubscriptionSend)
+    prepared._admission = bound
+    worker = threading.Thread(target=contender)
+    diagnostics.install()
+    installed = diagnostics.path.read_bytes()
+    try:
+        worker.start()
+        assert held.wait(5) and not failures
+        with pytest.raises(sqlite3.OperationalError) as failed:
+            generation.complete_subscription(prepared)
+        assert failed.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+        assert calls == [] and faults.triggered == faults.restored == 0
+        assert faults._claimed is True  # No implicit re-arm after acquisition failure.
+        assert diagnostics.path.read_bytes() == installed  # No critical-frame I/O.
+        rows = injector_rows(diagnostics)
+        assert [r['phase'] for r in rows if r['event'] == 'progress'] == [
+            'before_connect', 'before_begin', 'before_close', 'attempt_exit']
+        refused = [r for r in rows if r['event'] == 'exception']
+        assert len(refused) == 1 and refused[0]['phase'] == 'before_begin'
+        assert refused[0]['errorClass'] == 'OperationalError'
+        assert refused[0]['sqlitePrimaryCode'] == 'SQLITE_BUSY'
+        holders = refused[0]['coordinatorHolders']
+        assert bool(holders) is cooperating
+        if cooperating:
+            assert len(holders) == 1 and holders[0]['targetScope'] == 'profile_ledger'
+            assert holders[0]['lane'] != refused[0]['lane']
+        assert not refused[0]['coordinatorHoldersTruncated']
+    finally:
+        release.set()
+        worker.join(5)
+        diagnostics.close()
+    assert not worker.is_alive() and not failures and not diagnostics.coordinator_holders
+    assert generation.complete_subscription(prepared) == 'returned'
+    assert calls == [prepared] and faults.triggered == faults.restored == 0
+    assert not diagnostics.observation_loss
+    text = diagnostics.path.read_text()
+    assert str(home) not in text and 'database is locked' not in text
+    assert all(type(r['elapsedUs']) is int and 0 <= r['elapsedUs'] <= 60_000_000
+               and type(r['elapsedCapped']) is bool for r in injector_rows(diagnostics))
+
+
+@pytest.mark.parametrize('failure', [None, 'callback', 'rollback', 'close', 'connect'])
+def test_injector_trace_preserves_result_exception_and_cleanup_order(home, tmp_path, monkeypatch, failure):
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    sentinel, result, order = ValueError('synthetic-secret-must-not-export'), object(), []
+    class Writer:
+        def execute(self, sql):
+            assert sql == 'BEGIN IMMEDIATE'
+            order.append('begin')
+        def rollback(self):
+            order.append('rollback')
+            if failure == 'rollback':
+                raise sentinel
+        def close(self):
+            order.append('close')
+            if failure == 'close':
+                raise sentinel
+    def connect(path, *, timeout):
+        assert path == home / 'organization' / 'state.db' and timeout == 0
+        order.append('connect')
+        if failure == 'connect':
+            raise sentinel
+        return Writer()
+    def callback(value):
+        assert value is result
+        order.append('callback')
+        if failure == 'callback':
+            raise sentinel
+        return result
+    monkeypatch.setattr(fixture.sqlite3, 'connect', connect)
+    diagnostics.install()
+    try:
+        if failure is None:
+            assert faults._call_locked(callback, result) is result
+        else:
+            with pytest.raises(ValueError) as failed:
+                faults._call_locked(callback, result)
+            assert failed.value is sentinel
+    finally:
+        diagnostics.close()
+    assert order == (['connect'] if failure == 'connect' else ['connect', 'begin', 'callback', 'rollback', 'close'])
+    assert faults.triggered == (0 if failure == 'connect' else 1)
+    assert faults.restored == (0 if failure in {'connect', 'rollback'} else 1)
+    rows = injector_rows(diagnostics)
+    assert rows[-1]['phase'] == 'attempt_exit'
+    errors = [row for row in rows if row['event'] == 'exception']
+    assert len(errors) == (0 if failure is None else 1)
+    if errors:
+        assert errors[0]['phase'] == {'connect': 'before_connect', 'callback': 'before_completion',
+            'rollback': 'before_rollback', 'close': 'before_close'}[failure]
+    assert 'synthetic-secret' not in diagnostics.path.read_text()
+    assert not diagnostics.injectors and not diagnostics.observation_loss
+
+
+def test_injector_trace_failure_never_changes_result_or_original_error(home, tmp_path, monkeypatch):
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    for error in (None, ValueError('synthetic-private-original')):
+        diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+        def fail_observer(*args, **kwargs):
+            raise RuntimeError('synthetic-private-observer')
+        monkeypatch.setattr(diagnostics, 'observe_injector', fail_observer)
+        def callback(value):
+            if error is not None:
+                raise error
+            return value
+        expected = object()
+        diagnostics.install()
+        try:
+            if error is None:
+                assert faults._call_locked(callback, expected) is expected
+            else:
+                with pytest.raises(ValueError) as failed:
+                    faults._call_locked(callback, expected)
+                assert failed.value is error
+        finally:
+            diagnostics.close()
+        rows = [json.loads(line) for line in diagnostics.path.read_text().splitlines()]
+        assert {'sequence': 0, 'stage': 'observer', 'event': 'observation_loss',
+                'category': 'trace_exception'} in rows
+        assert 'synthetic-private' not in diagnostics.path.read_text()
+    assert faults.triggered == faults.restored == 2
+
+
+def test_injector_trace_rejects_copied_code_identity(home, tmp_path):
+    from types import FunctionType
+    original = RecoveryFaults._call_locked
+    duplicate = FunctionType(original.__code__.replace(), original.__globals__)
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    diagnostics.install()
+    try:
+        assert duplicate(RecoveryFaults(home, 'sqlite_dispatch_once'), lambda value: value, 42) == 42
+    finally:
+        diagnostics.close()
+    assert not injector_rows(diagnostics)
+
+
+def test_coordinator_trace_requires_actual_ownership_and_preserves_nested_gates(home, tmp_path):
+    import time
+    from eidolon_cli import organization_ledger_writer as writers
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    gate = writers._Gate()
+    diagnostics.install()
+    try:
+        with pytest.raises(writers.LedgerWriterUnavailable):
+            gate.acquire(time.monotonic() - 1, None)
+        assert not diagnostics.coordinator_holders
+        gate.acquire(time.monotonic() + 5, None)
+        assert list(diagnostics.coordinator_holders.values()) == [
+            {'lane': 1, 'stage': 'other', 'targetScope': 'unknown'}]
+        prior = dict(diagnostics.coordinator_holders)
+        with pytest.raises(writers.LedgerWriterUnavailable, match='reentrant'):
+            gate.acquire(time.monotonic() + 5, None)
+        assert diagnostics.coordinator_holders == prior
+        errors = []
+        def wrong_release():
+            try:
+                gate.release()
+            except RuntimeError as error:
+                errors.append(error)
+        worker = threading.Thread(target=wrong_release)
+        worker.start()
+        worker.join(5)
+        assert not worker.is_alive() and len(errors) == 1
+        assert diagnostics.coordinator_holders == prior
+        with writers.ledger_writer(home / 'organization' / 'state.db', deadline=time.monotonic() + 5):
+            with writers.ledger_writer(tmp_path / 'other.db', deadline=time.monotonic() + 5):
+                assert {v['targetScope'] for v in diagnostics.coordinator_holders.values()} == {
+                    'unknown', 'profile_ledger', 'other_ledger'}
+                assert len(diagnostics.coordinator_holders) == 3
+            assert len(diagnostics.coordinator_holders) == 2
+        assert diagnostics.coordinator_holders == prior
+        gate.release()
+        assert not diagnostics.coordinator_holders
+    finally:
+        diagnostics.close()
+    assert not diagnostics.coordinator_failures and not diagnostics.observation_loss
+
+
+def test_coordinator_trace_observer_failure_preserves_acquire_release(home, tmp_path, monkeypatch):
+    import time
+    from eidolon_cli import organization_ledger_writer as writers
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    def fail(*args):
+        raise ValueError('synthetic-observation-failure')
+    monkeypatch.setattr(diagnostics, 'observe_coordinator', fail)
+    gate = writers._Gate()
+    diagnostics.install()
+    try:
+        gate.acquire(time.monotonic() + 5, None)
+        assert gate.owner == threading.get_ident()
+        gate.release()
+        assert gate.owner is None
+    finally:
+        diagnostics.close()
+    assert diagnostics.observation_loss == {'trace_exception'}
+
+
+def test_coordinator_diagnostic_capacity_is_bounded_and_explicit(home, tmp_path):
+    import time
+    from eidolon_cli import organization_ledger_writer as writers
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    gates = [writers._Gate() for _ in range(66)]
+    diagnostics.install()
+    try:
+        for gate in gates:
+            gate.acquire(time.monotonic() + 5, None)
+        assert len(diagnostics.coordinator_holders) == 64
+        sample = diagnostics.coordinator_snapshot()
+        assert len(sample['coordinatorHolders']) == 8 and sample['coordinatorHoldersTruncated']
+        assert diagnostics.observation_loss == {'coordinator_capacity'}
+    finally:
+        for gate in gates:
+            if gate.owner == threading.get_ident():
+                gate.release()
+        diagnostics.close()
+    assert not diagnostics.coordinator_holders
+    assert 'coordinator_capacity' in diagnostics.path.read_text()
+
+
+def test_injector_elapsed_cap_and_success_phases_are_explicit(home, tmp_path, monkeypatch):
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    ticks = iter([0] + [61_000_000_000] * 100)
+    monkeypatch.setattr(fixture.time, 'monotonic_ns', lambda: next(ticks))
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    diagnostics.install()
+    try:
+        assert faults._call_locked(lambda value: value, 'returned') == 'returned'
+    finally:
+        diagnostics.close()
+    rows = injector_rows(diagnostics)
+    assert [r['phase'] for r in rows] == ['before_connect', 'before_begin', 'acquired',
+        'before_completion', 'before_rollback', 'after_rollback', 'before_close', 'attempt_exit']
+    assert all(r['elapsedUs'] == 60_000_000 and r['elapsedCapped'] for r in rows)
+    assert faults.triggered == faults.restored == 1 and not diagnostics.observation_loss
+
+
+@pytest.mark.parametrize('capacity', ['lane', 'injector'])
+def test_injector_missing_capacity_marks_observation_loss_without_changing_result(home, tmp_path, capacity):
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path, home=home)
+    if capacity == 'lane':
+        diagnostics.lanes = {-index - 1: index + 1 for index in range(32)}
+    else:
+        diagnostics.injectors = {-index - 1: {} for index in range(32)}
+    diagnostics.install()
+    try:
+        assert RecoveryFaults(home, 'sqlite_dispatch_once')._call_locked(lambda value: value, 42) == 42
+    finally:
+        diagnostics.close()
+    assert capacity + '_capacity' in diagnostics.observation_loss
+    rows = injector_rows(diagnostics)
+    if capacity == 'lane':
+        assert rows and all(r['lane'] == 0 for r in rows)
+    else:
+        assert rows == [] and len(diagnostics.injectors) == 32
+    assert capacity + '_capacity' in diagnostics.path.read_text()
+
+
+def test_observer_loss_survives_bounded_tail_projection(tmp_path):
+    diagnostics = fixture.BoundaryDiagnostics(tmp_path)
+    for _ in range(600):
+        diagnostics.emit({'stage': 'observer', 'event': 'enter'})
+    diagnostics.observation_loss.update({'trace_exception', 'coordinator_capacity', 'injector_capacity', 'lane_capacity'})
+    diagnostics.flush()
+    rows = [json.loads(line) for line in diagnostics.path.read_text().splitlines()]
+    assert len(rows) == 517 and rows[-5]['event'] == 'overflow'
+    assert {row.get('category') for row in rows[-4:]} == diagnostics.observation_loss
+    assert all(row['event'] == 'observation_loss' for row in rows[-4:])

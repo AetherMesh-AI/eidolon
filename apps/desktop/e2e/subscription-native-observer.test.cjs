@@ -23,7 +23,7 @@ const flush = async () => {
   await Promise.resolve()
 }
 
-async function harness() {
+async function harness(observerCompiled = compiled, { clockFailure = false } = {}) {
   const timers = new Map(),
     delays = [],
     handlers = {},
@@ -32,7 +32,11 @@ async function harness() {
   let now = 0
   let timerId = 0,
     detached = 0
-  const observe = vm.runInNewContext(compiled, {
+  const observe = vm.runInNewContext(observerCompiled, {
+    Date: { now: () => {
+      if (clockFailure) throw new Error(secret)
+      return now
+    } },
     createHash,
     structuredClone,
     setTimeout: (callback, delay) => {
@@ -70,6 +74,7 @@ async function harness() {
     delays,
     commands,
     detached: () => detached,
+    failClock: (failed = true) => { clockFailure = failed },
     send: (id, rpcMethod = method, socket, params = {}) =>
       frame(
         'Sent',
@@ -1412,4 +1417,780 @@ test('every connection action call site selects its explicit contract before the
   assert.doesNotMatch(journey, /await (begin|recover)\.click\(\)/)
   assert.doesNotMatch(journey, /getByRole\('button', \{ name: '(Set up ChatGPT|Continue with ChatGPT|Disconnect setup connection|Cancel sign-in|Update identity and reconnect)'[^\n]+\.click\(\)/)
   assert.doesNotMatch(connectionHelpers[0].getText(journeyParsed), /\.click\([^)]*\)[\s\S]*\.click\(/)
+})
+
+// The timeline records local observation order and ownership, not a claim that
+// proximity to a UI marker establishes the request's originating click.
+const diagnosticMethods = [
+  'teamSetup', 'improveTeamInput', 'generateTeam', 'previewTeam', 'createTeam',
+  'setupSubscriptionStatus', 'beginSetupSubscription', 'beginSetupSubscriptionHostMigration',
+  'cancelSetupSubscription', 'setupSubscriptionModels', 'setupSubscriptionPolicy',
+  'previewSetupSubscriptionPolicy', 'applySetupSubscriptionPolicy',
+  'prepareSetupSubscriptionOperation', 'executeSetupSubscriptionOperation',
+  'reconcileSetupSubscriptionOperation', 'cancelSetupSubscriptionOperation',
+  'recoverSetupSubscriptionOperation', 'reconcileSetupSubscriptionRequest', 'inspectSetupSubscriptionRequest'
+].map(name => 'organization.' + name)
+const plain = value => JSON.parse(JSON.stringify(value))
+const diagnostic = h => plain(h.observer.read().timeline)
+const assertDiagnosticSchema = h => {
+  const timeline = diagnostic(h)
+  assert.deepEqual(Object.keys(timeline).sort(), ['clockClamped', 'dropped', 'entries', 'observationFailed', 'ordinalTruncated', 'version'])
+  assert.equal(timeline.version, 1)
+  assert.equal(typeof timeline.clockClamped, 'boolean')
+  assert.equal(typeof timeline.ordinalTruncated, 'boolean')
+  assert.equal(typeof timeline.observationFailed, 'boolean')
+  assert.ok(Number.isInteger(timeline.dropped) && timeline.dropped >= 0 && timeline.dropped <= 1000000)
+  assert.ok(timeline.entries.length <= 256)
+  let previousAtMs = 0
+  const ordinal = value => assert.ok(value === null || (Number.isInteger(value) && value >= 1 && value <= 1000000))
+  for (const entry of timeline.entries) {
+    assert.ok(Number.isInteger(entry.atMs) && entry.atMs >= previousAtMs && entry.atMs <= 300000)
+    previousAtMs = entry.atMs
+    if (entry.kind === 'request') {
+      assert.deepEqual(Object.keys(entry).sort(), ['atMs', 'kind', 'method', 'ordinal', 'phase'])
+      assert.ok(diagnosticMethods.includes(entry.method))
+      assert.ok(['sent', 'result', 'error', 'malformed'].includes(entry.phase))
+      ordinal(entry.ordinal)
+    } else {
+      const keys = ['atMs', 'kind', 'pending', 'pendingCount', 'pendingTruncated', 'phase']
+      if (entry.kind === 'arm') {
+        keys.push('method', 'reason')
+        assert.ok(diagnosticMethods.includes(entry.method) || entry.method === 'other')
+        assert.ok(['armed', 'refused'].includes(entry.phase))
+        assert.ok(['ready', 'pending', 'waiter', 'closed', 'unsupported'].includes(entry.reason))
+      } else {
+        assert.equal(entry.kind, 'check_configuration')
+        assert.ok(['before', 'after'].includes(entry.phase))
+      }
+      assert.deepEqual(Object.keys(entry).sort(), keys.sort())
+      assert.ok(Number.isInteger(entry.pendingCount) && entry.pendingCount >= 0 && entry.pendingCount <= 128)
+      assert.equal(entry.pendingTruncated, entry.pendingCount > 8)
+      assert.equal(entry.pending.length, Math.min(8, entry.pendingCount))
+      for (const request of entry.pending) {
+        assert.deepEqual(Object.keys(request).sort(), ['method', 'ordinal'])
+        assert.ok(diagnosticMethods.includes(request.method))
+        ordinal(request.ordinal)
+      }
+    }
+  }
+  return timeline
+}
+
+test('diagnostic retains the exact pending ordinal at refused inspect even after its delayed reply clears pending', async () => {
+  const h = await harness()
+  const initialId = 'private-initial-read-id', checkId = 'private-existing-check-id', socket = 'private-check-socket'
+  h.send(initialId, 'organization.teamSetup', socket)
+  h.receive(initialId, undefined, socket)
+  h.advance(10)
+  h.observer.markCheckConfiguration('before')
+  h.send(checkId, 'organization.teamSetup', socket)
+  h.advance(5)
+  h.observer.markCheckConfiguration('after')
+  let inspectClicks = 0
+  await assert.rejects(h.observer.performSetupAction('inspect', async () => { inspectClicks++ }), /wait_unavailable/)
+  const refusedAtArm = diagnostic(h)
+  assert.equal(refusedAtArm.observationFailed, false)
+  assert.equal(refusedAtArm.clockClamped, false)
+  assert.equal(refusedAtArm.ordinalTruncated, false)
+  assert.equal(refusedAtArm.dropped, 0)
+  assert.deepEqual(refusedAtArm.entries, [
+    { kind: 'request', ordinal: 1, method: 'organization.teamSetup', phase: 'sent', atMs: 0 },
+    { kind: 'request', ordinal: 1, method: 'organization.teamSetup', phase: 'result', atMs: 0 },
+    { kind: 'check_configuration', phase: 'before', pendingCount: 0, pendingTruncated: false, pending: [], atMs: 10 },
+    { kind: 'request', ordinal: 2, method: 'organization.teamSetup', phase: 'sent', atMs: 10 },
+    { kind: 'check_configuration', phase: 'after', pendingCount: 1, pendingTruncated: false,
+      pending: [{ ordinal: 2, method: 'organization.teamSetup' }], atMs: 15 },
+    { kind: 'arm', phase: 'refused', method: 'organization.teamSetup', reason: 'pending', pendingCount: 1,
+      pendingTruncated: false, pending: [{ ordinal: 2, method: 'organization.teamSetup' }], atMs: 15 }
+  ])
+  h.advance(6000)
+  h.receive(checkId, undefined, 'unrelated-socket')
+  h.receive('unrelated-id', undefined, socket)
+  h.receive(initialId, undefined, socket)
+  assert.deepEqual(diagnostic(h), refusedAtArm)
+  assert.equal(h.observer.read().pending, 1)
+  h.receive(checkId, undefined, socket)
+  assert.equal(h.observer.read().pending, 0)
+  assert.deepEqual(diagnostic(h).entries.slice(0, -1), refusedAtArm.entries)
+  assert.deepEqual(diagnostic(h).entries.at(-1), {
+    kind: 'request', ordinal: 2, method: 'organization.teamSetup', phase: 'result', atMs: 6015
+  })
+  assert.equal(inspectClicks, 0)
+  assert.deepEqual(h.delays, [])
+  assert.equal(h.timers.size, 0)
+  assert.deepEqual(h.commands, ['Network.enable'])
+  for (const privateValue of [secret, initialId, checkId, socket]) assert.ok(!JSON.stringify(h.observer.read()).includes(privateValue))
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+test('diagnostic correlates replies by exact socket and typed ID, ignoring unrelated and duplicate replies', async () => {
+  const h = await harness()
+  h.send(1, 'organization.teamSetup', 'socket-a')
+  h.send('1', 'organization.teamSetup', 'socket-a')
+  h.send(1, 'organization.setupSubscriptionStatus', 'socket-b')
+  h.receive(1, undefined, 'unrelated-socket')
+  h.receive(2, undefined, 'socket-a')
+  assert.equal(diagnostic(h).entries.length, 3)
+  h.receive('1', undefined, 'socket-a')
+  h.receive(1, undefined, 'socket-b')
+  h.receive(1, undefined, 'socket-a')
+  h.receive(1, undefined, 'socket-a')
+  assert.deepEqual(diagnostic(h).entries.map(({ ordinal, phase }) => [ordinal, phase]), [
+    [1, 'sent'], [2, 'sent'], [3, 'sent'], [2, 'result'], [3, 'result'], [1, 'result']
+  ])
+  assert.equal(h.observer.read().pending, 0)
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+test('diagnostic assigns duplicate sends separate ordinals without concealing the existing correlation refusal', async () => {
+  const h = await harness()
+  let clicks = 0
+  const observed = h.observer.performOperation(method, async () => {
+    clicks++
+    h.send('duplicate-private-id')
+    h.send('duplicate-private-id')
+  })
+  await assert.rejects(observed, /subscription_operation_correlation_lost/)
+  h.receive('duplicate-private-id')
+  h.receive('duplicate-private-id')
+  const requests = diagnostic(h).entries.filter(row => row.kind === 'request')
+  assert.deepEqual(requests.map(({ ordinal, phase }) => [ordinal, phase]), [[1, 'sent'], [2, 'sent'], [2, 'result']])
+  assert.equal(clicks, 1)
+  assert.deepEqual(h.delays, [180000])
+  assert.equal(h.timers.size, 0)
+  assert.deepEqual(h.commands, ['Network.enable'])
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+for (const [name, payload, phase] of [
+  ['result', { result: { sourceRevision: secret, organizationId: secret } }, 'result'],
+  ['error', { error: { code: -32000, message: secret, data: { reason: secret } } }, 'error'],
+  ['both', { result: { secret }, error: { message: secret } }, 'malformed'],
+  ['neither', { privateValue: secret }, 'malformed']
+]) {
+  test(`diagnostic records ${name} completion with only its existing request ordinal`, async () => {
+    const h = await harness()
+    h.send('private-request-id', 'organization.teamSetup', 'private-socket')
+    h.advance(23)
+    h.receive('private-request-id', payload, 'private-socket')
+    const snapshot = assertDiagnosticSchema(h)
+    assert.deepEqual(snapshot.entries.map(({ ordinal, phase }) => [ordinal, phase]), [[1, 'sent'], [1, phase]])
+    assert.equal(snapshot.entries[1].atMs, 23)
+    assert.equal(h.observer.read().pending, 0)
+    for (const value of [secret, 'private-request-id', 'private-socket']) assert.ok(!JSON.stringify(h.observer.read()).includes(value))
+    await h.observer.close()
+  })
+}
+
+test('diagnostic malformed bytes never manufacture a request association', async () => {
+  const h = await harness()
+  const observed = h.observer.performOperation(method, async () => { h.send(1); h.malformed() })
+  await assert.rejects(observed, /subscription_operation_correlation_lost/)
+  assert.equal(h.observer.read().malformed, 1)
+  assert.deepEqual(diagnostic(h).entries.filter(row => row.kind === 'request').map(row => row.phase), ['sent'])
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+test('diagnostic arm reasons preserve the existing ready, waiter, closed and unsupported behavior', async () => {
+  const h = await harness()
+  let clicks = 0
+  h.send(1, 'organization.teamSetup')
+  const observed = h.observer.performOperation(method, async () => { clicks++; h.send(2) })
+  await assert.rejects(h.observer.performSetupAction('inspect', async () => { clicks++ }), /wait_unavailable/)
+  h.receive(2)
+  await observed
+  await assert.rejects(h.observer.performOperation(secret, async () => { clicks++ }), /wait_unavailable/)
+  await h.observer.close()
+  await assert.rejects(h.observer.performSetupAction('inspect', async () => { clicks++ }), /wait_unavailable/)
+  const arms = diagnostic(h).entries.filter(row => row.kind === 'arm')
+  assert.deepEqual(arms.map(row => [row.phase, row.reason, row.pendingCount, row.method]), [
+    ['armed', 'ready', 1, method], ['refused', 'waiter', 2, 'organization.teamSetup'],
+    ['refused', 'unsupported', 1, 'other'], ['refused', 'closed', 0, 'organization.teamSetup']
+  ])
+  assert.equal(clicks, 1)
+  assert.deepEqual(h.delays, [180000])
+  assert.equal(h.timers.size, 0)
+  assert.deepEqual(h.commands, ['Network.enable'])
+  assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+  assertDiagnosticSchema(h)
+})
+
+test('diagnostic methods and fields remain closed while all supported RPCs are observed', async () => {
+  const h = await harness()
+  for (const [index, rpcMethod] of diagnosticMethods.entries()) {
+    h.send(`private-id-${index}`, rpcMethod, 'private-socket')
+    h.receive(`private-id-${index}`, undefined, 'private-socket')
+  }
+  const before = diagnostic(h)
+  for (const rpcMethod of [secret, '', 'organization.' + secret, 10, null, ['organization.teamSetup']]) h.send('private-id', rpcMethod)
+  h.receive('private-id')
+  assert.deepEqual(diagnostic(h), before)
+  assert.deepEqual(before.entries.filter(row => row.phase === 'sent').map(row => row.method), diagnosticMethods)
+  assertDiagnosticSchema(h)
+  assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+  await h.observer.close()
+})
+
+for (const pendingCount of [0, 8, 9, 128, 129]) {
+  test(`diagnostic snapshots cap ${pendingCount} pending sends at eight exported identities`, async () => {
+    const h = await harness()
+    for (let id = 1; id <= pendingCount; id++) h.send(id, 'organization.teamSetup')
+    h.observer.markCheckConfiguration('before')
+    const marker = diagnostic(h).entries.at(-1)
+    const retained = Math.min(pendingCount, 128)
+    assert.equal(marker.pendingCount, retained)
+    assert.equal(marker.pendingTruncated, retained > 8)
+    assert.deepEqual(marker.pending.map(row => row.ordinal), Array.from({ length: Math.min(retained, 8) }, (_, index) => index + (pendingCount > 128 ? 2 : 1)))
+    if (retained) {
+      let clicks = 0
+      await assert.rejects(h.observer.performSetupAction('inspect', async () => { clicks++ }), /wait_unavailable/)
+      const arm = diagnostic(h).entries.at(-1)
+      assert.deepEqual(arm.pending, marker.pending)
+      assert.equal(arm.pendingCount, marker.pendingCount)
+      assert.equal(arm.pendingTruncated, marker.pendingTruncated)
+      assert.equal(clicks, 0)
+    }
+    assert.deepEqual(h.delays, [])
+    assertDiagnosticSchema(h)
+    await h.observer.close()
+  })
+}
+
+test('diagnostic timeline retains its newest 256 events and counts only dropped diagnostic entries', async () => {
+  const h = await harness()
+  for (let id = 1; id <= 150; id++) {
+    h.advance(1)
+    h.send(id, 'organization.teamSetup')
+    h.receive(id)
+  }
+  const timeline = assertDiagnosticSchema(h)
+  assert.equal(timeline.entries.length, 256)
+  assert.equal(timeline.dropped, 44)
+  assert.equal(timeline.entries[0].ordinal, 23)
+  assert.equal(timeline.entries[0].phase, 'sent')
+  assert.equal(timeline.entries.at(-1).ordinal, 150)
+  assert.equal(timeline.entries.at(-1).phase, 'result')
+  assert.equal(h.observer.read().dropped, 86)
+  assert.equal(h.observer.read().rpc.length, 64)
+  assert.equal(h.observer.read().pending, 0)
+  assert.deepEqual(h.delays, [])
+  assert.deepEqual(h.commands, ['Network.enable'])
+  await h.observer.close()
+})
+
+test('diagnostic reads return independent timeline and pending snapshots without adding observations', async () => {
+  const h = await harness()
+  h.send(1, 'organization.teamSetup')
+  h.observer.markCheckConfiguration('after')
+  const retained = diagnostic(h)
+  const exported = h.observer.read()
+  exported.timeline.entries[0].method = secret
+  exported.timeline.entries[1].pending[0].ordinal = -1
+  exported.timeline.entries.push({ secret })
+  exported.timeline.dropped = 123
+  h.advance(50)
+  assert.deepEqual(diagnostic(h), retained)
+  h.receive(1)
+  assert.equal(retained.entries[1].pendingCount, 1)
+  assert.equal(retained.entries[1].pending[0].ordinal, 1)
+  assert.equal(h.observer.read().pending, 0)
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+for (const invalid of [secret, '', 'BEFORE', 'before ', 0, null, undefined, {}, ['before']]) {
+  test(`diagnostic invalid marker ${JSON.stringify(invalid)} invalidates evidence without affecting transport`, async () => {
+    const h = await harness()
+    const before = plain(h.observer.read())
+    assert.doesNotThrow(() => h.observer.markCheckConfiguration(invalid))
+    before.timeline.observationFailed = true
+    assert.deepEqual(plain(h.observer.read()), before)
+    h.observer.markCheckConfiguration('before')
+    assert.deepEqual(plain(h.observer.read()), before)
+    assert.deepEqual(h.delays, [])
+    assert.deepEqual(h.commands, ['Network.enable'])
+    await h.observer.close()
+  })
+}
+
+for (const [name, advances, expectedTimes, clamped] of [
+  ['exact inclusive limits', [0, 300000], [0, 300000], false],
+  ['upper overflow', [300000, 1], [300000, 300000], true],
+  ['negative elapsed', [-1, 2], [0, 1], true],
+  ['backward clock', [100, -1, 2], [100, 100, 101], true],
+  ['fractional clock', [1.9, 0.2], [1, 2], false],
+  ['NaN clock', [12, NaN], [12, 12], true],
+  ['infinite clock', [12, Infinity], [12, 12], true],
+  ['negative infinite clock', [12, -Infinity], [12, 12], true]
+]) {
+  test(`diagnostic clamps ${name} without extending or scheduling a timer`, async () => {
+    const h = await harness()
+    for (const advance of advances) {
+      h.advance(advance)
+      h.observer.markCheckConfiguration('before')
+    }
+    const timeline = assertDiagnosticSchema(h)
+    assert.deepEqual(timeline.entries.map(row => row.atMs), expectedTimes)
+    assert.equal(timeline.clockClamped, clamped)
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.delays, [])
+    assert.deepEqual(h.commands, ['Network.enable'])
+    await h.observer.close()
+  })
+}
+
+test('diagnostic clock markers leave the existing absolute setup deadline unchanged', async () => {
+  const h = await harness()
+  let clicks = 0
+  const observed = h.observer.performSetupAction('inspect', async () => { clicks++; h.send(1, 'organization.teamSetup') })
+  h.advance(14999)
+  h.observer.markCheckConfiguration('before')
+  h.observer.markCheckConfiguration('after')
+  assert.equal(h.timers.size, 1)
+  h.advance(1)
+  await assert.rejects(observed, /subscription_operation_timeout/)
+  assert.equal(clicks, 1)
+  assert.deepEqual(h.delays, [15000])
+  assert.equal(h.timers.size, 0)
+  assert.deepEqual(h.commands, ['Network.enable'])
+  assertDiagnosticSchema(h)
+  await h.observer.close()
+})
+
+// Boundary-only seam: change exactly the actual function's single counter
+// initializer, leaving its event handling and all normal controls unmodified.
+test('diagnostic ordinal boundary exports 1000000 then null with an explicit truncation flag', async () => {
+  const observerSource = matches[0].getText(parsed)
+  const counterDeclarations = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'requestOrdinal') counterDeclarations.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(matches[0])
+  assert.equal(counterDeclarations.length, 1)
+  const initializer = counterDeclarations[0].initializer
+  assert.ok(ts.isNumericLiteral(initializer))
+  assert.equal(initializer.getText(parsed), '0')
+  const offset = matches[0].getStart(parsed)
+  const prefix = observerSource.slice(0, initializer.getStart(parsed) - offset)
+  const suffix = observerSource.slice(initializer.getEnd() - offset)
+  assert.equal(prefix + '0' + suffix, observerSource)
+  const seededCompiled = ts.transpileModule(`(${prefix}999999${suffix})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+  }).outputText
+  const h = await harness(seededCompiled)
+  h.send(1, 'organization.teamSetup')
+  assert.equal(diagnostic(h).ordinalTruncated, false)
+  h.send(2, 'organization.teamSetup')
+  h.observer.markCheckConfiguration('after')
+  assert.deepEqual(diagnostic(h).entries.at(-1).pending.map(row => row.ordinal), [1000000, null])
+  h.receive(1)
+  h.receive(2)
+  h.send(3, 'organization.teamSetup')
+  h.receive(3)
+  const timeline = assertDiagnosticSchema(h)
+  assert.equal(timeline.ordinalTruncated, true)
+  assert.deepEqual(timeline.entries.filter(row => row.kind === 'request').map(row => [row.ordinal, row.phase]), [
+    [1000000, 'sent'], [null, 'sent'], [1000000, 'result'], [null, 'result'], [null, 'sent'], [null, 'result']
+  ])
+  assert.equal(h.observer.read().pending, 0)
+  assert.deepEqual(h.delays, [])
+  await h.observer.close()
+})
+
+for (const [code, expectedCode] of [
+  [-32000, -32000], ['-32000', 'other'], [-32001, 'other'], [0, 'other'],
+  [5076, 5076], ['5076', 'other'], [null, 'other'], [{ code: -32000 }, 'other']
+]) {
+  test(`diagnostic RPC error allowlist treats ${JSON.stringify(code)} as ${JSON.stringify(expectedCode)}`, async () => {
+    const h = await harness()
+    const row = await h.observer.performOperation(method, async () => {
+      h.send('private-error-id')
+      h.receive('private-error-id', { error: { code, message: secret, data: { reason: secret, sourceRevision: secret } } })
+    })
+    assert.equal(row.phase, 'error')
+    assert.equal(row.code, expectedCode)
+    assert.equal(row.reason, 'other')
+    assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+    assert.deepEqual(diagnostic(h).entries.filter(row => row.kind === 'request').map(row => row.phase), ['sent', 'error'])
+    assertDiagnosticSchema(h)
+    await h.observer.close()
+  })
+}
+
+const inferenceHelpers = journeyParsed.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'completeInference')
+assert.equal(inferenceHelpers.length, 1)
+const inferenceHelper = ts.transpileModule(`(${inferenceHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+for (const rpcMethod of ['improveTeamInput', 'generateTeam']) {
+  for (const code of [5076, -32000]) {
+    test(`actual ${rpcMethod} expected-unavailable helper retains exact 5076 requirement for error ${code}`, async () => {
+      const h = await harness()
+      let clicks = 0
+      const helper = vm.runInNewContext(inferenceHelper, {
+        fixture: { performOperation: (name, action) => h.observer.performOperation('organization.' + name, action) },
+        expect: value => ({ toMatchObject: subset => matchSubset(value, subset) })
+      })
+      const observed = helper({ click: async () => {
+        clicks++
+        h.send(1, 'organization.' + rpcMethod)
+        h.receive(1, { error: { code, message: secret, data: { reason: 'unavailable' } } })
+      } }, rpcMethod, 'unavailable')
+      if (code === 5076) await observed
+      else await assert.rejects(observed)
+      assert.equal(clicks, 1)
+      assert.equal(h.observer.read().rpc[0].code, code)
+      assert.equal(h.observer.read().rpc[0].reason, 'unavailable')
+      assert.deepEqual(h.delays, [180000])
+      assert.equal(h.timers.size, 0)
+      assertDiagnosticSchema(h)
+      await h.observer.close()
+    })
+  }
+}
+
+// Fault-only AST seams replace one unique diagnostic call in the actual
+// observer. Transport, guards, actions and deadlines remain original code.
+const compileDiagnosticFailure = (receiver, property) => {
+  const calls = []
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) && node.expression.expression.text === receiver &&
+      node.expression.name.text === property) calls.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(matches[0])
+  assert.equal(calls.length, 1, `Fault injection must target exactly one ${receiver}.${property} call`)
+  const observerSource = matches[0].getText(parsed)
+  const offset = matches[0].getStart(parsed)
+  const prefix = observerSource.slice(0, calls[0].getStart(parsed) - offset)
+  const suffix = observerSource.slice(calls[0].getEnd() - offset)
+  assert.equal(prefix + calls[0].getText(parsed) + suffix, observerSource)
+  return ts.transpileModule(`(${prefix}(() => { throw new Error(${JSON.stringify(secret)}) })()${suffix})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+  }).outputText
+}
+const diagnosticFailures = {
+  'constructor clock': async () => harness(compiled, { clockFailure: true }),
+  'event clock': async () => { const h = await harness(); h.failClock(); return h },
+  'timeline append': async () => harness(compileDiagnosticFailure('timeline', 'push')),
+  'pending snapshot': async () => harness(compileDiagnosticFailure('pending', 'values'))
+}
+
+for (const [failure, createHarness] of Object.entries(diagnosticFailures)) {
+  test(`diagnostic ${failure} failure preserves original guard refusal, exact completion and action exception`, async () => {
+    const h = await createHarness()
+    h.send(1, 'organization.teamSetup')
+    h.observer.markCheckConfiguration('before')
+    let refusedClicks = 0
+    await assert.rejects(h.observer.performSetupAction('inspect', async () => { refusedClicks++ }),
+      error => error.message === 'subscription_operation_wait_unavailable')
+    assert.equal(refusedClicks, 0)
+    assert.equal(h.observer.read().pending, 1)
+    assert.deepEqual(h.delays, [])
+    h.receive(1)
+    assert.equal(h.observer.read().pending, 0)
+    assert.equal(h.observer.read().rpc[0].phase, 'result')
+    const originalFailure = new Error('original synthetic click failure')
+    let failedClicks = 0
+    await assert.rejects(h.observer.performOperation(method, async () => {
+      failedClicks++
+      h.send(2)
+      throw originalFailure
+    }), error => error === originalFailure)
+    assert.equal(failedClicks, 1)
+    assert.equal(h.observer.read().pending, 1)
+    h.receive(2)
+    let successfulClicks = 0
+    const result = await h.observer.performOperation(method, async () => {
+      successfulClicks++
+      h.send(3)
+      h.receive(3)
+    })
+    assert.equal(successfulClicks, 1)
+    assert.equal(result.phase, 'result')
+    assert.equal(h.observer.read().pending, 0)
+    assert.equal(h.observer.read().malformed, 0)
+    const evidence = assertDiagnosticSchema(h)
+    assert.equal(evidence.observationFailed, true)
+    assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+    assert.deepEqual(h.delays, [180000, 180000])
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.commands, ['Network.enable'])
+    await h.observer.close()
+    assert.equal(h.detached(), 1)
+  })
+}
+
+test('diagnostic clock failure disables further recording without disabling transport', async () => {
+  const h = await harness()
+  h.observer.markCheckConfiguration('before')
+  assert.equal(diagnostic(h).observationFailed, false)
+  const retainedEntries = diagnostic(h).entries
+  h.failClock()
+  assert.doesNotThrow(() => h.observer.markCheckConfiguration('after'))
+  assert.equal(diagnostic(h).observationFailed, true)
+  h.failClock(false)
+  h.advance(10)
+  h.send(1, 'organization.teamSetup')
+  h.receive(1)
+  const evidence = assertDiagnosticSchema(h)
+  assert.equal(evidence.observationFailed, true)
+  assert.deepEqual(evidence.entries, retainedEntries)
+  assert.equal(h.observer.read().rpc[0].phase, 'result')
+  assert.equal(h.observer.read().pending, 0)
+  assert.equal(h.observer.read().malformed, 0)
+  assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+  await h.observer.close()
+})
+
+const openSetupHelpers = journeyParsed.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'openSetup')
+assert.equal(openSetupHelpers.length, 1)
+const openSetupHelper = ts.transpileModule(`(${openSetupHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+
+for (const [failure, createHarness] of Object.entries({ ...diagnosticFailures, 'finally-marker clock': async () => harness() })) {
+  for (const clickRejects of [false, true]) {
+    test(`actual Check configuration ${clickRejects ? 'keeps its original exception' : 'clicks exactly once'} when ${failure} recording fails`, async () => {
+      const h = await createHarness()
+      const originalFailure = new Error('original Check configuration failure')
+      let checkClicks = 0, fills = 0
+      const locator = (role, name) => ({
+        getByRole: (nextRole, options = {}) => locator(nextRole, options.name),
+        getByLabel: () => ({ fill: async () => { fills++ } }),
+        locator: () => locator(),
+        click: async () => {
+          if (role === 'button' && name === 'Check configuration') {
+            checkClicks++
+            h.send(1, 'organization.teamSetup')
+            if (clickRejects) {
+              if (failure === 'finally-marker clock') h.failClock()
+              throw originalFailure
+            }
+            h.receive(1)
+            if (failure === 'finally-marker clock') h.failClock()
+          }
+        }
+      })
+      const helper = vm.runInNewContext(openSetupHelper, {
+        fixture: { ...h.observer, page: locator() }, jobs: secret, goals: secret,
+        expect: () => ({ toHaveCount: async () => {}, toBeVisible: async () => {} })
+      })
+      const opened = helper(true)
+      if (clickRejects) await assert.rejects(opened, error => error === originalFailure)
+      else await opened
+      assert.equal(checkClicks, 1)
+      assert.equal(fills, clickRejects ? 0 : 3)
+      assert.equal(h.observer.read().pending, clickRejects ? 1 : 0)
+      assert.equal(h.observer.read().malformed, 0)
+      assert.equal(assertDiagnosticSchema(h).observationFailed, true)
+      assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+      assert.deepEqual(h.delays, [])
+      assert.equal(h.timers.size, 0)
+      assert.deepEqual(h.commands, ['Network.enable'])
+      await h.observer.close()
+    })
+  }
+}
+
+const injectorPhases = [
+  'before_connect', 'before_begin', 'acquired', 'before_completion',
+  'before_rollback', 'after_rollback', 'before_close', 'attempt_exit'
+]
+for (const event of ['progress', 'exception']) {
+  for (const phase of injectorPhases) {
+    test(`boundary injector ${event} retains closed ${phase} phase and bounded timing`, () => {
+      for (const elapsedUs of [0, 1, 60000000]) {
+        for (const elapsedCapped of [false, true]) {
+          const [row] = sanitizeBoundary([{
+            stage: 'fault_injector', event, phase, elapsedUs, elapsedCapped,
+            sequence: 1, lane: 0, line: 1,
+            coordinatorHolders: [{ lane: 32, stage: 'subscription_preflight', targetScope: 'profile_ledger' }],
+            coordinatorHoldersTruncated: false, privateValue: secret, statement: secret, filename: secret
+          }])
+          assert.equal(row.stage, 'fault_injector')
+          assert.equal(row.event, event)
+          assert.equal(row.phase, phase)
+          assert.equal(row.elapsedUs, elapsedUs)
+          assert.equal(row.elapsedCapped, elapsedCapped)
+          assert.deepEqual(row.coordinatorHolders, [{ lane: 32, stage: 'subscription_preflight', targetScope: 'profile_ledger' }])
+          assert.equal(row.coordinatorHoldersTruncated, false)
+          assert.ok(!JSON.stringify(row).includes(secret))
+        }
+      }
+    })
+  }
+}
+
+test('boundary injector timing and phase reject missing, non-finite, out-of-range and coercible values', () => {
+  for (const value of [undefined, null, secret, '0', '60000000', -1, 60000001, 0.5, NaN, Infinity, -Infinity, true, {}, []]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'fault_injector', event: 'progress', phase: value, elapsedUs: value, elapsedCapped: value
+    }])
+    assert.equal(row.phase, 'other')
+    assert.equal(row.elapsedUs, null)
+    assert.equal(row.elapsedCapped, typeof value === 'boolean' ? value : null)
+    assert.equal(row.coordinatorHolders, null)
+    assert.equal(row.coordinatorHoldersTruncated, null)
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+test('boundary coordinator snapshots accept only closed scopes and non-writer stages', () => {
+  const holders = []
+  for (const stage of ['owner_scope', 'auth_guard', 'subscription_preflight', 'fault_injector']) {
+    for (const targetScope of ['profile_ledger', 'other_ledger', 'unknown']) {
+      const holder = { lane: 0, stage, targetScope }
+      const [row] = sanitizeBoundary([{
+        stage: 'gateway_rpc', event: 'exception', coordinatorHolders: [holder], coordinatorHoldersTruncated: false
+      }])
+      assert.deepEqual(row.coordinatorHolders, [holder])
+      assert.deepEqual(Object.keys(row.coordinatorHolders[0]).sort(), ['lane', 'stage', 'targetScope'])
+      holders.push(row.coordinatorHolders[0])
+    }
+  }
+  assert.equal(holders.length, 12)
+  for (const stage of ['ledger_writer', 'ledger_writer_acquire', 'ledger_writer_wait', 'ledger_writer_release', secret]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'gateway_rpc', event: 'exception', coordinatorHolders: [{ lane: 1, stage, targetScope: secret,
+        organizationId: secret, sourceRevision: secret, path: secret, sql: secret, requestId: secret, message: secret }],
+      coordinatorHoldersTruncated: false
+    }])
+    assert.deepEqual(row.coordinatorHolders, [{ lane: 1, stage: 'other', targetScope: 'unknown' }])
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+test('boundary coordinator lanes are integers within inclusive 0..32, with malformed holder objects redacted', () => {
+  for (const lane of [0, 32, undefined, null, -1, 33, 0.5, '0', '32', NaN, Infinity, true, {}, []]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'fault_injector', event: 'exception', coordinatorHolders: [{ lane, stage: 'owner_scope', targetScope: 'profile_ledger' }]
+    }])
+    assert.equal(row.coordinatorHolders[0].lane, typeof lane === 'number' && (lane === 0 || lane === 32) ? lane : null)
+  }
+  for (const value of [null, secret, 3, true, [], [secret], {}]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'fault_injector', event: 'progress', coordinatorHolders: [value], coordinatorHoldersTruncated: false
+    }])
+    assert.deepEqual(row.coordinatorHolders, [{ lane: null, stage: 'other', targetScope: 'unknown' }])
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+test('boundary coordinator holder truncation is explicit whenever more than eight supplied entries are omitted', () => {
+  for (const count of [0, 8, 9, 15]) {
+    for (const suppliedFlag of [undefined, false, true, secret, 1, null]) {
+      const [row] = sanitizeBoundary([{
+        stage: 'gateway_dispatch', event: 'exception',
+        coordinatorHolders: Array.from({ length: count }, (_, lane) => ({ lane, stage: 'owner_guard', targetScope: 'other_ledger' })),
+        coordinatorHoldersTruncated: suppliedFlag
+      }])
+      assert.equal(row.coordinatorHolders.length, Math.min(count, 8))
+      assert.deepEqual(row.coordinatorHolders.map(holder => holder.lane), Array.from({ length: Math.min(count, 8) }, (_, lane) => lane))
+      assert.equal(row.coordinatorHoldersTruncated, count > 8 ? true : typeof suppliedFlag === 'boolean' ? suppliedFlag : null)
+      assert.ok(!JSON.stringify(row).includes(secret))
+    }
+  }
+})
+
+test('boundary missing or malformed snapshot fields remain null rather than asserting absent holders', () => {
+  for (const value of [undefined, null, secret, true, 0, {}]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'fault_injector', event: 'progress', coordinatorHolders: value, coordinatorHoldersTruncated: value
+    }])
+    assert.equal(row.elapsedUs, null)
+    assert.equal(row.elapsedCapped, null)
+    assert.equal(row.coordinatorHolders, null)
+    assert.equal(row.coordinatorHoldersTruncated, typeof value === 'boolean' ? value : null)
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+for (const category of ['trace_exception', 'coordinator_capacity', 'injector_capacity', 'lane_capacity']) {
+  test(`boundary observation loss retains closed ${category} category without exposing raw failure details`, () => {
+    const [row] = sanitizeBoundary([{
+      stage: 'observer', event: 'observation_loss', category,
+      error: secret, message: secret, traceback: secret, statement: secret, sourceRevision: secret
+    }])
+    assert.equal(row.stage, 'observer')
+    assert.equal(row.event, 'observation_loss')
+    assert.equal(row.category, category)
+    assert.ok(!JSON.stringify(row).includes(secret))
+  })
+}
+
+test('boundary observation loss rejects unknown and coerced category labels', () => {
+  for (const category of [undefined, null, secret, 3, true, {}, ['trace_exception']]) {
+    const [row] = sanitizeBoundary([{ stage: 'observer', event: 'observation_loss', category }])
+    assert.equal(row.category, 'other')
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+test('boundary diagnostic extension applies only to the specific injector, exception and loss events', () => {
+  for (const [stage, event] of [
+    ['owner_guard', 'enter'], ['fault_injector', 'enter'], ['observer', 'progress'],
+    ['owner_guard', 'returned_false'], ['observer', 'observation_loss']
+  ]) {
+    const [row] = sanitizeBoundary([{
+      stage, event, phase: 'acquired', elapsedUs: 1, elapsedCapped: false,
+      coordinatorHolders: [{ lane: 1, stage: 'owner_scope', targetScope: 'profile_ledger' }],
+      coordinatorHoldersTruncated: false, category: 'trace_exception'
+    }])
+    for (const field of ['phase', 'elapsedUs', 'elapsedCapped', 'coordinatorHolders', 'coordinatorHoldersTruncated']) {
+      assert.equal(Object.hasOwn(row, field), false)
+    }
+    assert.equal(Object.hasOwn(row, 'category'), event === 'observation_loss')
+  }
+  const [exception] = sanitizeBoundary([{ stage: 'owner_guard', event: 'exception' }])
+  assert.equal(exception.coordinatorHolders, null)
+  assert.equal(exception.coordinatorHoldersTruncated, null)
+  assert.equal(Object.hasOwn(exception, 'phase'), false)
+  assert.equal(Object.hasOwn(exception, 'elapsedUs'), false)
+})
+
+test('boundary injector phase projection requires an exact event string without coercion', () => {
+  for (const event of [undefined, null, secret, ['progress'], ['exception'], 0, true, {}]) {
+    const [row] = sanitizeBoundary([{
+      stage: 'fault_injector', event, phase: 'acquired', elapsedUs: 1, elapsedCapped: false,
+      coordinatorHolders: [], coordinatorHoldersTruncated: false
+    }])
+    assert.equal(row.event, 'other')
+    for (const field of ['phase', 'elapsedUs', 'elapsedCapped', 'coordinatorHolders', 'coordinatorHoldersTruncated']) {
+      assert.equal(Object.hasOwn(row, field), false)
+    }
+    assert.ok(!JSON.stringify(row).includes(secret))
+  }
+})
+
+test('boundary injector snapshots retain only the newest 128 rows and eight closed holder records per row', () => {
+  const rows = sanitizeBoundary(Array.from({ length: 600 }, (_, sequence) => ({
+    sequence, stage: 'fault_injector', event: 'progress', phase: 'acquired', elapsedUs: sequence,
+    elapsedCapped: false, coordinatorHoldersTruncated: false,
+    coordinatorHolders: Array(40).fill({ lane: 0, stage: 'owner_scope', targetScope: 'profile_ledger', message: secret }),
+    path: secret, statement: secret, sourceRevision: secret
+  })))
+  assert.equal(rows.length, 128)
+  assert.equal(rows[0].sequence, 472)
+  assert.equal(rows.at(-1).sequence, 599)
+  assert.ok(rows.every(row => row.coordinatorHolders.length === 8 && row.coordinatorHoldersTruncated === true))
+  assert.ok(!JSON.stringify(rows).includes(secret))
+})
+
+test('boundary tail export preserves every appended sticky loss and overflow marker after more than 128 rows', () => {
+  const categories = ['trace_exception', 'coordinator_capacity', 'injector_capacity', 'lane_capacity']
+  const source = Array.from({ length: 512 }, (_, sequence) => ({ sequence, stage: 'owner_scope', event: 'enter' }))
+  source.push({ sequence: 0, stage: 'observer', event: 'overflow' })
+  for (const category of categories) source.push({ sequence: 0, stage: 'observer', event: 'observation_loss', category })
+  const rows = sanitizeBoundary(source)
+  assert.equal(rows.length, 128)
+  assert.equal(rows.filter(row => row.event === 'overflow').length, 1)
+  assert.deepEqual(rows.filter(row => row.event === 'observation_loss').map(row => row.category), categories)
+  assert.equal(rows.filter(row => row.event === 'enter').length, 123)
 })

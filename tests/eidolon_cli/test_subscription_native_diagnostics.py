@@ -182,7 +182,7 @@ def test_boundary_trace_does_not_export_exception_text_or_unapproved_attributes(
         diagnostics.emit({'stage': 'observer', 'event': 'enter'})
     diagnostics.flush()
     rows = read_trace(tmp_path)
-    assert len(rows) == 513 and rows[0]['event'] == 'overflow'
+    assert len(rows) == 513 and rows[-1]['event'] == 'overflow'
 
 
 def test_boundary_trace_covers_existing_threads_and_restores(tmp_path, monkeypatch):

@@ -144,6 +144,7 @@ class Vault:
 class BoundaryDiagnostics:
     """Bounded observation; only approved fixed-site identity locals, never error text."""
     _STAGES = {
+        __name__: {'RecoveryFaults._call_locked': 'fault_injector'},
         'tui_gateway.methods_organization_setup_subscription': {
             '_method.<locals>.handler': 'gateway_rpc',
             'dispatch': 'gateway_dispatch', '_context': 'gateway_context', '_service': 'gateway_service',
@@ -205,6 +206,10 @@ class BoundaryDiagnostics:
                 'catalog_http', 'catalog_http_send', 'inference_transport', 'infer_subscription',
                 'prepare_send', 'complete_subscription', 'subscription_preflight', 'subscription_release',
                 'admission_create', 'accounting_wait', 'accounting_worker', 'failed_job', 'dispatch_job', 'outcome_job'}
+    # Exact unchanged injector sites. Reaching a call line proves only entry;
+    # the following line is what proves acquisition/rollback returned.
+    _INJECTOR_LINES = {3: 'before_connect', 4: 'before_begin', 5: 'acquired',
+                       7: 'before_completion', 9: 'before_rollback', 10: 'after_rollback'}
     _ERRORS = {'builtins': {'BlockingIOError', 'OSError', 'ValueError', 'TypeError', 'AssertionError',
                               'KeyError', 'FileNotFoundError', 'TimeoutError'},
         'sqlite3': {'OperationalError'},
@@ -239,6 +244,8 @@ class BoundaryDiagnostics:
         self.lock = threading.Lock()
         self.flush_lock = threading.Lock()
         self.lanes, self.holders, self.ledger_holders = {}, {}, {}
+        self.coordinator_holders, self.coordinator_failures, self.injectors = {}, set(), {}
+        self.observation_loss = set()
         self.codes = {}
         self.code_sources = {}
         for module, stages in self._STAGES.items():
@@ -376,6 +383,91 @@ class BoundaryDiagnostics:
             self.count = min(self.count + 1, 2**31 - 1)
             self.rows.append({'sequence': self.count, **value})
 
+    def coordinator_snapshot(self):
+        # This describes cooperating scheduling ownership, not SQLite lock
+        # ownership. Untraced threads/processes and other writers remain unknown.
+        with self.lock:
+            values = list(self.coordinator_holders.values())
+        return {'coordinatorHolders': values[:8], 'coordinatorHoldersTruncated': len(values) > 8}
+
+    def observe_coordinator(self, frame, event, lane, lane_key, stage):
+        module = sys.modules.get('eidolon_cli.organization_ledger_writer')
+        kind = vars(module).get('_Gate') if module is not None else None
+        gate = frame.f_locals.get('self')
+        if kind is None or type(gate) is not kind:
+            return
+        key = id(frame)
+        if stage == 'ledger_writer_acquire' and event == 'exception':
+            if len(self.coordinator_failures) < 64:
+                self.coordinator_failures.add(key)
+            else:
+                self.observation_loss.add('coordinator_capacity')
+            return
+        if event != 'return':
+            return
+        failed = key in self.coordinator_failures
+        self.coordinator_failures.discard(key)
+        owner = vars(gate).get('owner')
+        if stage == 'ledger_writer_release':
+            # A raised release, including another thread's attempt, is never
+            # proof of release. Keep the prior observation until owner is None.
+            if owner is None:
+                with self.lock:
+                    self.coordinator_holders.pop(gate, None)
+            return
+        if (failed or 'coordinator_capacity' in self.observation_loss
+                or type(owner) is not int or owner != lane_key or not lane):
+            return
+        parent, caller, scope = frame.f_back, 'other', 'unknown'
+        for _ in range(16):
+            if parent is None:
+                break
+            label = self.stage(parent)
+            if label == 'ledger_writer':
+                target = parent.f_locals.get('key')
+                if type(target) is str and self.home is not None:
+                    scope = ('profile_ledger' if target == str(self.home / 'organization' / 'state.db')
+                             else 'other_ledger')
+            elif label is not None and label not in {'ledger_writer_acquire', 'ledger_writer_release',
+                                                     'ledger_writer_wait'} and caller == 'other':
+                caller = label
+            parent = parent.f_back
+        with self.lock:
+            if gate in self.coordinator_holders or len(self.coordinator_holders) < 64:
+                # Only the bounded internal key retains a gate; no gate, path,
+                # thread ID, frame or arbitrary local is exported.
+                self.coordinator_holders[gate] = {'lane': lane, 'stage': caller, 'targetScope': scope}
+            else:
+                self.observation_loss.add('coordinator_capacity')
+
+    def observe_injector(self, frame, event, value):
+        key = id(frame)
+        if event == 'call':
+            if len(self.injectors) >= 32:
+                self.observation_loss.add('injector_capacity')
+                return {}
+            self.injectors[key] = {'start': time.monotonic_ns(), 'phase': 'before_connect', 'connected': False}
+        observed = self.injectors.get(key)
+        if observed is None:
+            return {}
+        elapsed = max(0, (time.monotonic_ns() - observed['start']) // 1000)
+        timing = {'elapsedUs': min(elapsed, 60_000_000), 'elapsedCapped': elapsed > 60_000_000}
+        phase = self._INJECTOR_LINES.get(frame.f_lineno - frame.f_code.co_firstlineno)
+        if event == 'line' and phase is not None:
+            if phase == 'before_connect':
+                if observed['connected']:
+                    phase = 'before_close'
+                observed['connected'] = True
+            observed['phase'] = phase
+            self.emit({**value, 'event': 'progress', 'phase': phase, **timing, **self.coordinator_snapshot()})
+        elif event == 'return':
+            # A trace return also occurs while unwinding an exception. This
+            # means only that the attempt exited, not that close succeeded.
+            self.emit({**value, 'event': 'progress', 'phase': 'attempt_exit', **timing,
+                       **self.coordinator_snapshot()})
+            self.injectors.pop(key, None)
+        return {'phase': observed['phase'], **timing}
+
     def flush(self):
         # Called only after the outer RPC handler has released its locks, or at
         # fixture installation/teardown. Never from a store/lease/send frame.
@@ -383,7 +475,12 @@ class BoundaryDiagnostics:
             with self.lock:
                 rows = list(self.rows)
                 if self.count > 512:
-                    rows.insert(0, {'sequence': 0, 'stage': 'observer', 'event': 'overflow'})
+                    rows.append({'sequence': 0, 'stage': 'observer', 'event': 'overflow'})
+                for category in sorted(self.observation_loss):
+                    # Sticky completeness loss survives the renderer's bounded
+                    # tail projection even when ordinary trace rows roll over.
+                    rows.append({'sequence': 0, 'stage': 'observer', 'event': 'observation_loss',
+                                 'category': category})
             try:
                 self.path.write_text(''.join(json.dumps(row, sort_keys=True) + '\n' for row in rows), encoding='utf-8')
             except OSError:
@@ -394,6 +491,7 @@ class BoundaryDiagnostics:
             return self._trace(frame, event, arg)
         except Exception:
             # Observer failure or shutdown must never change the observed outcome.
+            self.observation_loss.add('trace_exception')
             return None
 
     def _trace(self, frame, event, arg):
@@ -402,14 +500,19 @@ class BoundaryDiagnostics:
         stage = self.stage(frame)
         if stage is None:
             return None
-        frame.f_trace_lines = False
+        frame.f_trace_lines = stage == 'fault_injector'
         frame.f_trace_opcodes = False
         lane_key = threading.get_ident()
         with self.lock:
             if lane_key not in self.lanes and len(self.lanes) < 32:
                 self.lanes[lane_key] = len(self.lanes) + 1
             lane = self.lanes.get(lane_key, 0)
+            if not lane:
+                self.observation_loss.add('lane_capacity')
         value = {'lane': lane, 'stage': stage, 'line': frame.f_lineno}
+        injector = self.observe_injector(frame, event, value) if stage == 'fault_injector' else {}
+        if stage in {'ledger_writer_acquire', 'ledger_writer_release'}:
+            self.observe_coordinator(frame, event, lane, lane_key, stage)
         if stage == 'filesystem_identity' and event == 'return':
             self.observe_identity(frame, arg, lane)
         # Generator return(True) is the acquired-lock yield; final return(None)
@@ -471,6 +574,7 @@ class BoundaryDiagnostics:
                 holders = list(self.holders.values())[:8]
                 ledger_holders = list(self.ledger_holders.values())[:8]
             self.emit({**value, 'event': 'exception',
+                **injector, **self.coordinator_snapshot(),
                 'errorClass': kind.__name__ if recognized else 'other',
                 'reason': reason if type(reason) is str and reason in self._REASONS else 'other',
                 'sqlitePrimaryCode': self.sqlite_primary_code(error),

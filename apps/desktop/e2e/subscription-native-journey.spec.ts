@@ -110,7 +110,14 @@ async function openSetup(legacy: boolean) {
 
   const dialog = page.getByRole('dialog', { name: 'Build your starter team', exact: true })
   await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: 'Check configuration', exact: true }).click()
+  fixture!.markCheckConfiguration('before')
+
+  try {
+    await dialog.getByRole('button', { name: 'Check configuration', exact: true }).click()
+  } finally {
+    fixture!.markCheckConfiguration('after')
+  }
+
   await dialog.getByLabel('Work to delegate', { exact: true }).fill(jobs)
   await dialog.getByLabel('What success looks like', { exact: true }).fill(goals)
   await dialog.getByLabel('Team naming style (optional)', { exact: true }).fill('Ash, Ember and Flint')

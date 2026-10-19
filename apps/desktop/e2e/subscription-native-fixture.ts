@@ -115,7 +115,8 @@ function boundaryDiagnostic(rows: Row[]) {
     'attempt_validation',
     'usage_validation',
     'observation_validation',
-    'result_validation'
+    'result_validation',
+    'fault_injector'
   ])
 
   const events = new Set([
@@ -125,7 +126,9 @@ function boundaryDiagnostic(rows: Row[]) {
     'overflow',
     'installed',
     'existing_trace',
-    'identity_mismatch'
+    'identity_mismatch',
+    'progress',
+    'observation_loss'
   ])
 
   const classes = new Set([
@@ -279,6 +282,42 @@ function boundaryDiagnostic(rows: Row[]) {
             }
           }
         : {}),
+      ...(row.stage === 'fault_injector' && (row.event === 'progress' || row.event === 'exception')
+        ? {
+            phase: known(row.phase, new Set([
+              'before_connect', 'before_begin', 'acquired', 'before_completion',
+              'before_rollback', 'after_rollback', 'before_close', 'attempt_exit'
+            ])),
+            elapsedUs: count(row.elapsedUs, 60_000_000),
+            elapsedCapped: typeof row.elapsedCapped === 'boolean' ? row.elapsedCapped : null
+          }
+        : {}),
+      ...(row.event === 'observation_loss'
+        ? { category: known(row.category, new Set(['trace_exception', 'coordinator_capacity', 'injector_capacity', 'lane_capacity'])) }
+        : {}),
+      ...(row.event === 'exception' || (row.stage === 'fault_injector' && row.event === 'progress')
+        ? {
+            // These are observed cooperating coordinators, not proven SQLite owners.
+            coordinatorHolders: Array.isArray(row.coordinatorHolders)
+              ? row.coordinatorHolders.slice(0, 8).map(value => {
+                  const holder = value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {}
+
+                  const holderStages = new Set([...stages].filter(stage => ![
+                    'ledger_writer', 'ledger_writer_acquire', 'ledger_writer_wait', 'ledger_writer_release'
+                  ].includes(stage)))
+
+                  return {
+                    lane: count(holder.lane, 32),
+                    stage: known(holder.stage, holderStages),
+                    targetScope: known(holder.targetScope, new Set(['profile_ledger', 'other_ledger', 'unknown']), 'unknown')
+                  }
+                })
+              : null,
+            coordinatorHoldersTruncated: Array.isArray(row.coordinatorHolders) && row.coordinatorHolders.length > 8
+              ? true
+              : typeof row.coordinatorHoldersTruncated === 'boolean' ? row.coordinatorHoldersTruncated : null
+          }
+        : {}),
       sequence: count(row.sequence, 2 ** 31 - 1),
       stage: known(row.stage, stages),
       event: known(row.event, events),
@@ -409,7 +448,7 @@ async function observeSubscriptionRpc(page: Page) {
   const rpc: Row[] = []
 
   const pending = new Map<string, {
-    row: Row; organization?: string; source?: string; revision?: number; field: string
+    row: Row; ordinal: number | null; organization?: string; source?: string; revision?: number; field: string
     attempt?: string; ticket?: string; operationKind?: string
     policyApply?: { generation?: number; key?: string; preview?: string }
   }>()
@@ -430,6 +469,63 @@ async function observeSubscriptionRpc(page: Page) {
     timer: ReturnType<typeof setTimeout>
   }
   let completionWaiter: CompletionWaiter | undefined
+
+  // Diagnostic observation only: no raw request/socket IDs, digests or payloads.
+  // These are local CDP delivery times, not server processing or network latency.
+  const timeline: Row[] = []
+  let observedAt = 0
+  let observationFailed = false
+
+  try {
+    observedAt = Date.now()
+  } catch {
+    observationFailed = true
+  }
+
+  let lastAtMs = 0
+  let clockClamped = false
+  let timelineDropped = 0
+  let requestOrdinal = 0
+  let ordinalTruncated = false
+
+  const observationTime = () => {
+    const elapsed = Date.now() - observedAt
+    const bounded = Number.isFinite(elapsed) ? Math.max(lastAtMs, Math.min(300_000, Math.max(0, Math.floor(elapsed)))) : lastAtMs
+
+    if (!Number.isFinite(elapsed) || elapsed < lastAtMs || elapsed > 300_000) {
+      clockClamped = true
+    }
+
+    lastAtMs = bounded
+
+    return bounded
+  }
+
+  const recordObservation = (value: Row | (() => Row)) => {
+    if (observationFailed) {
+      return
+    }
+
+    try {
+      const entry = typeof value === 'function' ? value() : value
+
+      timeline.push({ ...entry, atMs: observationTime() })
+
+      if (timeline.length > 256) {
+        timeline.shift()
+        timelineDropped = Math.min(1_000_000, timelineDropped + 1)
+      }
+    } catch {
+      // A diagnostic failure cannot replace an action or its original refusal.
+      observationFailed = true
+    }
+  }
+
+  const pendingObservation = () => ({
+    pendingCount: pending.size,
+    pendingTruncated: pending.size > 8,
+    pending: Array.from(pending.values()).slice(0, 8).map(value => ({ ordinal: value.ordinal, method: value.row.method }))
+  })
 
   const cancel = (waiter: CompletionWaiter, error: Error) => {
     if (completionWaiter !== waiter || waiter.cancelled) {
@@ -515,6 +611,13 @@ async function observeSubscriptionRpc(page: Page) {
 
         const params = object(frame.params)
         const row: Row = { method: frame.method, phase: 'sent' }
+        const ordinal = requestOrdinal < 1_000_000 ? ++requestOrdinal : null
+
+        if (ordinal === null) {
+          ordinalTruncated = true
+        }
+
+        recordObservation({ kind: 'request', ordinal, method: frame.method, phase: 'sent' })
         rpc.push(row)
 
         if (rpc.length > 64) {
@@ -535,6 +638,7 @@ async function observeSubscriptionRpc(page: Page) {
 
         pending.set(key, {
           row,
+          ordinal,
           organization: digest(params.expectedOrganizationId),
           source: digest(params.sourceRevision),
           revision: Number.isSafeInteger(params.expectedRevision) && Number(params.expectedRevision) >= 0 ? Number(params.expectedRevision) : undefined,
@@ -590,6 +694,10 @@ async function observeSubscriptionRpc(page: Page) {
       }
 
       pending.delete(key)
+      recordObservation({
+        kind: 'request', ordinal: expected.ordinal, method: expected.row.method,
+        phase: Object.hasOwn(frame, 'result') === Object.hasOwn(frame, 'error') ? 'malformed' : frame.error !== undefined ? 'error' : 'result'
+      })
 
       if (Object.hasOwn(frame, 'result') === Object.hasOwn(frame, 'error')) {
         malformed++
@@ -604,7 +712,7 @@ async function observeSubscriptionRpc(page: Page) {
         Object.assign(expected.row, {
           phase: 'error',
           code:
-            [-32700, -32600, -32601, -32602, -32603, 4001, 5076, 5077].includes(Number(error.code)) &&
+            [-32700, -32600, -32601, -32602, -32603, -32000, 4001, 5076, 5077].includes(Number(error.code)) &&
             typeof error.code === 'number'
               ? error.code
               : 'other',
@@ -821,9 +929,15 @@ async function observeSubscriptionRpc(page: Page) {
       completionWaiter ||
       (sequence ? pending.size !== 0 : !['organization.improveTeamInput', 'organization.generateTeam'].includes(method))
     ) {
+      // Capture refusal now; a later completed read must not erase its cause.
+      recordObservation(() => ({
+        kind: 'arm', phase: 'refused', method: methods.has(method) ? method : 'other',
+        reason: closed ? 'closed' : completionWaiter ? 'waiter' : sequence ? 'pending' : 'unsupported', ...pendingObservation()
+      }))
       throw new Error('subscription_operation_wait_unavailable')
     }
 
+    recordObservation(() => ({ kind: 'arm', phase: 'armed', method, reason: 'ready', ...pendingObservation() }))
     let waiter!: CompletionWaiter
     let rejectCancellation!: (error: Error) => void
 
@@ -912,12 +1026,22 @@ async function observeSubscriptionRpc(page: Page) {
 
       return performObserved(sequence[0], action, sequence)
     },
+    markCheckConfiguration: (phase: 'before' | 'after') => {
+      if (!['before', 'after'].includes(phase)) {
+        observationFailed = true
+
+        return
+      }
+
+      recordObservation(() => ({ kind: 'check_configuration', phase, ...pendingObservation() }))
+    },
     read: () => ({
       enabled: true,
       dropped,
       malformed,
       pending: pending.size,
-      rpc: structuredClone(rpc)
+      rpc: structuredClone(rpc),
+      timeline: { version: 1, dropped: timelineDropped, clockClamped, ordinalTruncated, observationFailed, entries: structuredClone(timeline) }
     }),
     close: async () => {
       closed = true
@@ -1149,6 +1273,7 @@ export async function setupNativeSubscription(
       ...fixture,
       evidence,
       cleanupDiagnostic,
+      markCheckConfiguration: (phase: 'before' | 'after') => rpcObserver!.markCheckConfiguration(phase),
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
       performSetupAction: (kind: 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) =>
