@@ -118,6 +118,24 @@ async function openSetup(legacy: boolean) {
   return dialog
 }
 
+async function completePolicyApply(apply: Locator, hostIdentityState: 'current' | 'migration_required') {
+  const result = await fixture!.performSetupAction('policy', () => apply.click())
+  const steps = result.steps as { method: string; phase: string; shape: Record<string, unknown> }[]
+  expect(steps).toHaveLength(4)
+  expect(steps.every(row => row.phase === 'result')).toBe(true)
+  expect(steps[0].shape).toMatchObject({ policyReceiptMatchesRequest: true })
+  expect(steps[1].shape).toMatchObject({
+    state: 'available', organizationMatches: true, sourceMatchesAction: true,
+    policyVersionThree: true, subscriptionMode: true,
+    readinessStatus: 'blocked', readinessBlockers: ['subscription_models_required']
+  })
+  expect(steps[2].shape).toMatchObject({ connectionState: 'active', hostIdentityState, cleanupPending: false })
+  expect(steps[3].shape).toMatchObject({
+    state: 'available', organizationMatches: true, sourceMatchesAction: true,
+    savedPolicyVersionThree: true, policyGenerationMatchesApplied: true
+  })
+}
+
 async function activate(dialog: Locator, legacy: boolean) {
   const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
   const before = fixture!.snapshot()
@@ -156,7 +174,7 @@ async function activate(dialog: Locator, legacy: boolean) {
   expect(fixture!.snapshot().subscriptionPolicy).toEqual([])
   fixture!.assertQuiet(0)
   await connection.getByRole('checkbox', { name: subscriptionAck, exact: true }).check()
-  await apply.click()
+  await completePolicyApply(apply, 'current')
   await expect(
     connection.getByText('Policy saved. Load account models again before Generate or Improve.', { exact: true })
   ).toBeVisible()
@@ -177,8 +195,12 @@ async function activate(dialog: Locator, legacy: boolean) {
   return before
 }
 
-// Used only by the migration scenario. Existing native journeys stay unchanged.
-async function reviewMigrationPolicy(connection: Locator, stalePolicy = false) {
+// Used only by the migration scenario; both policy paths await their exact reads.
+async function reviewMigrationPolicy(
+  connection: Locator,
+  hostIdentityState: 'migration_required' | 'current',
+  stalePolicy = false
+) {
   const before = fixture!.snapshot()
   await completeModelLoad(connection, stalePolicy ? 'stale-policy' : 'unreviewed')
 
@@ -204,7 +226,7 @@ async function reviewMigrationPolicy(connection: Locator, stalePolicy = false) {
   expect(fixture!.snapshot()).toEqual(before)
   fixture!.assertQuiet(0)
   await acknowledgement.check()
-  await apply.click()
+  await completePolicyApply(apply, hostIdentityState)
   await expect(
     connection.getByText('Policy saved. Load account models again before Generate or Improve.', { exact: true })
   ).toBeVisible()
@@ -853,7 +875,7 @@ test.describe('host-native subscription setup', () => {
 
     // Establish the old policy through the same owner UI. No fabricated policy
     // receipt or automatic provider authorization is used to create this state.
-    await reviewMigrationPolicy(connection)
+    await reviewMigrationPolicy(connection, 'migration_required')
     const oldPolicy = fixture.snapshot()
     expect(oldPolicy.subscriptionPolicy).toHaveLength(1)
     expect(oldPolicy.generations).toEqual(history.generations)
@@ -971,7 +993,7 @@ test.describe('host-native subscription setup', () => {
 
     // The previous epoch's policy is not authorization for this grant. The
     // retained legacy call remains charged in the new explicit policy review.
-    await reviewMigrationPolicy(connection, true)
+    await reviewMigrationPolicy(connection, 'current', true)
     const after = fixture.snapshot()
     expect(after.subscriptionPolicy).toHaveLength(2)
     expect(after.subscriptionPolicy).toContainEqual(oldPolicy.subscriptionPolicy[0])

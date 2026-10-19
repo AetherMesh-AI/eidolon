@@ -403,13 +403,18 @@ async function observeSubscriptionRpc(page: Page) {
     Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum
 
   const rpc: Row[] = []
-  const pending = new Map<string, { row: Row; organization?: string; source?: string; revision?: number; field: string }>()
+
+  const pending = new Map<string, {
+    row: Row; organization?: string; source?: string; revision?: number; field: string
+    policyApply?: { generation?: number; key?: string; preview?: string }
+  }>()
+
   let dropped = 0
   let malformed = 0
   let closed = false
   type CompletionWaiter = {
     method: string
-    sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string }
+    sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string; appliedGeneration?: number }
     key?: string
     socket?: string
     completed: boolean
@@ -528,7 +533,13 @@ async function observeSubscriptionRpc(page: Page) {
           organization: digest(params.expectedOrganizationId),
           source: digest(params.sourceRevision),
           revision: Number.isSafeInteger(params.expectedRevision) && Number(params.expectedRevision) >= 0 ? Number(params.expectedRevision) : undefined,
-          field: choice(params.field, ['jobs', 'goals'])
+          field: choice(params.field, ['jobs', 'goals']),
+          policyApply: frame.method === 'organization.applySetupSubscriptionPolicy' ? {
+            generation: Number.isSafeInteger(params.expectedGeneration) && Number(params.expectedGeneration) >= 1
+              ? Number(params.expectedGeneration) : undefined,
+            key: digest(params.idempotencyKey),
+            preview: digest(params.previewVersion)
+          } : undefined
         })
 
         if (
@@ -604,6 +615,25 @@ async function observeSubscriptionRpc(page: Page) {
       const operation = object(result.operation)
       const sequence = completionWaiter?.key === key ? completionWaiter.sequence : undefined
       const configuration = object(result.configuration)
+      const receipt = object(result.receipt)
+      const apply = expected.policyApply
+
+      const policyReceiptMatchesRequest = apply === undefined ? null :
+        result.capabilityVersion === 1 && result.historical === false &&
+        receipt.version === 1 && receipt.action === 'retireSetupInheritance' &&
+        apply.generation !== undefined && receipt.priorGeneration === apply.generation &&
+        Number.isSafeInteger(receipt.appliedGeneration) && receipt.appliedGeneration === apply.generation + 1 &&
+        expected.organization !== undefined && digest(receipt.organizationId) === expected.organization &&
+        expected.source !== undefined && digest(receipt.sourceRevision) === expected.source &&
+        apply.key !== undefined && digest(receipt.idempotencyKey) === apply.key &&
+        apply.preview !== undefined && digest(receipt.previewDigest) === apply.preview
+
+      if (sequence && policyReceiptMatchesRequest) {
+        sequence.appliedGeneration = Number(receipt.appliedGeneration)
+        // A successful policy mutation may advance source revision. Anchor the
+        // following reads to its new source, never to the preview's old source.
+        sequence.source = digest(result.sourceRevision)
+      }
 
       if (sequence && expected.row.method === 'organization.teamSetup' && sequence.source === undefined) {
         sequence.source = digest(result.sourceRevision)
@@ -623,6 +653,10 @@ async function observeSubscriptionRpc(page: Page) {
             expected.organization === undefined ? null : digest(result.organizationId) === expected.organization,
           sourceMatches: expected.source === undefined ? null : digest(result.sourceRevision) === expected.source,
           sourceMatchesAction: sequence?.source === undefined ? null : digest(result.sourceRevision) === sequence.source,
+          policyReceiptMatchesRequest,
+          policyGenerationMatchesApplied: expected.row.method === 'organization.setupSubscriptionPolicy' && sequence?.appliedGeneration !== undefined
+            ? result.policyGeneration === sequence.appliedGeneration : null,
+          savedPolicyVersionThree: result.policyVersion === 3,
           connectionRevisionMatchesRequest: expected.revision === undefined ? null : result.connectionRevision === expected.revision,
           field: choice(result.field, ['jobs', 'goals']),
           fieldMatches: result.field === expected.field,
@@ -783,9 +817,9 @@ async function observeSubscriptionRpc(page: Page) {
       method: 'organization.improveTeamInput' | 'organization.generateTeam',
       action: () => Promise<unknown>
     ) => performObserved(method, action),
-    performSetupAction: (kind: 'models' | 'disconnect', action: () => Promise<unknown>) => {
-      // Only these two existing owner actions are observed. No synthetic read,
-      // authorization, retry, policy apply or inference is added by this barrier.
+    performSetupAction: (kind: 'models' | 'disconnect' | 'policy', action: () => Promise<unknown>) => {
+      // Observe only these existing owner actions. This barrier sends no RPCs
+      // and invokes the supplied UI action once, without retrying it.
       const paths = {
         models: [
           'teamSetup',
@@ -797,6 +831,12 @@ async function observeSubscriptionRpc(page: Page) {
         disconnect: [
           'prepareSetupSubscriptionOperation',
           'executeSetupSubscriptionOperation',
+          'teamSetup',
+          'setupSubscriptionStatus',
+          'setupSubscriptionPolicy'
+        ],
+        policy: [
+          'applySetupSubscriptionPolicy',
           'teamSetup',
           'setupSubscriptionStatus',
           'setupSubscriptionPolicy'
@@ -1050,7 +1090,7 @@ export async function setupNativeSubscription(
       cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
-      performSetupAction: (kind: 'models' | 'disconnect', action: () => Promise<unknown>) =>
+      performSetupAction: (kind: 'models' | 'disconnect' | 'policy', action: () => Promise<unknown>) =>
         rpcObserver!.performSetupAction(kind, action),
       diagnostic: () => {
         const rows = events()

@@ -70,10 +70,10 @@ async function harness() {
     delays,
     commands,
     detached: () => detached,
-    send: (id, rpcMethod = method, socket) =>
+    send: (id, rpcMethod = method, socket, params = {}) =>
       frame(
         'Sent',
-        { id, method: rpcMethod, params: { expectedOrganizationId: secret, sourceRevision: secret, field: 'jobs' } },
+        { id, method: rpcMethod, params: { expectedOrganizationId: secret, sourceRevision: secret, field: 'jobs', ...params } },
         socket
       ),
     receive: (id, payload = { result: { suggestion: secret, field: 'jobs' } }, socket) =>
@@ -462,6 +462,7 @@ test('boundary sanitizer rejects unknown labels and retains row/count bounds', (
 })
 
 const setupPaths = {
+  policy: ['applySetupSubscriptionPolicy', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
   models: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy', 'setupSubscriptionModels', 'teamSetup'],
   disconnect: [
     'prepareSetupSubscriptionOperation',
@@ -482,33 +483,35 @@ for (const kind of Object.keys(setupPaths)) {
   test(`${kind} waits for its exact final read past 5s without retrying or extending a 15s read deadline`, async () => {
     const h = await harness()
     let actions = 0,
-      settled = false
+      settled = false,
+      rejected
     const observed = h.observer.performSetupAction(kind, async () => {
       actions++
       setupPaths[kind].forEach((name, index) => {
         h.send(index + 1, 'organization.' + name)
-        if (index < 4) h.receive(index + 1, setupReply(name))
+        if (index < setupPaths[kind].length - 1) h.receive(index + 1, setupReply(name))
       })
     })
     observed.then(() => {
       settled = true
-    })
+    }, error => { rejected = error })
     h.advance(6000)
     h.receive(99)
-    h.receive(5, undefined, 'wrong-socket')
+    h.receive(setupPaths[kind].length, undefined, 'wrong-socket')
     await flush()
+    if (rejected) throw rejected
     assert.equal(settled, false)
     assert.equal(h.observer.read().pending, 1)
-    h.receive(5)
+    h.receive(setupPaths[kind].length)
     const result = await observed
     assert.equal(actions, 1)
-    assert.equal(result.steps.length, 5)
+    assert.equal(result.steps.length, setupPaths[kind].length)
     assert.deepEqual(
       Array.from(result.steps, row => row.method),
       setupPaths[kind].map(name => 'organization.' + name)
     )
     assert.ok(result.steps.every(row => row.phase === 'result'))
-    assert.deepEqual(h.delays, [15000, 15000, 15000, 15000, 15000])
+    assert.deepEqual(h.delays, setupPaths[kind].map(() => 15000))
     assert.equal(h.timers.size, 0)
     assert.ok(!JSON.stringify(result).includes(secret))
     if (kind === 'models') {
@@ -525,20 +528,21 @@ for (const kind of Object.keys(setupPaths)) {
       actions++
       setupPaths[kind].forEach((name, index) => {
         h.send(index + 1, 'organization.' + name)
-        if (index < 4) h.receive(index + 1, setupReply(name))
+        if (index < setupPaths[kind].length - 1) h.receive(index + 1, setupReply(name))
       })
     })
     h.advance(14999)
     assert.equal(h.timers.size, 1)
     h.advance(1)
     await assert.rejects(observed, /subscription_operation_timeout/)
-    h.receive(5)
+    h.receive(setupPaths[kind].length)
     assert.equal(actions, 1)
     assert.equal(h.timers.size, 0)
     await h.observer.close()
   })
 }
 
+for (const kind of ['models', 'policy']) {
 for (const failure of [
   'wrong-first',
   'out-of-order',
@@ -550,26 +554,26 @@ for (const failure of [
   'malformed',
   'close'
 ]) {
-  test(`setup sequence refuses ${failure} without a second action or exported private data`, async () => {
+  test(`${kind} sequence refuses ${failure} without a second action or exported private data`, async () => {
     const h = await harness()
     let actions = 0
-    const observed = h.observer.performSetupAction('models', async () => {
+    const observed = h.observer.performSetupAction(kind, async () => {
       actions++
-      h.send(1, failure === 'wrong-first' ? 'organization.setupSubscriptionStatus' : 'organization.teamSetup')
+      h.send(1, failure === 'wrong-first' ? 'organization.' + setupPaths[kind][1] : 'organization.' + setupPaths[kind][0])
       if (failure === 'out-of-order') {
         h.receive(1)
-        h.send(2, 'organization.setupSubscriptionPolicy')
+        h.send(2, 'organization.' + setupPaths[kind][2])
       }
-      if (failure === 'duplicate') h.send(1, 'organization.teamSetup')
-      if (failure === 'same-method-new-id') h.send(2, 'organization.teamSetup')
+      if (failure === 'duplicate') h.send(1, 'organization.' + setupPaths[kind][0])
+      if (failure === 'same-method-new-id') h.send(2, 'organization.' + setupPaths[kind][0])
       if (failure === 'reused-completed-id') {
         h.receive(1)
-        h.send(1, 'organization.setupSubscriptionStatus')
+        h.send(1, 'organization.' + setupPaths[kind][1])
         h.receive(1)
       }
       if (failure === 'cross-socket-next-step') {
         h.receive(1)
-        h.send(2, 'organization.setupSubscriptionStatus', 'different-socket')
+        h.send(2, 'organization.' + setupPaths[kind][1], 'different-socket')
         h.receive(2, undefined, 'different-socket')
       }
       if (failure === 'rpc-error')
@@ -583,6 +587,8 @@ for (const failure of [
     assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
     if (failure !== 'close') await h.observer.close()
   })
+}
+
 }
 
 test('setup action allowlist, old-pending and shared inference guard reject before invoking action', async () => {
@@ -751,4 +757,163 @@ test('model sequence reports source drift without exporting either source', asyn
   assert.ok(!JSON.stringify(result).includes(secret))
   assert.ok(!JSON.stringify(result).includes('different-private-source'))
   await h.observer.close()
+})
+
+// Policy writes legitimately advance generation/source. Compare the receipt to
+// the old request and subsequent reads to the committed generation/new source.
+const nextSource = 'new-private-source-after-policy-mutation'
+const policyParams = { expectedGeneration: 4, idempotencyKey: secret, previewVersion: secret }
+const policyReceipt = () => ({
+  capabilityVersion: 1, historical: false, sourceRevision: nextSource,
+  receipt: {
+    version: 1, action: 'retireSetupInheritance', organizationId: secret,
+    idempotencyKey: secret, sourceRevision: secret, previewDigest: secret,
+    priorGeneration: 4, appliedGeneration: 5
+  }
+})
+const policyReplies = () => [
+  policyReceipt(),
+  {
+    state: 'available', organizationId: secret, sourceRevision: nextSource,
+    generationAllowance: { policyVersion: 3, mode: 'subscription_calls' },
+    readiness: { status: 'blocked', blockers: ['subscription_models_required'] }
+  },
+  { connectionState: 'active', hostIdentityState: 'current', cleanupPending: false },
+  { state: 'available', organizationId: secret, sourceRevision: nextSource, policyGeneration: 5, policyVersion: 3 }
+]
+const policyHelpers = journeyParsed.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'completePolicyApply')
+assert.equal(policyHelpers.length, 1)
+const policyHelper = ts.transpileModule(`(${policyHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const policyHelperWith = fixture => vm.runInNewContext(policyHelper, {
+  fixture,
+  expect: value => ({
+    toHaveLength: count => assert.equal(value.length, count),
+    toBe: expected => assert.equal(value, expected),
+    toMatchObject: subset => matchSubset(value, subset)
+  })
+})
+
+for (const scenario of [
+  'generation-and-source-advance', 'no-turnover-source', 'pre-migration-legacy', 'post-migration-current',
+  'legacy-cannot-satisfy-current', 'current-cannot-satisfy-legacy', 'stale-receipt-source', 'stale-prior-generation',
+  'stale-applied-generation', 'wrong-idempotency-key', 'wrong-preview', 'wrong-receipt-organization',
+  'historical-receipt', 'missing-receipt', 'team-source-drift', 'policy-source-drift',
+  'stale-policy-generation', 'old-policy-version', 'wrong-policy-organization',
+  'disconnected', 'cleanup-pending', 'readiness-refused'
+]) {
+  test(`policy journey barrier preserves ${scenario} semantics and exports no private values`, async () => {
+    const h = await harness(), replies = policyReplies()
+    const identity = ['pre-migration-legacy', 'current-cannot-satisfy-legacy'].includes(scenario) ? 'migration_required' : 'current'
+    if (['pre-migration-legacy', 'legacy-cannot-satisfy-current'].includes(scenario)) replies[2].hostIdentityState = 'migration_required'
+    if (scenario === 'no-turnover-source') delete replies[0].sourceRevision
+    if (scenario === 'stale-receipt-source') replies[0].receipt.sourceRevision = nextSource
+    if (scenario === 'stale-prior-generation') replies[0].receipt.priorGeneration = 3
+    if (scenario === 'stale-applied-generation') replies[0].receipt.appliedGeneration = 4
+    if (scenario === 'wrong-idempotency-key') replies[0].receipt.idempotencyKey = nextSource
+    if (scenario === 'wrong-preview') replies[0].receipt.previewDigest = nextSource
+    if (scenario === 'wrong-receipt-organization') replies[0].receipt.organizationId = nextSource
+    if (scenario === 'historical-receipt') replies[0].historical = true
+    if (scenario === 'missing-receipt') delete replies[0].receipt
+    if (scenario === 'team-source-drift') replies[1].sourceRevision = secret
+    if (scenario === 'policy-source-drift') replies[3].sourceRevision = secret
+    if (scenario === 'stale-policy-generation') replies[3].policyGeneration = 4
+    if (scenario === 'old-policy-version') replies[3].policyVersion = 2
+    if (scenario === 'wrong-policy-organization') replies[3].organizationId = nextSource
+    if (scenario === 'disconnected') replies[2].connectionState = 'disconnected'
+    if (scenario === 'cleanup-pending') replies[2].cleanupPending = true
+    if (scenario === 'readiness-refused') replies[1].readiness.blockers = ['connection_binding_changed']
+    let clicks = 0
+    const helper = policyHelperWith(h.observer)
+    const action = helper({ click: async () => {
+      clicks++
+      setupPaths.policy.forEach((name, index) => {
+        h.send(index + 1, 'organization.' + name, undefined,
+          index === 0 ? policyParams : { sourceRevision: undefined })
+        h.receive(index + 1, { result: replies[index] })
+      })
+    } }, identity)
+    if (['generation-and-source-advance', 'no-turnover-source', 'pre-migration-legacy', 'post-migration-current'].includes(scenario)) await action
+    else await assert.rejects(action)
+    assert.equal(clicks, 1)
+    assert.equal(h.timers.size, 0)
+    for (const value of [secret, nextSource]) assert.ok(!JSON.stringify(h.observer.read()).includes(value))
+    await h.observer.close()
+  })
+}
+
+for (let missing = 0; missing < setupPaths.policy.length; missing++) {
+  for (const failure of ['missing-send', 'missing-reply', 'error', 'malformed-envelope']) {
+    test(`policy step ${missing + 1} ${failure} fails without resending or extending its deadline`, async () => {
+      const h = await harness(), replies = policyReplies()
+      let clicks = 0
+      const action = h.observer.performSetupAction('policy', async () => {
+        clicks++
+        for (let index = 0; index <= missing; index++) {
+          if (index === missing && failure === 'missing-send') break
+          h.send(index + 1, 'organization.' + setupPaths.policy[index], undefined, index === 0 ? policyParams : {})
+          if (index < missing) h.receive(index + 1, { result: replies[index] })
+          else if (failure === 'error') h.receive(index + 1, { error: { code: 5076, message: secret, data: { reason: 'unavailable' } } })
+          else if (failure === 'malformed-envelope') h.receive(index + 1, { result: replies[index], error: {} })
+        }
+      })
+      if (failure.startsWith('missing')) {
+        h.advance(14999)
+        assert.equal(h.timers.size, 1)
+        h.advance(1)
+      }
+      await assert.rejects(action, /subscription_(operation_timeout|setup_rpc_refused|operation_correlation_lost)/)
+      assert.equal(clicks, 1)
+      assert.equal(h.timers.size, 0)
+      assert.ok(h.delays.every(delay => delay === 15000))
+      assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+      await h.observer.close()
+    })
+  }
+}
+
+test('both actual policy helpers await completion before the original saved-copy assertion', () => {
+  for (const name of ['activate', 'reviewMigrationPolicy']) {
+    const helper = journeyParsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(journeyParsed)
+    assert.match(helper, /await completePolicyApply\(apply, /)
+    assert.ok(helper.indexOf('await completePolicyApply(apply, ') < helper.indexOf("'Policy saved. Load account models again before Generate or Improve.'"))
+    assert.doesNotMatch(helper, /await apply\.click\(\)/)
+    assert.doesNotMatch(helper, /toBeVisible\(\{/)
+  }
+})
+
+test('actual policy helper leaves UI assertion untouched until its delayed terminal read completes once', async () => {
+  const h = await harness(), replies = policyReplies()
+  let clicks = 0, uiAssertions = 0
+  const helper = policyHelperWith(h.observer)
+  const completed = helper({ click: async () => {
+    clicks++
+    setupPaths.policy.forEach((name, index) => {
+      h.send(index + 1, 'organization.' + name, undefined, index === 0 ? policyParams : { sourceRevision: undefined })
+      if (index < 3) h.receive(index + 1, { result: replies[index] })
+    })
+  } }, 'current').then(() => { uiAssertions++ })
+  h.advance(6000)
+  h.receive(99, { result: replies[3] })
+  h.receive(4, { result: replies[3] }, 'unrelated-socket')
+  await flush()
+  assert.equal(uiAssertions, 0)
+  assert.equal(h.observer.read().pending, 1)
+  h.receive(4, { result: replies[3] })
+  await completed
+  assert.equal(uiAssertions, 1)
+  assert.equal(clicks, 1)
+  assert.deepEqual(h.delays, [15000, 15000, 15000, 15000])
+  assert.equal(h.timers.size, 0)
+  await h.observer.close()
+})
+
+
+test('migration policy callers name the exact identity on each side of migration', () => {
+  const scenario = journeyParsed.getText()
+  assert.equal((scenario.match(/await reviewMigrationPolicy\(connection, 'migration_required'\)/g) ?? []).length, 1)
+  assert.equal((scenario.match(/await reviewMigrationPolicy\(connection, 'current', true\)/g) ?? []).length, 1)
+  const activate = journeyParsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'activate').getText(journeyParsed)
+  assert.match(activate, /await completePolicyApply\(apply, 'current'\)/)
 })
