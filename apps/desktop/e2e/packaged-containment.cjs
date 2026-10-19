@@ -83,6 +83,15 @@ function ownedSpawn(command, args, options) {
   return { child, done, stop, stderr: () => stderr }
 }
 
+async function settleOwned(stop, record) {
+  try { await stop(); record.ownedTreeSettled = true; return undefined }
+  catch (error) {
+    record.ownedTreeSettled = false
+    record.cleanupError = String(error?.stack || error).slice(0, 2000)
+    return error
+  }
+}
+
 async function protocol(url) {
   const endpoint = new URL(url)
   assert.equal(endpoint.protocol, 'ws:')
@@ -273,6 +282,8 @@ async function preflight({ product, harness, python, output }) {
     fs.copyFileSync(profileFile, path.join(output, 'profile.sb'))
     sandboxArgs(parameters, python) // Validate before spawn.
     const child = ownedSpawn('/usr/bin/sandbox-exec', sandboxArgs(parameters, python, ['-I', probeFile, configPath]), { env, cwd: home })
+    let probeFailure
+    receipt.directProcess = { pid: child.child.pid }
     try {
       const result = await timeout(child.done, 25000, 'Direct containment control')
       receipt.directProcess = { pid: child.child.pid, code: result.code, signal: result.signal, stderr: result.stderr }
@@ -280,8 +291,11 @@ async function preflight({ product, harness, python, output }) {
       receipt.probes = JSON.parse(result.stdout)
       assert.equal(receipt.probes.direct.pid, child.child.pid)
       validateProbes(receipt.probes, process.pid, nonceSha256)
-    } finally { await child.stop() }
-    receipt.directProcess.ownedTreeSettled = true
+    } catch (error) { probeFailure = error; throw error }
+    finally {
+      const cleanupFailure = await settleOwned(child.stop, receipt.directProcess)
+      if (cleanupFailure && !probeFailure) throw cleanupFailure
+    }
     assert.equal(external.count(), 0)
     receipt.disconnect = await disconnectControl({ parameters, env, python, configPath, disposable })
     validateProbes(receipt.disconnect.probes, receipt.disconnect.pid, nonceSha256)
@@ -297,6 +311,8 @@ async function preflight({ product, harness, python, output }) {
     receipt.error = String(error?.stack || error).slice(0, 12000)
     throw error
   } finally {
+    receipt.nonloopbackConnections = external?.count()
+    receipt.loopbackConnections = local?.count()
     const closing = await Promise.allSettled([external?.close(), local?.close()])
     const failures = closing.filter(item => item.status === 'rejected')
     if (failures.length) {
@@ -337,7 +353,7 @@ function validateReceipt(receipt) {
   assert.equal(receipt.cleanupErrors, undefined)
 }
 
-module.exports = { poll, validateReceipt, machServices, profileFile, probeFile, canonicalDirectory, sandboxArgs, childEnvironment, validateProbes, preflight, protocol, disconnectControl }
+module.exports = { settleOwned, poll, validateReceipt, machServices, profileFile, probeFile, canonicalDirectory, sandboxArgs, childEnvironment, validateProbes, preflight, protocol, disconnectControl }
 if (require.main === module) {
   const [product, harness, python, output] = process.argv.slice(2)
   preflight({ product, harness, python, output }).then(() => console.log('Synthetic containment controls passed; no product was launched.'))

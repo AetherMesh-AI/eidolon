@@ -7,7 +7,7 @@ const os = require('node:os')
 const { spawn } = require('node:child_process')
 const { fileURLToPath } = require('node:url')
 const { canonicalDirectory, sandboxArgs, childEnvironment, validateReceipt, machServices,
-  profileFile, probeFile, protocol, poll } = require('./packaged-containment.cjs')
+  profileFile, probeFile, protocol, poll, settleOwned } = require('./packaged-containment.cjs')
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
 const nonce = 'a'.repeat(64)
 function probes(parent) {
@@ -140,4 +140,15 @@ test('polling deadlines settle instead of abandoning live loops', async () => {
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(calls, settled)
   await assert.rejects(poll(() => { throw new Error('child signaled') }, 1000, 'endpoint'), /child signaled/)
+})
+
+test('failure-time owned cleanup is positively recorded without replacing original failure', async () => {
+  const record = {}
+  assert.equal(await settleOwned(async () => {}, record), undefined)
+  assert.deepEqual(record, { ownedTreeSettled: true })
+  const failure = new Error('synthetic cleanup failure')
+  const rejected = {}
+  assert.equal(await settleOwned(async () => { throw failure }, rejected), failure)
+  assert.equal(rejected.ownedTreeSettled, false)
+  assert.match(rejected.cleanupError, /synthetic cleanup failure/)
 })
