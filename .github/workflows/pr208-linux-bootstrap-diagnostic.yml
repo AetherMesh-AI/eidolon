@@ -1,0 +1,458 @@
+name: PR208 Linux bootstrap diagnostic
+
+# Temporary diagnostic only. Checkout below pins tested source independently.
+# A passing run is nonreproduction, never a replacement for the full CI gate.
+on:
+  push:
+    branches: [diag/pr208-linux-bootstrap-75da4f1]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr208-linux-bootstrap-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+
+jobs:
+  observe:
+    if: github.repository == 'AetherMesh-AI/eidolon'
+    name: Observe exact unchanged Node bootstrap test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, existing repository pin
+        with:
+          ref: 75da4f1b0081bbd9933b8af0b0d893d0e21db16c
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify source identity
+        run: |
+          test "$(git rev-parse HEAD)" = 75da4f1b0081bbd9933b8af0b0d893d0e21db16c
+          test "$(git rev-parse 'HEAD^{tree}')" = 296ccba6612cbff2ec81480c1eaff95668624d2a
+          git diff --exit-code HEAD --
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0, existing repository pin
+        with:
+          python-version: '3.12.15'
+      - name: Install same locked Python test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12.15 --extra dev --extra slack
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Materialize external process observer
+        run: |
+          mkdir -p "$RUNNER_TEMP/pr208-linux-bootstrap"
+          cat > "$RUNNER_TEMP/pr208-linux-bootstrap/observe_bootstrap.py" <<'PYOBSERVER'
+          """External observer for one unchanged PR 208 test; never imports product code."""
+          from __future__ import annotations
+          
+          import argparse
+          import ast
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import shutil
+          import subprocess
+          import sys
+          import time
+          import xml.etree.ElementTree as ET
+          
+          import psutil
+          
+          
+          HEAD = "75da4f1b0081bbd9933b8af0b0d893d0e21db16c"
+          TREE = "296ccba6612cbff2ec81480c1eaff95668624d2a"
+          TEST = "tests/eidolon_cli/test_organization_fresh_team_provider_guard.py"
+          CASE = "test_electron_bootstrap_guards_first_renderer_and_only_fulfills_exact_font"
+          SPEC = "apps/desktop/e2e/organization-fresh-team-setup.spec.ts"
+          FONT = "https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap"
+          SCRIPT_SHA = "4eed1ef4234c4c0a49e2a09ef0694873772e4786b4375b668e59dda9d9be209e"
+          BOOTSTRAP_SHA = "314df545a80c6884c2fdbac3e9ed9d686a6ef0b6e24aa5b27764f2f653d49e56"
+          BLOBS = {
+              TEST: "e56a7659bafbd133ed8415e14a4c1f4b19cf9d11",
+              SPEC: "002a0663339f77c1d7b92539381e3f69ef63493b",
+              "scripts/run_tests_parallel.py": "b6fc3d63abccdf8b3bcd856321de63fd1ff08b93",
+              "scripts/run_tests.sh": "67e050ce111f13582eaf1d4c1617bf1416aff268",
+              "tests/conftest.py": "b38ea5d552cbd2d18318c4114d54a0b145efcdf3",
+          }
+          SAMPLE_INTERVAL = 0.05
+          OBSERVER_BUDGET = 420  # Outer safety only; the unchanged test owns its 10s timer.
+          
+          
+          def sha256(data):
+              return hashlib.sha256(data).hexdigest()
+          
+          
+          def blob(data):
+              return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+          
+          
+          def read_text(path):
+              try:
+                  return Path(path).read_text(errors="replace")
+              except OSError as exc:
+                  return {"unavailable": type(exc).__name__}
+          
+          
+          def command_output(argv, cwd):
+              result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=20)
+              if result.returncode:
+                  raise RuntimeError(f"Metadata command failed: {argv[0]} ({result.returncode})")
+              return result.stdout.strip()
+          
+          
+          def verify_source(source):
+              if command_output(["git", "rev-parse", "HEAD"], source) != HEAD:
+                  raise RuntimeError("Unexpected checkout commit")
+              if command_output(["git", "rev-parse", "HEAD^{tree}"], source) != TREE:
+                  raise RuntimeError("Unexpected checkout tree")
+              if command_output(["git", "diff", "--name-only", "HEAD", "--"], source):
+                  raise RuntimeError("Tracked checkout files changed")
+              for name, expected in BLOBS.items():
+                  if blob((source / name).read_bytes()) != expected:
+                      raise RuntimeError(f"Source blob mismatch: {name}")
+              module = ast.parse((source / TEST).read_text())
+              function = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == CASE)
+              assignments = {
+                  target.id: node.value
+                  for node in function.body if isinstance(node, ast.Assign)
+                  for target in node.targets if isinstance(target, ast.Name)
+              }
+              script = ast.literal_eval(assignments["script"])
+              if ast.literal_eval(assignments["font"]) != FONT:
+                  raise RuntimeError("Unexpected font argument")
+              call = function.body[-1].value
+              if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                      and isinstance(call.func.value, ast.Name) and call.func.value.id == "subprocess"
+                      and call.func.attr == "run"):
+                  raise RuntimeError("Unexpected child invocation")
+              keywords = {keyword.arg: keyword.value for keyword in call.keywords}
+              if (ast.literal_eval(keywords["timeout"]) != 10
+                      or ast.literal_eval(keywords["check"]) is not True
+                      or ast.literal_eval(keywords["text"]) is not True):
+                  raise RuntimeError("Child timeout/check/text contract changed")
+              bootstrap = (source / SPEC).read_text().split("const electronNetworkGuard = String.raw`", 1)[1].split("\n`", 1)[0]
+              if sha256(script.encode()) != SCRIPT_SHA or sha256(bootstrap.encode()) != BOOTSTRAP_SHA:
+                  raise RuntimeError("Payload hash mismatch")
+              return script, bootstrap
+          
+          
+          def process_identity(process):
+              return process.pid, process.create_time()
+          
+          
+          def owned(process, root_identity):
+              try:
+                  return any(process_identity(parent) == root_identity for parent in process.parents())
+              except (psutil.Error, OSError):
+                  return False
+          
+          
+          def same_process(identity):
+              try:
+                  process = psutil.Process(identity[0])
+                  return process if process_identity(process) == identity else None
+              except psutil.NoSuchProcess:
+                  return None
+          
+          
+          def process_sample(process, lookup=same_process):
+              identity = process_identity(process)
+              with process.oneshot():
+                  row = {
+                      "pid": process.pid,
+                      "create_time": process.create_time(),
+                      "ppid": process.ppid(),
+                      "pgid": os.getpgid(process.pid),
+                      "status": process.status(),
+                      "cpu_times": process.cpu_times()._asdict(),
+                      "memory": process.memory_info()._asdict(),
+                      "threads": process.num_threads(),
+                      "context_switches": process.num_ctx_switches()._asdict(),
+                  }
+              proc = Path("/proc") / str(process.pid)
+              for name in ("stat", "schedstat", "wchan"):
+                  row[name] = read_text(proc / name)
+              current = lookup(identity)
+              if current is None or process_identity(current) != identity:
+                  raise RuntimeError("Owned identity disappeared or was reused while sampling")
+              return row
+          
+          
+          def register_owned(process, root_identity, known, emit):
+              identity = process_identity(process)
+              if not owned(process, root_identity):
+                  return None
+              if identity not in known:
+                  known[identity] = process.name()
+                  emit("owned_descendant_seen", pid=identity[0], create_time=identity[1], ppid=process.ppid(), name=process.name())
+              return identity
+          
+          
+          def cleanup_identities(identities, emit, *, lookup=same_process, timeout=2.0,
+                                 clock=time.monotonic, sleep=time.sleep):
+              """Signal only already-proven identities, then verify bounded exit."""
+              records = {}
+              pending = set()
+              errors = []
+              exited_states = {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}
+              for identity in dict.fromkeys(identities):
+                  row = {"pid": identity[0], "create_time": identity[1]}
+                  records[identity] = row
+                  try:
+                      process = lookup(identity)
+                      if process is None or process_identity(process) != identity:
+                          row["outcome"] = "absent_or_reused_no_signal"
+                          continue
+                      if process.status() in exited_states:
+                          row["outcome"] = "exit_verified"
+                          continue
+                      process.kill()
+                      row["outcome"] = "signal_sent"
+                      pending.add(identity)
+                  except (psutil.Error, OSError) as exc:
+                      row["outcome"] = "unverifiable_no_further_signal"
+                      row["error"] = type(exc).__name__
+                      errors.append(dict(row))
+              deadline = clock() + timeout
+              while pending:
+                  for identity in tuple(pending):
+                      try:
+                          process = lookup(identity)
+                          if process is None or process_identity(process) != identity:
+                              records[identity]["outcome"] = "exit_verified_identity_gone"
+                              pending.remove(identity)
+                          elif process.status() in exited_states:
+                              records[identity]["outcome"] = "exit_verified"
+                              pending.remove(identity)
+                      except (psutil.Error, OSError) as exc:
+                          records[identity]["outcome"] = "unverifiable_no_further_signal"
+                          records[identity]["error"] = type(exc).__name__
+                          errors.append(dict(records[identity]))
+                          pending.remove(identity)
+                  if not pending or clock() >= deadline:
+                      break
+                  sleep(min(0.05, max(0.0, deadline - clock())))
+              for identity in pending:
+                  records[identity]["outcome"] = "survivor_after_cleanup_deadline"
+              unresolved = [row for row in records.values() if row["outcome"] in {
+                  "survivor_after_cleanup_deadline", "unverifiable_no_further_signal"}]
+              report = {"complete": not unresolved and not errors, "deadline_seconds": timeout,
+                        "processes": list(records.values()), "unresolved": unresolved, "errors": errors}
+              emit("owned_cleanup_result", **report)
+              return report
+          
+          
+          def result_status(returncode, cases, healthy):
+              if not healthy or returncode is None:
+                  return "diagnostic_incomplete", 2
+              if returncode != 0 or any(case["failed"] or case["error"] for case in cases):
+                  return "failure_observed", returncode if returncode != 0 else 1
+              return "nonreproduction_only", 0
+          
+          
+          def main():
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--source", required=True, type=Path)
+              parser.add_argument("--output", required=True, type=Path)
+              args = parser.parse_args()
+              source = args.source.resolve()
+              output = args.output.resolve()
+              output.mkdir(parents=True, exist_ok=False)
+              script, bootstrap = verify_source(source)
+              (output / "node-child-exact.cjs").write_bytes(script.encode())
+              (output / "bootstrap-exact.cjs").write_bytes(bootstrap.encode())
+              node = shutil.which("node")
+              if not node:
+                  raise RuntimeError("Node missing; diagnostic may not skip the target")
+              metadata = {
+                  "head": HEAD, "tree": TREE, "source_blobs": BLOBS,
+                  "script_sha256": SCRIPT_SHA, "bootstrap_sha256": BOOTSTRAP_SHA,
+                  "script_bytes": len(script.encode()), "bootstrap_bytes": len(bootstrap.encode()),
+                  "test_case": f"{TEST}::{CASE}", "child_timeout_seconds": 10, "retries": 0,
+                  "node_path": node, "node_realpath": str(Path(node).resolve()),
+                  "node_runtime_measurement": "Collected after target execution to avoid a warm-up Node process.",
+                  "python_version": sys.version, "python_executable": sys.executable,
+                  "platform": platform.platform(), "cpu_count": os.cpu_count(),
+                  "runner": {key: os.environ.get(key) for key in (
+                      "ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT")},
+                  "os_release": read_text("/etc/os-release"),
+                  "sample_interval_seconds": SAMPLE_INTERVAL,
+                  "observer_budget_seconds": OBSERVER_BUDGET,
+                  "caveats": [
+                      "One exact case, one worker; this is not the original four-worker suite.",
+                      "External sampling can miss a short-lived child; absence is not proof of no execution.",
+                      "No JS preload, Node options, test edits, timeout changes or automatic retries.",
+                      "No native sandbox installation; this target uses synthetic VM objects, not project execution.",
+                      "A passing case is nonreproduction only; original CI failure remains recorded.",
+                  ],
+              }
+              (output / "runtime.json").write_text(json.dumps(metadata, indent=2) + "\n")
+              command = [
+                  "bash", "scripts/run_tests.sh", TEST, "-j", "1", "--file-retries", "0", "--",
+                  "-k", CASE, "-vv", "--tb=long", "--show-capture=all",
+                  f"--junitxml={output / 'pytest.xml'}",
+                  "-o", "junit_logging=all", "-o", "junit_log_passing_tests=true",
+              ]
+              (output / "command.json").write_text(json.dumps(command, indent=2) + "\n")
+              started = time.monotonic()
+              known = {}
+              node_identities = set()
+              observed_scripts = []
+              outer_timeout = False
+              observer_error = None
+              proc = None
+              root_identity = None
+              returncode = None
+              cleanup_report = {"complete": False, "reason": "not_reached"}
+              with (output / "runner.stdout.log").open("wb") as stdout, (output / "runner.stderr.log").open("wb") as stderr, (output / "processes.jsonl").open("w", buffering=1) as events:
+                  def emit(kind, **values):
+                      events.write(json.dumps({"event": kind, "elapsed_seconds": time.monotonic() - started, **values}, sort_keys=True) + "\n")
+          
+                  def cleanup_owned():
+                      targets = list(known)
+                      discovery_errors = []
+                      if proc is not None and proc.poll() is None and root_identity is not None:
+                          try:
+                              root = same_process(root_identity)
+                              if root is not None:
+                                  for child in root.children(recursive=True):
+                                      identity = register_owned(child, root_identity, known, emit)
+                                      if identity is not None:
+                                          targets.append(identity)
+                                  targets.append(root_identity)
+                          except (psutil.Error, OSError) as exc:
+                              discovery_errors.append(type(exc).__name__)
+                      report = cleanup_identities(targets, emit)
+                      if discovery_errors:
+                          report["complete"] = False
+                          report["discovery_errors"] = discovery_errors
+                      if proc is not None:
+                          try:
+                              proc.wait(timeout=2)
+                          except subprocess.TimeoutExpired:
+                              report["complete"] = False
+                              report["runner_wait_timeout"] = True
+                      return report
+          
+                  try:
+                      proc = subprocess.Popen(command, cwd=source, stdout=stdout, stderr=stderr, start_new_session=True)
+                      root = psutil.Process(proc.pid)
+                      root_identity = process_identity(root)
+                      emit("runner_spawn", pid=proc.pid, create_time=root_identity[1])
+                      last_system = -1.0
+                      last_discovery = -1.0
+                      while proc.poll() is None:
+                          elapsed = time.monotonic() - started
+                          if elapsed >= OBSERVER_BUDGET:
+                              outer_timeout = True
+                              emit("observer_deadline", classification="diagnostic_incomplete")
+                              break
+                          if elapsed - last_system >= 1.0:
+                              emit("system_sample", loadavg=os.getloadavg(), cpu_pressure=read_text("/proc/pressure/cpu"), memory_pressure=read_text("/proc/pressure/memory"), io_pressure=read_text("/proc/pressure/io"), cpu_stat=read_text("/proc/stat"))
+                              last_system = elapsed
+                          if elapsed - last_discovery >= SAMPLE_INTERVAL:
+                              try:
+                                  descendants = root.children(recursive=True)
+                              except psutil.Error:
+                                  descendants = []
+                              for child in descendants:
+                                  try:
+                                      identity = register_owned(child, root_identity, known, emit)
+                                      if identity is None:
+                                          continue
+                                      if identity not in node_identities and child.name() == "node":
+                                          argv = child.cmdline()
+                                          if len(argv) == 4 and argv[1:] == ["-e", script, FONT]:
+                                              node_identities.add(identity)
+                                              observed_scripts.append(sha256(argv[2].encode()))
+                                              emit("exact_node_seen", pid=identity[0], create_time=identity[1], ppid=child.ppid(), executable=child.exe(), argv_script_sha256=observed_scripts[-1])
+                                  except (psutil.Error, OSError):
+                                      continue
+                              last_discovery = elapsed
+                          for identity in tuple(node_identities):
+                              try:
+                                  child = same_process(identity)
+                                  if child is None:
+                                      continue
+                                  emit("exact_node_sample", **process_sample(child))
+                              except (psutil.Error, OSError, RuntimeError) as exc:
+                                  emit("sample_unavailable", pid=identity[0], reason=type(exc).__name__)
+                          time.sleep(SAMPLE_INTERVAL)
+                      if not outer_timeout:
+                          returncode = proc.wait(timeout=10)
+                          emit("runner_exit", returncode=returncode, observer_deadline=False)
+                  except BaseException as exc:
+                      observer_error = type(exc).__name__ + ": " + str(exc)
+                      emit("observer_error", error=observer_error)
+                  finally:
+                      # Canonical runner already cleans its file-owned process group;
+                      # this only removes still-live identities originally proven ours.
+                      cleanup_report = cleanup_owned()
+                      if returncode is None and proc is not None:
+                          returncode = proc.poll()
+              source_unchanged = True
+              try:
+                  metadata["node_sha256"] = sha256(Path(node).read_bytes())
+                  metadata["node_versions"] = command_output([node, "-p", "JSON.stringify(process.versions)"], source)
+              except Exception as exc:
+                  metadata["node_runtime_error"] = str(exc)
+                  observer_error = observer_error or str(exc)
+              (output / "runtime.json").write_text(json.dumps(metadata, indent=2) + "\n")
+              try:
+                  verify_source(source)
+              except Exception as exc:
+                  source_unchanged = False
+                  observer_error = observer_error or str(exc)
+              cases = []
+              junit_error = None
+              try:
+                  for case in ET.parse(output / "pytest.xml").getroot().iter("testcase"):
+                      cases.append({"name": case.get("name"), "classname": case.get("classname"), "time": case.get("time"), "failed": case.find("failure") is not None, "error": case.find("error") is not None, "skipped": case.find("skipped") is not None})
+              except (OSError, ET.ParseError) as exc:
+                  junit_error = str(exc)
+              exact_case = len(cases) == 1 and cases[0]["name"] == CASE and not cases[0]["skipped"]
+              healthy = not (observer_error or outer_timeout or junit_error) and source_unchanged and exact_case and cleanup_report["complete"]
+              outcome, exitcode = result_status(returncode, cases, healthy)
+              result = {
+                  "outcome": outcome, "native_runner_returncode": returncode,
+                  "observer_error": observer_error, "observer_deadline": outer_timeout,
+                  "source_unchanged": source_unchanged, "junit_error": junit_error,
+                  "cleanup": cleanup_report, "diagnostic_exitcode": exitcode,
+                  "testcases": cases, "observed_exact_node_processes": len(node_identities),
+                  "observed_payload_sha256": observed_scripts,
+                  "elapsed_seconds": time.monotonic() - started,
+                  "full_ci_gate_status": "not_rerun_or_cleared",
+                  "stdout_stderr": "Raw runner streams and pytest JUnit capture retained. Native child exit is enforced by unchanged check=True; timeout/error transcript is not replaced.",
+              }
+              (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+              print(json.dumps(result, indent=2))
+              return exitcode
+          
+          
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PYOBSERVER
+          echo "884d6377eb1594441927ca934e0f66890ab07bd38d70b71fadc82c6476a358bc  $RUNNER_TEMP/pr208-linux-bootstrap/observe_bootstrap.py" | sha256sum --check
+      - name: Observe one exact test, unchanged ten-second child budget
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: |
+          .venv/bin/python "$RUNNER_TEMP/pr208-linux-bootstrap/observe_bootstrap.py"             --source "$GITHUB_WORKSPACE"             --output "$RUNNER_TEMP/pr208-linux-bootstrap/evidence"
+      - name: Retain raw diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, existing repository pin
+        with:
+          name: pr208-linux-bootstrap-75da4f1-${{ github.run_id }}
+          path: ${{ runner.temp }}/pr208-linux-bootstrap
+          if-no-files-found: error
+          retention-days: 7
