@@ -1,5 +1,5 @@
 """Portable local fault mechanics; whole native recovery stays host-gated."""
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 import json
 import os
@@ -982,9 +982,65 @@ def test_host_migration_request_requires_fresh_forced_consent_and_defers_only_on
     assert not edges.codes and not edges.events
 
 
+@contextmanager
+def registered_migration_owner(root, organization_id, authority):
+    """Use the gateway's actual durable scope and transport publication fences."""
+    from tui_gateway import organization_credential_transport as owners
+    from tui_gateway import methods_organization_setup_subscription as gateway
+    class LocalTransport:
+        closed = False
+    local_transport = LocalTransport()
+    owners.register_owner(local_transport, root)
+    try:
+        _, _, revision = gateway._durable_scope(root, organization_id, True)
+        yield gateway._context(local_transport, {'expectedOrganizationId': organization_id,
+            'sourceRevision': revision}, authority, require_fresh=True)
+    finally:
+        owners.retire_owner(local_transport)
+
+
+def test_native_migration_owner_context_uses_real_authority_and_rejects_incomplete_or_retired(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from eidolon_cli.organization_setup_subscription_auth import AuthError, SubscriptionAuthService
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority
+    from tui_gateway import organization_credential_transport as owners
+    root = (tmp_path / 'migration-context-profile').resolve()
+    root.mkdir(mode=0o700)
+    (root / 'config.yaml').write_text('{}')
+    monkeypatch.setenv('HERMES_HOME', str(root))
+    identity = fixture.seed_profile(root, legacy=True)
+    before = fixture.snapshot(root)
+    authority = HostAuthority.capture(lambda: root, lambda: root)
+    with registered_migration_owner(root, identity['organizationId'], authority) as context:
+        # Constructor-only proof uses no native storage, HTTP, listener or browser.
+        # All context guards are the real gateway functions, not constant lambdas.
+        service = SubscriptionAuthService(object(), object(), context)
+        assert context.owner_guard() and context.setup_guard() and context.lease_generation_guard()
+        assert owners.owner_generation(context.transport) is context.owner_generation
+        with context.publication_authority():
+            service._guard()
+        for field in ('publication_authority', 'setup_guard', 'lease_generation_guard'):
+            with pytest.raises(AuthError, match='invalid_request'):
+                SubscriptionAuthService(object(), object(), replace(context, **{field: None}))
+        # Matches the originally incomplete native test context and remains refused.
+        with pytest.raises(AuthError, match='invalid_request'):
+            SubscriptionAuthService(object(), object(), replace(context,
+                publication_authority=None, lease_generation_guard=None))
+        owners.register_owner(context.transport, root)
+        assert not context.owner_guard() and not context.lease_generation_guard()
+        assert not service._lease_guard()
+        with pytest.raises(AuthError, match='stale_owner'):
+            service._guard()
+        with pytest.raises(RuntimeError, match='retired'):
+            with context.publication_authority():
+                pytest.fail('Retired generation acquired publication authority')
+    assert owners.owner_generation(context.transport) is None
+    assert fixture.snapshot(root) == before
+
+
 @pytest.mark.macos_only
 def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path, monkeypatch):
-    from eidolon_cli.organization_setup_subscription_auth import SubscriptionAuthService, OwnerContext
+    from eidolon_cli.organization_setup_subscription_auth import SubscriptionAuthService
     from eidolon_cli.organization_setup_subscription_host import INSTALLATION_NAME
     root = (tmp_path / 'legacy-migration-profile').resolve()
     root.mkdir(mode=0o700)
@@ -995,10 +1051,9 @@ def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path,
     edges = SyntheticEdges(root, host_migration='cancel_once').install()
     try:
         seed = edges._host_seed
-        context = OwnerContext(str(root), identity['organizationId'], identity['owner']['ownerId'],
-            'a' * 64, object(), object(), lambda: True, setup_guard=lambda: True)
-        service = SubscriptionAuthService(seed['store'], seed['host'], context)
-        status = service.status()
+        with registered_migration_owner(root, identity['organizationId'], seed['host'].authority) as context:
+            service = SubscriptionAuthService(seed['store'], seed['host'], context)
+            status = service.status()
         assert status['connectionState'] == 'active' and status['hostIdentityState'] == 'migration_required'
         assert status['canMigrateHostIdentity'] is False
         assert not (root / INSTALLATION_NAME / 'oauth-host.json').exists()
