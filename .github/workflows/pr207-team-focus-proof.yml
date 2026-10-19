@@ -1,0 +1,269 @@
+name: PR207 focused Team keyboard proof
+
+on:
+  push:
+    branches: [proof/pr207-team-focus-20261019]
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+
+jobs:
+  team-keyboard:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Require an immutable source identifier
+        env:
+          SOURCE_SHA: e03cfec410a280f8907277009a023376edf73664
+        run: '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: e03cfec410a280f8907277009a023376edf73664
+          persist-credentials: false
+      - name: Record and verify immutable source
+        env:
+          SOURCE_SHA: e03cfec410a280f8907277009a023376edf73664
+          SOURCE_TREE: cfdda332108dbcb303ab65bb6885be99eb4e9826
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
+          mkdir -p team-focus-proof
+          git rev-parse HEAD HEAD^{tree} > team-focus-proof/source.txt
+          printf 'workflow_ref=%s\nworkflow_sha=%s\n' "$WORKFLOW_REF" "$WORKFLOW_SHA" >> team-focus-proof/source.txt
+          test "$(git hash-object apps/desktop/e2e/focus-visibility.ts)" = 4f476c096d9d62d1a5a0da32c00852e32133a1bd
+          test "$(git hash-object apps/desktop/e2e/organization-team-input-review.spec.ts)" = e332eb02d607483a853a2f4189a83f2c8c3a8575
+          test "$(git hash-object apps/desktop/src/app/eidolon/home-keyboard-focus.test.ts)" = 361ad0b0b807ecb576ec8294a158c1a9e14c026b
+          test "$(git hash-object apps/desktop/src/app/eidolon/home-keyboard-focus.ts)" = c283a3fe6cd012927c96314cfac9849deb64a8d7
+          git status --porcelain > team-focus-proof/status-before.txt
+          cp apps/desktop/e2e/organization-team-input-review.spec.ts team-focus-proof/unchanged-spec.ts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked Python runtime and test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Install locked desktop dependencies
+        run: npm ci
+      - name: Verify components, fixture helpers and types before native work
+        working-directory: apps/desktop
+        run: |
+          npx vitest run electron/backend-connection-state.test.ts electron/primary-backend-startup.test.ts electron/remote-ws-headers.test.ts electron/oauth-session-authority.test.ts src/store/gateway-connection-lifecycle.test.ts src/app/gateway/hooks/use-gateway-boot.test.tsx src/app/gateway/hooks/use-gateway-request.test.ts src/store/gateway-profile-request.test.ts src/store/gateway-profile-only-owner.integration.test.ts src/store/session-states-runtime-map.test.ts src/components/pane-shell/tree/renderer/tree-group.test.tsx src/components/pane-shell/tree/renderer/strip-visibility.test.ts src/components/pane-shell/tree/renderer/tab-strip-hide.test.tsx src/app/chat/sidebar/chrome.test.tsx src/app/chat/sidebar/session-row.test.tsx src/app/chat/sidebar/projects/overview-row.test.tsx src/app/eidolon src/app/artifacts/workspace.test.tsx src/app/page-search-shell.test.tsx src/app/skills/index.test.tsx src/app/messaging/index.test.tsx src/app/profiles/index.test.tsx src/app/session-import/index.test.tsx src/components/chat/code-editor.test.tsx src/components/chat/shiki-block.test.tsx src/app/chat/right-rail/preview-file.test.tsx src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/onboarding.test.ts src/components/onboarding/index.test.tsx src/store/organization-work.test.ts src/store/connections.test.ts src/store/connections-profile-intent.test.ts src/store/connections-shared-publication.test.ts src/i18n/organization-overview.test.ts src/i18n/organization-directory.test.ts src/store/gateway-switch.test.ts src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/routes.test.ts src/app/routes.workspace-reveal.test.ts src/app/settings src/app/overlays/overlay-view.test.tsx src/app/shell/hooks/use-status-snapshot.test.ts src/app/shell/titlebar.test.ts src/themes e2e/organization-*.unit.test.ts e2e/http-read-fault-bootstrap.unit.test.ts e2e/session-artifact-recovery-fixture.unit.test.ts e2e/settings-read-state-bootstrap.unit.test.ts e2e/workspace-observation-control.unit.test.ts e2e/workspace-evidence-control.unit.test.ts e2e/request-read-position.unit.test.ts
+          npm run typecheck
+      - name: Verify broken reveal and premature measurement still fail
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          
+          root = Path.cwd()
+          source = root / 'apps/desktop/src/app/eidolon/home-keyboard-focus.ts'
+          test = root / 'apps/desktop/src/app/eidolon/home-keyboard-focus.test.ts'
+          controls = [
+              ('disabled-reveal', source, 'if (delta) {workspace.scrollTop += delta}', 'if (delta) { /* diagnostic negative control */ }'),
+              ('premature-sample', test, '  frame(0)\n  expect(intake.scrollTop).toBe(207)', '  // diagnostic: sample before the queued frame\n  expect(intake.scrollTop).toBe(207)'),
+          ]
+          for name, target, old, new in controls:
+              original = target.read_bytes()
+              text = original.decode()
+              assert text.count(old) == 1
+              report = root / f'team-focus-proof/{name}.json'
+              try:
+                  target.write_text(text.replace(old, new))
+                  result = subprocess.run([
+                      'npx', 'vitest', 'run', 'src/app/eidolon/home-keyboard-focus.test.ts',
+                      '-t', 'fractional Team', '--reporter=json', f'--outputFile={report}',
+                  ], cwd=root / 'apps/desktop', text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                  (root / f'team-focus-proof/{name}.log').write_text(result.stdout)
+                  assert result.returncode == 1, (name, result.returncode)
+                  data = json.loads(report.read_text())
+                  failures = [case for suite in data['testResults'] for case in suite['assertionResults'] if case['status'] == 'failed']
+                  assert len(failures) == 2, (name, failures)
+                  assert all('fractional Team' in case['fullName'] for case in failures)
+                  assert all(any('expected 264.5 to be 207' in message for message in case['failureMessages']) for case in failures)
+              finally:
+                  target.write_bytes(original)
+              assert target.read_bytes() == original
+          PY
+          test "$(git hash-object apps/desktop/src/app/eidolon/home-keyboard-focus.ts)" = c283a3fe6cd012927c96314cfac9849deb64a8d7
+          test "$(git hash-object apps/desktop/src/app/eidolon/home-keyboard-focus.test.ts)" = 361ad0b0b807ecb576ec8294a158c1a9e14c026b
+      - name: Require restored tracked source before build
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          git rev-parse HEAD HEAD^{tree} > team-focus-proof/restored-source.txt
+      - name: Install required native project isolation
+        run: bash scripts/ci/organization-sandbox.sh
+      - name: Install Electron system dependencies
+        run: |
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+          fc-match --format='%{family}\n' ':lang=ja'
+      - name: Build desktop
+        id: desktop-build
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Run the complete unchanged Team input review spec
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: xvfb-run -a npx playwright test e2e/organization-team-input-review.spec.ts --workers=1 --retries=0
+      - name: Require every original case to pass exactly once
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          
+          expected = {
+              'reviews two improvements before generating within the three-call allowance in en',
+              'deliberate regeneration has one new durable send and exact recovery preserves newer edits',
+              'selected unsupported Codex subscription keeps descriptions and manual setup usable in en without a send',
+              'selected unsupported Codex subscription keeps descriptions and manual setup usable in ar without a send',
+          }
+          report = json.loads(Path('apps/desktop/playwright-report/results.json').read_text())
+          specs = []
+          def walk(node):
+              specs.extend(node.get('specs', []))
+              for suite in node.get('suites', []):
+                  walk(suite)
+          walk(report)
+          assert not report.get('errors'), report.get('errors')
+          assert len(specs) == len(expected), [spec['title'] for spec in specs]
+          assert {spec['title'] for spec in specs} == expected
+          for spec in specs:
+              assert spec['ok'] is True, spec['title']
+              assert len(spec['tests']) == 1, spec['title']
+              case = spec['tests'][0]
+              assert case['expectedStatus'] == 'passed', spec['title']
+              assert case['status'] == 'expected', spec['title']
+              assert len(case['results']) == 1, spec['title']
+              result = case['results'][0]
+              assert result['status'] == 'passed', spec['title']
+              assert result['retry'] == 0, spec['title']
+              assert not result.get('errors'), spec['title']
+              assert not any(a.get('type') in ('skip', 'fixme') for a in case.get('annotations', [])), spec['title']
+          print('All four exact original cases passed once, without retries or skips.')
+          PY
+      - name: Preserve unchanged native results
+        if: always()
+        run: |
+          if test -d apps/desktop/test-results; then mv apps/desktop/test-results team-focus-proof/unchanged-test-results; fi
+          if test -d apps/desktop/playwright-report; then mv apps/desktop/playwright-report team-focus-proof/unchanged-report; fi
+      - name: Add read-only before and after frame observations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          
+          spec = Path('apps/desktop/e2e/organization-team-input-review.spec.ts')
+          source = spec.read_text()
+          old = """      // Team's return-focus reveal uses the same one-shot frame as the original Tab.
+                await f.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+          """
+          new = """      // Observe the existing render boundary without focusing or scrolling.
+                const returnFrame = await f.page.evaluate(() => {
+                  const measure = () => {
+                    const active = document.activeElement as HTMLElement
+                    const scroller = active.closest<HTMLElement>('.eid-team-body')
+                    const box = active.getBoundingClientRect()
+                    const style = getComputedStyle(active)
+                    const outset = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset)
+                    const port = scroller?.getBoundingClientRect()
+          
+                    return {
+                      time: performance.now(), active: active.id, tag: active.tagName,
+                      dir: document.documentElement.dir, focused: active.matches(':focus-visible'),
+                      ring: { top: box.top - outset, bottom: box.bottom + outset },
+                      scrollTop: scroller?.scrollTop,
+                      scrollport: port && scroller ? { top: port.top + scroller.clientTop, bottom: port.top + scroller.clientTop + scroller.clientHeight } : null
+                    }
+                  }
+                  const before = measure()
+          
+                  return new Promise(resolve => requestAnimationFrame(() => resolve({ before, after: measure() })))
+                })
+          """
+          attachment = 'JSON.stringify({ ...focus, context: roundTripContext, scrollport: roundTripScrollport })'
+          assert source.count(old) == 1
+          assert source.count(attachment) == 1
+          spec.write_text(source.replace(old, new).replace(attachment, 'JSON.stringify({ ...focus, context: roundTripContext, scrollport: roundTripScrollport, returnFrame })'))
+          PY
+          cp apps/desktop/e2e/organization-team-input-review.spec.ts team-focus-proof/observed-spec.ts
+          git hash-object apps/desktop/e2e/organization-team-input-review.spec.ts > team-focus-proof/observed-spec-blob.txt
+          test "$(cat team-focus-proof/observed-spec-blob.txt)" = 75e4527adcc7bc296bbff259c1ad4aebc03cdab8
+          git diff -- apps/desktop/e2e/organization-team-input-review.spec.ts > team-focus-proof/observation.patch
+      - name: Run the complete spec with return-frame observations
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: xvfb-run -a npx playwright test e2e/organization-team-input-review.spec.ts --workers=1 --retries=0
+      - name: Require every observed case to pass exactly once
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          
+          expected = {
+              'reviews two improvements before generating within the three-call allowance in en',
+              'deliberate regeneration has one new durable send and exact recovery preserves newer edits',
+              'selected unsupported Codex subscription keeps descriptions and manual setup usable in en without a send',
+              'selected unsupported Codex subscription keeps descriptions and manual setup usable in ar without a send',
+          }
+          report = json.loads(Path('apps/desktop/playwright-report/results.json').read_text())
+          specs = []
+          def walk(node):
+              specs.extend(node.get('specs', []))
+              for suite in node.get('suites', []):
+                  walk(suite)
+          walk(report)
+          assert not report.get('errors'), report.get('errors')
+          assert len(specs) == len(expected), [spec['title'] for spec in specs]
+          assert {spec['title'] for spec in specs} == expected
+          for spec in specs:
+              assert spec['ok'] is True, spec['title']
+              assert len(spec['tests']) == 1, spec['title']
+              case = spec['tests'][0]
+              assert case['expectedStatus'] == 'passed', spec['title']
+              assert case['status'] == 'expected', spec['title']
+              assert len(case['results']) == 1, spec['title']
+              result = case['results'][0]
+              assert result['status'] == 'passed', spec['title']
+              assert result['retry'] == 0, spec['title']
+              assert not result.get('errors'), spec['title']
+              assert not any(a.get('type') in ('skip', 'fixme') for a in case.get('annotations', [])), spec['title']
+          print('All four exact original cases passed once, without retries or skips.')
+          PY
+      - name: Restore and record final immutable source
+        if: always()
+        run: |
+          test -f team-focus-proof/unchanged-spec.ts
+          cp team-focus-proof/unchanged-spec.ts apps/desktop/e2e/organization-team-input-review.spec.ts
+          git rev-parse HEAD HEAD^{tree} > team-focus-proof/final-source.txt
+          git hash-object apps/desktop/e2e/focus-visibility.ts apps/desktop/e2e/organization-team-input-review.spec.ts apps/desktop/src/app/eidolon/home-keyboard-focus.test.ts apps/desktop/src/app/eidolon/home-keyboard-focus.ts >> team-focus-proof/final-source.txt
+          git diff --exit-code > team-focus-proof/final-diff.txt
+          git diff --cached --exit-code >> team-focus-proof/final-diff.txt
+          git status --porcelain > team-focus-proof/final-status.txt
+      - name: Retain both complete native runs and geometry
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr207-team-focus-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            team-focus-proof/
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
