@@ -152,3 +152,21 @@ test('failure-time owned cleanup is positively recorded without replacing origin
   assert.equal(rejected.ownedTreeSettled, false)
   assert.match(rejected.cleanupError, /synthetic cleanup failure/)
 })
+
+test('all-abort startup matrix remains diagnostic-only and requires owned cleanup', () => {
+  const { validateStartupMatrix } = require('./packaged-containment-startup.cjs')
+  const receipt = { version: 1, scope: 'synthetic-only-fixed-startup-diagnostic', collected: true,
+    productLaunched: false, nativeContainmentAccepted: false, profileSha256: hash(profileFile),
+    nonce: '00000000-0000-4000-8000-000000000001',
+    childEnvironmentNames: ['EIDOLON_CONTAINMENT_NONCE', 'HOME', 'LANG', 'PATH', 'PYTHONDONTWRITEBYTECODE', 'TMPDIR'],
+    children: ['true', 'printf', 'node', 'python'].map((name, i) => ({ name, pid: 100 + i,
+      code: null, signal: 'SIGABRT', stdout: '', stderr: '', expectedStdout: ['', 'EIDOLON_PRINTF_SENTINEL\n', 'EIDOLON_NODE_STDOUT\n', 'EIDOLON_PYTHON_STDOUT\n'][i],
+      expectedStderr: ['', '', 'EIDOLON_NODE_STDERR\n', 'EIDOLON_PYTHON_STDERR\n'][i],
+      sentinelObserved: false, ownedTreeSettled: true })) }
+  validateStartupMatrix(receipt)
+  receipt.nativeContainmentAccepted = true
+  assert.throws(() => validateStartupMatrix(receipt))
+  receipt.nativeContainmentAccepted = false
+  receipt.children[0].ownedTreeSettled = false
+  assert.throws(() => validateStartupMatrix(receipt))
+})

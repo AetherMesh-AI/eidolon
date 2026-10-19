@@ -353,7 +353,7 @@ function validateReceipt(receipt) {
   assert.equal(receipt.cleanupErrors, undefined)
 }
 
-module.exports = { settleOwned, poll, validateReceipt, machServices, profileFile, probeFile, canonicalDirectory, sandboxArgs, childEnvironment, validateProbes, preflight, protocol, disconnectControl }
+module.exports = { ownedSpawn, settleOwned, poll, validateReceipt, machServices, profileFile, probeFile, canonicalDirectory, sandboxArgs, childEnvironment, validateProbes, preflight, protocol, disconnectControl }
 if (require.main === module) {
   const [product, harness, python, output] = process.argv.slice(2)
   preflight({ product, harness, python, output }).then(() => console.log('Synthetic containment controls passed; no product was launched.'))
