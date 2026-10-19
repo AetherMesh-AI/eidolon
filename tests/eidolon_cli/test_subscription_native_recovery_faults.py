@@ -48,6 +48,7 @@ def test_sqlite_fault_uses_real_writer_releases_before_cleanup_and_is_one_shot(h
     # SQLite context above independently proves the lock and cleanup boundary.
     bound = object.__new__(admission._Admission)
     bound.home = home
+    bound._cancel, bound._abandoned = threading.Event(), threading.Event()
     prepared = object.__new__(transport.PreparedSubscriptionSend)
     prepared._admission = bound
     with pytest.raises(sqlite3.OperationalError):
@@ -1144,3 +1145,410 @@ def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path,
         assert not any(event['kind'] in {'consent', 'oauth-exchange', 'responses'} for event in edges.events)
     finally:
         edges.close()
+
+
+def scope_only_prepared(home):
+    """Mechanics-only capability shape; never supplies production send authority."""
+    bound = object.__new__(admission._Admission)
+    bound.home = home
+    bound._cancel, bound._abandoned = threading.Event(), threading.Event()
+    prepared = object.__new__(transport.PreparedSubscriptionSend)
+    prepared._admission = bound
+    return prepared
+
+
+def test_sqlite_fault_drains_cooperating_writer_before_separate_completion_worker(home, monkeypatch):
+    import time
+    from eidolon_cli import organization_ledger_writer as writers
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    held, queued = threading.Event(), threading.Event()
+    failures, callback_calls, acquired, deadlines = [], [], [], []
+    path = home / 'organization' / 'state.db'
+    caller = threading.get_ident()
+    original_wait = writers._Gate._wait_for_turn
+    def observe_wait(gate, ticket, deadline, cancelled):
+        if threading.get_ident() == caller:
+            deadlines.append(deadline)
+            queued.set()
+        return original_wait(gate, ticket, deadline, cancelled)
+    monkeypatch.setattr(writers._Gate, '_wait_for_turn', observe_wait)
+    def contender():
+        try:
+            with writers.ledger_writer(path, deadline=time.monotonic() + 5):
+                with closing(sqlite3.connect(path, timeout=0)) as conn:
+                    conn.execute('BEGIN IMMEDIATE')
+                    held.set()
+                    assert queued.wait(5)
+                    conn.rollback()
+        except BaseException as error:
+            failures.append(error)
+            held.set()
+    def completion(_):
+        callback_calls.append(True)
+        outcomes = []
+        def worker():
+            try:
+                with writers.ledger_writer(path, deadline=time.monotonic() + writers.PUBLICATION_WAIT_SECONDS):
+                    acquired.append(True)
+                    with closing(sqlite3.connect(path, timeout=0)) as conn:
+                        conn.execute('BEGIN IMMEDIATE')
+            except BaseException as error:
+                outcomes.append(error)
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(5)
+        assert not thread.is_alive() and len(outcomes) == 1
+        raise outcomes[0]
+    thread = threading.Thread(target=contender)
+    thread.start()
+    try:
+        assert held.wait(5) and not failures
+        before = time.monotonic()
+        with pytest.raises(sqlite3.OperationalError) as failed:
+            faults._call_locked(completion, scope_only_prepared(home))
+        after = time.monotonic()
+        assert type(failed.value) is sqlite3.OperationalError
+        assert failed.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+        assert len(deadlines) == 1 and before + .25 <= deadlines[0] <= after + .25
+    finally:
+        queued.set()
+        thread.join(5)
+    assert not thread.is_alive() and not failures
+    assert callback_calls == acquired == [True]
+    assert faults.triggered == faults.restored == 1
+    with admission._ledger_connection(home, write=True) as conn:
+        assert conn.execute('SELECT count(*) FROM synthetic_probe').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('failure', ['deadline', 'cancelled', 'reentrant', 'external'])
+def test_sqlite_fault_setup_refusals_do_not_connect_complete_or_rearm(home, monkeypatch, failure):
+    import time
+    from eidolon_cli import organization_ledger_writer as writers
+    from contextlib import nullcontext
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    prepared = scope_only_prepared(home)
+    calls, connections = [], []
+    real_connect = sqlite3.connect
+    def connect(*args, **kwargs):
+        connections.append(kwargs['timeout'])
+        return real_connect(*args, **kwargs)
+    monkeypatch.setattr(generation, 'complete_subscription', lambda value: calls.append(value) or 'returned')
+    faults.install(monkeypatch.setattr)
+    external = real_connect(home / 'organization' / 'state.db', timeout=0) if failure == 'external' else None
+    release, held, errors = threading.Event(), threading.Event(), []
+    def occupy():
+        try:
+            with writers.ledger_writer(home / 'organization' / 'state.db', deadline=time.monotonic() + 5):
+                held.set()
+                assert release.wait(5)
+        except BaseException as error:
+            errors.append(error)
+    worker = threading.Thread(target=occupy) if failure == 'deadline' else None
+    if worker:
+        worker.start()
+        assert held.wait(5)
+    if external:
+        external.execute('BEGIN IMMEDIATE')
+    if failure == 'cancelled':
+        prepared._admission._cancel.set()
+    try:
+        with (writers.ledger_writer(home / 'organization' / 'state.db', deadline=time.monotonic() + 5)
+              if failure == 'reentrant' else nullcontext()):
+            monkeypatch.setattr(fixture.sqlite3, 'connect', connect)
+            with pytest.raises(sqlite3.OperationalError) as failed:
+                generation.complete_subscription(prepared)
+        if failure != 'external':
+            assert type(failed.value) is writers.LedgerWriterUnavailable and failed.value.reason == failure
+        else:
+            assert type(failed.value) is sqlite3.OperationalError and failed.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+        assert connections == ([0] if failure == 'external' else [])
+        assert calls == [] and faults.triggered == faults.restored == 0 and faults._claimed
+    finally:
+        if external:
+            external.rollback()
+            external.close()
+        release.set()
+        if worker:
+            worker.join(5)
+            assert not worker.is_alive()
+    assert not errors
+    prepared._admission._cancel.clear()
+    assert generation.complete_subscription(prepared) == 'returned'
+    assert calls == [prepared] and faults.triggered == faults.restored == 0
+
+
+@pytest.mark.parametrize('moment', ['acquired', 'before_callback'])
+@pytest.mark.parametrize('reason', ['cancelled', 'deadline'])
+def test_sqlite_fault_late_setup_stop_never_invokes_completion(home, monkeypatch, moment, reason):
+    from eidolon_cli import organization_ledger_writer as writers
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    prepared = scope_only_prepared(home)
+    real = writers.ledger_writer
+    clock, deadlines, callbacks = [100.0], [], []
+    monkeypatch.setattr(fixture.time, 'monotonic', lambda: clock[0])
+    def stop():
+        if reason == 'cancelled':
+            prepared._admission._cancel.set()
+        else:
+            clock[0] = 100.25
+    @contextmanager
+    def controlled(*args, **kwargs):
+        deadlines.append(kwargs['deadline'])
+        with real(*args, **kwargs):
+            if moment == 'acquired':
+                stop()
+            yield
+        if moment == 'before_callback':
+            stop()
+    monkeypatch.setattr(writers, 'ledger_writer', controlled)
+    with pytest.raises(writers.LedgerWriterUnavailable) as failed:
+        faults._call_locked(lambda _: callbacks.append(True), prepared)
+    assert failed.value.reason == reason and deadlines == [100.25]
+    assert callbacks == []
+    assert faults.triggered == faults.restored == (0 if moment == 'acquired' else 1)
+    # A new independent writer proves no leaked transaction or coordinator.
+    with closing(sqlite3.connect(home / 'organization' / 'state.db', timeout=0)) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        conn.rollback()
+
+
+@pytest.mark.parametrize('failure', [None, 'connect', 'begin', 'callback', 'rollback', 'close',
+    'transfer_pop', 'transfer_before', 'transfer_after', 'coordinator_exit'])
+@pytest.mark.parametrize('cleanup_failure', [None, 'rollback', 'close'])
+def test_sqlite_fault_cleanup_transfer_preserves_order_and_exception_precedence(
+        home, monkeypatch, failure, cleanup_failure):
+    from contextlib import ExitStack as RealExitStack
+    from eidolon_cli import organization_ledger_writer as writers
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    prepared = scope_only_prepared(home)
+    primary, rollback_error, close_error = ValueError('primary'), RuntimeError('rollback'), OSError('close')
+    order, coordinated, callbacks = [], [False], []
+    real_gate = writers.ledger_writer
+    @contextmanager
+    def gate(*args, **kwargs):
+        with real_gate(*args, **kwargs):
+            coordinated[0] = True
+            try:
+                yield
+            finally:
+                coordinated[0] = False
+        if failure == 'coordinator_exit':
+            raise primary
+    class Writer:
+        def execute(self, statement):
+            assert coordinated[0] and statement == 'BEGIN IMMEDIATE'
+            order.append('begin')
+            if failure == 'begin':
+                raise primary
+        def rollback(self):
+            order.append('rollback')
+            if failure == 'rollback' or cleanup_failure == 'rollback':
+                raise rollback_error
+        def close(self):
+            order.append('close')
+            if failure == 'begin':
+                assert coordinated[0]  # Failed acquisition closes while gated.
+            if failure == 'close' or cleanup_failure == 'close':
+                raise close_error
+    def connect(*args, **kwargs):
+        assert coordinated[0] and kwargs == {'timeout': 0}
+        order.append('connect')
+        if failure == 'connect':
+            raise primary
+        return Writer()
+    class TransferStack(RealExitStack):
+        def pop_all(self):
+            if failure == 'transfer_pop':
+                raise primary
+            return super().pop_all()
+        def enter_context(self, manager):
+            if isinstance(manager, RealExitStack):
+                if failure == 'transfer_before':
+                    raise primary
+                value = super().enter_context(manager)
+                if failure == 'transfer_after':
+                    raise primary
+                return value
+            return super().enter_context(manager)
+    def complete(value):
+        assert not coordinated[0] and value is prepared
+        callbacks.append(True)
+        order.append('callback')
+        if failure == 'callback':
+            raise primary
+        return 'returned'
+    monkeypatch.setattr(writers, 'ledger_writer', gate)
+    monkeypatch.setattr(fixture.sqlite3, 'connect', connect)
+    monkeypatch.setattr(fixture, 'ExitStack', TransferStack)
+    acquired = failure not in {'connect', 'begin'}
+    expected = (primary if failure == 'connect' else
+        close_error if failure == 'close' or cleanup_failure == 'close' else
+        rollback_error if acquired and (failure == 'rollback' or cleanup_failure == 'rollback') else
+        primary if failure in {'begin', 'callback', 'transfer_pop', 'transfer_before', 'transfer_after', 'coordinator_exit'} else None)
+    if expected is None:
+        assert faults._call_locked(complete, prepared) == 'returned'
+    else:
+        with pytest.raises(type(expected)) as failed:
+            faults._call_locked(complete, prepared)
+        assert failed.value is expected
+    invoked = failure not in {'connect', 'begin', 'transfer_pop', 'transfer_before', 'transfer_after', 'coordinator_exit'}
+    assert len(callbacks) == int(invoked)
+    assert order == (['connect'] if failure == 'connect' else ['connect', 'begin']
+        + (['callback'] if invoked else []) + (['rollback'] if acquired else []) + ['close'])
+    assert faults.triggered == int(acquired)
+    assert faults.restored == int(acquired and failure != 'rollback' and cleanup_failure != 'rollback')
+
+
+def test_sqlite_fault_setup_preserves_all_real_ledger_rows_and_publication_authority(tmp_path, monkeypatch):
+    from tui_gateway import organization_credential_transport as owners
+    root = tmp_path / 'seeded'
+    root.mkdir(mode=0o700)
+    (root / 'config.yaml').write_text('{}')
+    fixture.seed_profile(root, legacy=True)
+    path = root / 'organization' / 'state.db'
+    with closing(sqlite3.connect(path)) as conn:
+        before = list(conn.iterdump())
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Fixture setup must not acquire publication authority')
+    monkeypatch.setattr(owners, 'owner_publication', forbidden)
+    faults = RecoveryFaults(root, 'sqlite_dispatch_once')
+    assert faults._call_locked(lambda _: 'returned', scope_only_prepared(root)) == 'returned'
+    with closing(sqlite3.connect(path)) as conn:
+        assert list(conn.iterdump()) == before
+        assert conn.execute('SELECT dispatched,reserved_tokens FROM organization_team_generations').fetchall() == [(1, 200)]
+    assert faults.triggered == faults.restored == 1
+
+
+# Reuse the explicit synthetic private-store rig for a real registered RPC/ledger
+# proof. This substitutes native storage/TLS and OS admission only; no send or
+# publication authority is invented by the new fixture setup.
+from tests.eidolon_cli.test_organization_setup_subscription_policy_integration import ledger  # noqa: E402,F401
+from tests.eidolon_cli.test_organization_setup_subscription_admission import activated  # noqa: E402,F401
+from tests.eidolon_cli.test_organization_setup_subscription_recovery import recovery_ledger  # noqa: E402,F401
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Synthetic private-store proof requires POSIX')
+def test_coordinated_fault_registered_5076_no_send_retains_debt_and_requires_new_intent(recovery_ledger, monkeypatch):
+    from queue import Queue
+    import tui_gateway.server as server
+    from tests.tui_gateway.test_organization_setup_subscription_flow import call
+    from tests.eidolon_cli.test_organization_setup_subscription_admission import request as make_request
+    from tests.eidolon_cli.test_organization_setup_subscription_transport import install, wire, event, response
+    from eidolon_cli import organization_team_budget as budget
+    rig = recovery_ledger
+    # A valid retained legacy charge is not refunded by an unsent new attempt.
+    rig.conn.execute('INSERT INTO organization_team_generations '
+        '(idempotency_key,organization_id,input_hash,source_revision,status,dispatched,reserved_tokens,created) '
+        'VALUES (?,?,?,?,?,?,?,0)', ('prior-charge', rig.identity['organizationId'],
+        'prior-input', 'prior-source', 'failed', 1, 200))
+    policy_generation = rig.conn.execute('SELECT generation FROM organization_policy WHERE id=1').fetchone()[0]
+    rig.conn.execute('INSERT INTO organization_team_generation_operations VALUES (?,?,?,?,?)',
+        ('prior-charge', rig.identity['organizationId'], 'prior-input', 'legacy', policy_generation))
+    old_row = dict(rig.conn.execute("SELECT * FROM organization_team_generations WHERE idempotency_key='prior-charge'").fetchone())
+    before_counts = budget.operation_counts(rig.conn)
+    before_policy = [tuple(row) for row in rig.conn.execute('SELECT * FROM organization_owner_budget_policy')]
+    assert before_counts['total'] == before_counts['legacy'] == 1
+    monkeypatch.setattr(server, '_eidolon_home', rig.home)
+    rig.transport.responses = Queue()
+    rig.transport.write = rig.transport.responses.put
+    socket, connects = install(monkeypatch, wire(event(response=response())))
+    faults = RecoveryFaults(rig.home, 'sqlite_dispatch_once')
+    faults.install(monkeypatch.setattr)
+    value = make_request(rig, key='coordinated-unsent')
+    error = call('improveTeamInput', value, rig.transport)['error']
+    offer = {'version': 1, 'disposition': 'retry_unsent', 'idempotencyKey': value['idempotencyKey'],
+        'operation': 'improve_jobs', 'sourceRevision': value['sourceRevision']}
+    assert error == {'code': 5076, 'message': 'Team setup is unavailable',
+        'data': {'reason': 'unavailable', 'recovery': offer}}
+    assert not socket.sent and len(connects) == 1
+    assert faults.triggered == faults.restored == 1
+    unsent = dict(rig.conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?',
+                                  (value['idempotencyKey'],)).fetchone())
+    assert unsent['status'] == 'failed' and unsent['dispatched'] == 0
+    assert budget.operation_counts(rig.conn) == before_counts
+    assert dict(rig.conn.execute("SELECT * FROM organization_team_generations WHERE idempotency_key='prior-charge'").fetchone()) == old_row
+    assert [tuple(row) for row in rig.conn.execute('SELECT * FROM organization_owner_budget_policy')] == before_policy
+    assert rig.conn.execute('SELECT count(*) FROM organization_setup_subscription_dispatches').fetchone()[0] == 0
+    assert rig.conn.execute('SELECT count(*) FROM organization_setup_subscription_outcomes').fetchone()[0] == 0
+    before = list(rig.conn.iterdump())
+    assert call('improveTeamInput', value, rig.transport)['error']['data'] == {'reason': 'generation_failed', 'recovery': offer}
+    assert list(rig.conn.iterdump()) == before and len(connects) == 1 and not socket.sent
+    # A genuinely new explicit request can use the unchanged sender once.
+    sent_socket, sent_connects = install(monkeypatch, wire(event(response=response())))
+    result = call('improveTeamInput', {**value, 'idempotencyKey': 'explicit-after-unsent'}, rig.transport)
+    assert result['result']['suggestion'] == 'Ready'
+    assert len(sent_connects) == 1 and sent_socket.sent
+    assert faults.triggered == faults.restored == 1
+    assert budget.operation_counts(rig.conn)['total'] == 2
+    assert dict(rig.conn.execute("SELECT * FROM organization_team_generations WHERE idempotency_key='prior-charge'").fetchone()) == old_row
+    assert dict(rig.conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?',
+                                (value['idempotencyKey'],)).fetchone()) == unsent
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Synthetic private-store proof requires POSIX')
+@pytest.mark.parametrize('retirement', ['cancel', 'owner'])
+def test_coordinated_fault_late_cancel_or_owner_retirement_keeps_production_no_send_fence(
+        recovery_ledger, monkeypatch, retirement):
+    from queue import Queue
+    import tui_gateway.server as server
+    from tui_gateway import organization_credential_transport as owners
+    from tests.tui_gateway.test_organization_setup_subscription_flow import call
+    from tests.eidolon_cli.test_organization_setup_subscription_admission import request as make_request
+    from tests.eidolon_cli.test_organization_setup_subscription_transport import install, wire, event, response
+    rig = recovery_ledger
+    monkeypatch.setattr(server, '_eidolon_home', rig.home)
+    rig.transport.responses = Queue()
+    rig.transport.write = rig.transport.responses.put
+    socket, connects = install(monkeypatch, wire(event(response=response())))
+    original, completed = generation.complete_subscription, []
+    def retire_then_complete(prepared):
+        completed.append(True)
+        if retirement == 'cancel':
+            prepared._admission.abandon()
+        else:
+            owners.retire_owner(rig.transport)
+        return original(prepared)
+    monkeypatch.setattr(generation, 'complete_subscription', retire_then_complete)
+    faults = RecoveryFaults(rig.home, 'sqlite_dispatch_once')
+    faults.install(monkeypatch.setattr)
+    value = make_request(rig, key='retired-after-setup')
+    result = call('improveTeamInput', value, rig.transport)
+    assert result['error']['code'] == 5076
+    assert result['error']['data']['reason'] == 'unavailable'
+    assert completed == [True] and not socket.sent
+    assert len(connects) == (0 if retirement == 'cancel' else 1)
+    assert faults.triggered == faults.restored == 1
+    row = rig.conn.execute('SELECT status,dispatched FROM organization_team_generations WHERE idempotency_key=?',
+                           (value['idempotencyKey'],)).fetchone()
+    assert tuple(row) == ('failed', 0)
+    assert rig.conn.execute('SELECT count(*) FROM organization_setup_subscription_dispatches').fetchone()[0] == 0
+    assert rig.conn.execute('SELECT count(*) FROM organization_setup_subscription_outcomes').fetchone()[0] == 0
+    if retirement == 'owner':
+        assert owners.owner_generation(rig.transport) is None
+        assert 'recovery' not in result['error']['data']
+
+
+@pytest.mark.parametrize('release_after', [False, True])
+def test_sqlite_fault_real_coordinator_exit_exception_still_closes_owned_transaction(home, monkeypatch, release_after):
+    from eidolon_cli import organization_ledger_writer as writers
+    faults = RecoveryFaults(home, 'sqlite_dispatch_once')
+    primary, gates, called = RuntimeError('synthetic coordinator exit'), [], []
+    release = writers._Gate.release
+    def failed_release(gate):
+        gates.append(gate)
+        if release_after:
+            release(gate)
+        raise primary
+    monkeypatch.setattr(writers._Gate, 'release', failed_release)
+    try:
+        with pytest.raises(RuntimeError) as failure:
+            faults._call_locked(lambda _: called.append(True), scope_only_prepared(home))
+        assert failure.value is primary and not called
+        assert faults.triggered == faults.restored == 1 and len(gates) == 1
+        assert (gates[0].owner is None) is release_after
+        with closing(sqlite3.connect(home / 'organization' / 'state.db', timeout=0)) as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            conn.rollback()
+    finally:
+        if gates and gates[0].owner == threading.get_ident():
+            release(gates[0])

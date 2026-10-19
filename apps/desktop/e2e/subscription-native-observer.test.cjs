@@ -1413,3 +1413,656 @@ test('every connection action call site selects its explicit contract before the
   assert.doesNotMatch(journey, /getByRole\('button', \{ name: '(Set up ChatGPT|Continue with ChatGPT|Disconnect setup connection|Cancel sign-in|Update identity and reconnect)'[^\n]+\.click\(\)/)
   assert.doesNotMatch(connectionHelpers[0].getText(journeyParsed), /\.click\([^)]*\)[\s\S]*\.click\(/)
 })
+
+// BEGIN CHECK CONFIGURATION COMPLETION
+// A dedicated one-step contract: never add this path to the multi-step matrices
+// above, whose failure cases intentionally address later sequence positions.
+const checkCompletionHelpers = journeyParsed.statements.filter(
+  node => ts.isFunctionDeclaration(node) && node.name?.text === 'completeCheckConfiguration'
+)
+assert.equal(checkCompletionHelpers.length, 1)
+const checkCompletionCompiled = ts.transpileModule(`(${checkCompletionHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const checkCompletionWith = fixture => vm.runInNewContext(checkCompletionCompiled, {
+  fixture,
+  expect: value => ({
+    toHaveLength: count => assert.equal(value.length, count),
+    toMatchObject: subset => matchSubset(value, subset)
+  })
+})
+const checkOpenDeclarations = journeyParsed.statements.filter(
+  node => ts.isFunctionDeclaration(node) && node.name?.text === 'openSetup'
+)
+assert.equal(checkOpenDeclarations.length, 1)
+const checkOpenCompiled = ts.transpileModule(`(${checkOpenDeclarations[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const checkSource = 'ab'.repeat(32)
+const checkOrganization = 'abcdefab-1234-4abc-8abc-abcdefabcdef'
+const checkSocket = 'private-check-completion-socket'
+const checkResult = (overrides = {}) => ({
+  capabilityVersion: 1, state: 'available', organizationId: checkOrganization, sourceRevision: checkSource, ...overrides
+})
+const sendCheck = (h, id = 1, params = {}) =>
+  h.send(id, 'organization.teamSetup', checkSocket, { expectedOrganizationId: checkOrganization, sourceRevision: undefined, ...params })
+const receiveCheck = (h, id = 1, result = checkResult()) => h.receive(id, { result }, checkSocket)
+const flushCheck = async () => {
+  for (let index = 0; index < 12; index++) await flush()
+}
+const checkOpenWith = (h, { click, enabled = async () => {}, barrier = true } = {}) => {
+  const stats = { checks: 0, fills: 0, enabled: 0, inspectClicks: 0, actions: [], order: [] }
+  const locator = (role, name) => ({
+    getByRole: (nextRole, options = {}) => locator(nextRole, options.name),
+    getByLabel: () => ({ fill: async () => { stats.fills++ } }),
+    locator: () => locator(),
+    click: async (...args) => {
+      if (role !== 'button' || name !== 'Check configuration') return
+      assert.equal(args.length, 0)
+      stats.checks++
+      stats.order.push('click')
+      await click()
+    }
+  })
+  const fixture = {
+    ...h.observer,
+    page: locator(),
+    performSetupAction: (kind, action) => {
+      stats.actions.push({ kind, pending: h.observer.read().pending })
+      stats.order.push(kind)
+      return h.observer.performSetupAction(kind, action)
+    }
+  }
+  const open = vm.runInNewContext(checkOpenCompiled, {
+    fixture, jobs: secret, goals: secret,
+    completeCheckConfiguration: barrier ? checkCompletionWith(fixture) : button => button.click(),
+    expect: () => ({
+      toHaveCount: async () => {},
+      toBeVisible: async () => {},
+      toBeEnabled: async (...args) => {
+        assert.equal(args.length, 0)
+        stats.enabled++
+        stats.order.push('enabled')
+        await enabled()
+      }
+    })
+  })
+  const inspect = async () => {
+    const data = connectionReplies('inspect-new')
+    await connectionHelperWith(fixture)({ click: async () => {
+      stats.inspectClicks++
+      setupPaths.inspect.forEach((name, index) => {
+        h.send(100 + index, 'organization.' + name, checkSocket, data.params[index])
+        h.receive(100 + index, { result: data.replies[index] }, checkSocket)
+      })
+    } }, 'inspect-new')
+  }
+  return { stats, open: () => open(true), inspect }
+}
+const assertCheckPrivacy = h => {
+  const evidence = JSON.stringify(h.observer.read())
+  for (const value of [secret, checkSource, checkOrganization, checkSocket, 'private-check-completion-id', 'different-private-organization']) {
+    assert.ok(!evidence.includes(value))
+  }
+  assert.deepEqual(h.commands, ['Network.enable'])
+}
+const assertCheckStopped = context => {
+  assert.equal(context.stats.fills, 0)
+  assert.equal(context.stats.inspectClicks, 0)
+  assert.ok(context.stats.actions.every(action => action.kind === 'checkConfiguration'))
+}
+
+// The counterfactual keeps the old one-click behavior while executing the
+// actual openSetup body and actual inspect barrier with the same delayed read.
+test('Check baseline without its completion barrier races into a refused inspect after one click', async () => {
+  const h = await harness()
+  const context = checkOpenWith(h, { barrier: false, click: async () => sendCheck(h) })
+  const opened = context.open().then(context.inspect)
+  await assert.rejects(opened, error => error.message === 'subscription_operation_wait_unavailable')
+  assert.equal(context.stats.checks, 1)
+  assert.equal(context.stats.fills, 3)
+  assert.equal(context.stats.inspectClicks, 0)
+  assert.deepEqual(context.stats.actions, [{ kind: 'inspect', pending: 1 }])
+  h.advance(6000)
+  receiveCheck(h)
+  await flushCheck()
+  assert.equal(context.stats.inspectClicks, 0)
+  assert.equal(h.observer.read().pending, 0)
+  assert.deepEqual(h.delays, [])
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+test('actual Check completion holds inspect past 5s and accepts one exact result before the original 15s deadline', async () => {
+  const h = await harness()
+  // A previously observed read has really completed. No bootstrap request is
+  // adopted, and no pending request is drained or inferred from UI proximity.
+  sendCheck(h, 9)
+  receiveCheck(h, 9)
+  assert.equal(h.observer.read().pending, 0)
+  const context = checkOpenWith(h, { click: async () => sendCheck(h) })
+  const opened = context.open().then(context.inspect)
+  await flushCheck()
+  h.advance(6000)
+  await flushCheck()
+  assert.equal(context.stats.checks, 1)
+  assertCheckStopped(context)
+  assert.deepEqual(context.stats.actions, [{ kind: 'checkConfiguration', pending: 0 }])
+  assert.equal(h.observer.read().pending, 1)
+  assert.deepEqual(h.delays, [15000])
+  h.advance(8999)
+  await flushCheck()
+  assertCheckStopped(context)
+  receiveCheck(h)
+  await opened
+  assert.equal(context.stats.checks, 1)
+  assert.equal(context.stats.fills, 3)
+  assert.equal(context.stats.inspectClicks, 1)
+  assert.deepEqual(context.stats.actions, [
+    { kind: 'checkConfiguration', pending: 0 }, { kind: 'inspect', pending: 0 }
+  ])
+  const row = h.observer.read().rpc.find(row => row.method === 'organization.teamSetup' && row.shape?.sourceMatchesAction === true)
+  assert.equal(row.shape.sourceRevisionValid, true)
+  assert.equal(row.shape.organizationIdValid, true)
+  assert.equal(row.shape.sourceMatches, null)
+  assert.equal(row.shape.requestOrganizationMatchesAction, true)
+  assert.deepEqual(h.delays, [15000, 15000, 15000, 15000])
+  assert.equal(h.timers.size, 0)
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+test('actual Check enabled assertion finishes before the waiter is armed and the existing single click runs', async () => {
+  const h = await harness()
+  let release
+  const enabled = new Promise(resolve => { release = resolve })
+  const context = checkOpenWith(h, { enabled: () => enabled, click: async () => { sendCheck(h); receiveCheck(h) } })
+  const opened = context.open()
+  await flushCheck()
+  assert.equal(context.stats.enabled, 1)
+  assert.equal(context.stats.checks, 0)
+  assert.deepEqual(context.stats.actions, [])
+  assert.deepEqual(h.delays, [])
+  release()
+  await opened
+  assert.deepEqual(context.stats.order, ['enabled', 'checkConfiguration', 'click'])
+  assert.equal(context.stats.checks, 1)
+  assert.equal(context.stats.fills, 3)
+  assert.deepEqual(h.delays, [15000])
+  assert.equal(h.timers.size, 0)
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+test('actual Check preserves an enabled-assertion exception before arming or clicking', async () => {
+  const h = await harness(), original = new Error('original synthetic enabled assertion')
+  const context = checkOpenWith(h, {
+    enabled: async () => { throw original }, click: async () => { throw new Error('must not click') }
+  })
+  await assert.rejects(context.open().then(context.inspect), error => error === original)
+  assert.equal(context.stats.checks, 0)
+  assertCheckStopped(context)
+  assert.deepEqual(context.stats.actions, [])
+  assert.deepEqual(h.delays, [])
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+for (const priorMethod of ['organization.teamSetup', 'organization.setupSubscriptionStatus', method]) {
+  test(`Check refuses unknown prior ${priorMethod} before its click and never adopts its late completion`, async () => {
+    const h = await harness()
+    h.send('private-check-completion-id', priorMethod, checkSocket)
+    const context = checkOpenWith(h, { click: async () => { throw new Error('must not click') } })
+    const opened = context.open().then(context.inspect)
+    await assert.rejects(opened, error => error.message === 'subscription_operation_wait_unavailable')
+    assert.equal(context.stats.checks, 0)
+    assertCheckStopped(context)
+    assert.deepEqual(context.stats.actions, [{ kind: 'checkConfiguration', pending: 1 }])
+    h.advance(6000)
+    receiveCheck(h, 'private-check-completion-id')
+    await flushCheck()
+    assertCheckStopped(context)
+    assert.equal(context.stats.checks, 0)
+    assert.equal(h.observer.read().pending, 0)
+    assert.deepEqual(h.delays, [])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const resultComplete of [false, true]) {
+  test(`Check shares the inference waiter even with ${resultComplete ? 'zero' : 'one'} prior pending requests`, async () => {
+    const h = await harness()
+    let release
+    const click = new Promise(resolve => { release = resolve })
+    const inference = h.observer.performOperation(method, async () => {
+      h.send(9)
+      if (resultComplete) h.receive(9)
+      await click
+    })
+    const context = checkOpenWith(h, { click: async () => { throw new Error('must not click') } })
+    await assert.rejects(context.open().then(context.inspect), /subscription_operation_wait_unavailable/)
+    assert.equal(context.stats.checks, 0)
+    assertCheckStopped(context)
+    assert.equal(h.observer.read().pending, resultComplete ? 0 : 1)
+    if (!resultComplete) h.receive(9)
+    release()
+    await inference
+    assert.deepEqual(h.delays, [180000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const receivedId of [1, '1']) {
+  test(`Check rejects wrong sockets and typed IDs without settling its bound ${typeof receivedId} ID`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => sendCheck(h, receivedId) })
+    const opened = context.open().then(context.inspect)
+    await flushCheck()
+    h.advance(6000)
+    h.receive(receivedId, { result: checkResult() }, 'unrelated-private-socket')
+    h.receive(typeof receivedId === 'number' ? '1' : 1, { result: checkResult() }, checkSocket)
+    h.receive(99, { result: checkResult() }, checkSocket)
+    await flushCheck()
+    assertCheckStopped(context)
+    assert.equal(h.observer.read().pending, 1)
+    assert.deepEqual(h.delays, [15000])
+    receiveCheck(h, receivedId)
+    await opened
+    assert.equal(context.stats.checks, 1)
+    assert.equal(context.stats.inspectClicks, 1)
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const failure of ['wrong-first-method', 'duplicate-id', 'duplicate-id-other-method', 'same-method-new-id', 'other-method-new-id']) {
+  test(`Check refuses ${failure} before terminal completion with no next inspect or second click`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      if (failure === 'wrong-first-method') {
+        h.send(1, 'organization.setupSubscriptionStatus', checkSocket)
+        return
+      }
+      sendCheck(h)
+      if (failure === 'duplicate-id') sendCheck(h)
+      if (failure === 'duplicate-id-other-method') h.send(1, 'organization.setupSubscriptionStatus', checkSocket)
+      if (failure === 'same-method-new-id') sendCheck(h, 2)
+      if (failure === 'other-method-new-id') h.send(2, 'organization.setupSubscriptionStatus', checkSocket)
+    } })
+    await assert.rejects(context.open().then(context.inspect), /subscription_operation_correlation_lost/)
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    receiveCheck(h)
+    receiveCheck(h, 2)
+    await flushCheck()
+    assertCheckStopped(context)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const failure of ['rpc-error', 'both-result-and-error', 'neither-result-nor-error', 'malformed-bytes']) {
+  test(`Check ${failure} refuses and a later valid reply cannot revive the action`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      // malformed() intentionally targets the harness default socket.
+      h.send(1, 'organization.teamSetup', undefined, { sourceRevision: undefined })
+      if (failure === 'rpc-error') h.receive(1, { error: { code: -32000, message: secret } })
+      if (failure === 'both-result-and-error') h.receive(1, { result: checkResult(), error: {} })
+      if (failure === 'neither-result-nor-error') h.receive(1, {})
+      if (failure === 'malformed-bytes') h.malformed()
+    } })
+    await assert.rejects(context.open().then(context.inspect), /subscription_(setup_rpc_refused|operation_correlation_lost)/)
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    h.receive(1, { result: checkResult() })
+    await flushCheck()
+    assertCheckStopped(context)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+const invalidCheckResults = {
+  'null result': () => null,
+  'array result': () => [],
+  'string result': () => secret,
+  'empty result': () => ({}),
+  'blocked state': () => checkResult({ state: 'blocked' }),
+  'missing state': () => checkResult({ state: undefined }),
+  'unsupported capability': () => checkResult({ capabilityVersion: 2 }),
+  'missing capability': () => checkResult({ capabilityVersion: undefined }),
+  'coerced capability': () => checkResult({ capabilityVersion: '1' }),
+  'wrong organization': () => checkResult({ organizationId: 'different-private-organization' }),
+  'missing organization': () => checkResult({ organizationId: undefined }),
+  'null organization': () => checkResult({ organizationId: null })
+}
+for (const [failure, result] of Object.entries(invalidCheckResults)) {
+  test(`actual Check helper refuses ${failure} without progressing to inspect`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => { sendCheck(h); receiveCheck(h, 1, result()) } })
+    await assert.rejects(context.open().then(context.inspect))
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    assert.equal(h.observer.read().pending, 0)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const [failure, sourceRevision] of [
+  ['missing', undefined], ['null', null], ['empty', ''], ['short', 'a'.repeat(63)],
+  ['long', 'a'.repeat(65)], ['uppercase', 'AB'.repeat(32)], ['nonhex', 'g'.repeat(64)],
+  ['number', 123], ['boolean', true], ['object', { sourceRevision: checkSource }], ['array', [checkSource]]
+]) {
+  test(`Check refuses ${failure} source revision even when its first result would self-match`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      sendCheck(h)
+      receiveCheck(h, 1, checkResult({ sourceRevision }))
+    } })
+    await assert.rejects(context.open().then(context.inspect))
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    assert.equal(h.observer.read().rpc[0].shape.sourceRevisionValid, false)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const expectedOrganizationId of [undefined, null, '', 123, {}, []]) {
+  test(`Check refuses missing or malformed expected organization ${JSON.stringify(expectedOrganizationId)}`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      sendCheck(h, 1, { expectedOrganizationId })
+      receiveCheck(h)
+    } })
+    await assert.rejects(context.open().then(context.inspect))
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    assert.equal(h.observer.read().rpc[0].shape.organizationMatches, expectedOrganizationId === '' ? false : null)
+    assert.equal(h.observer.read().rpc[0].shape.requestOrganizationMatchesAction, expectedOrganizationId === '' ? true : null)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const [failure, organizationId] of [
+  ['empty', ''], ['arbitrary', secret], ['uppercase', checkOrganization.toUpperCase()],
+  ['braces', `{${checkOrganization}}`], ['compact', checkOrganization.replaceAll('-', '')]
+]) {
+  test(`Check refuses matching ${failure} organization IDs despite positive equality evidence`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      sendCheck(h, 1, { expectedOrganizationId: organizationId })
+      receiveCheck(h, 1, checkResult({ organizationId }))
+    } })
+    await assert.rejects(context.open().then(context.inspect))
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    const shape = h.observer.read().rpc[0].shape
+    assert.equal(shape.organizationMatches, true)
+    assert.equal(shape.requestOrganizationMatchesAction, true)
+    assert.equal(shape.sourceMatchesAction, true)
+    assert.equal(shape.sourceRevisionValid, true)
+    assert.equal(shape.organizationIdValid, false)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    if (organizationId) assert.ok(!JSON.stringify(h.observer.read()).includes(organizationId))
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const [label, organizationId] of [
+  ['non-v4 and non-RFC-variant', '01234567-89ab-1cde-0123-456789abcdef'],
+  ['nil', '00000000-0000-0000-0000-000000000000']
+]) {
+  test(`Check accepts a canonical ${label} UUID consistent with organization metadata`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => {
+      sendCheck(h, 1, { expectedOrganizationId: organizationId })
+      receiveCheck(h, 1, checkResult({ organizationId }))
+    } })
+    await context.open().then(context.inspect)
+    assert.equal(context.stats.checks, 1)
+    assert.equal(context.stats.fills, 3)
+    assert.equal(context.stats.inspectClicks, 1)
+    const shape = h.observer.read().rpc[0].shape
+    assert.equal(shape.organizationMatches, true)
+    assert.equal(shape.requestOrganizationMatchesAction, true)
+    assert.equal(shape.organizationIdValid, true)
+    assert.deepEqual(h.delays, [15000, 15000, 15000, 15000])
+    assert.equal(h.timers.size, 0)
+    assert.ok(!JSON.stringify(h.observer.read()).includes(organizationId))
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+const validCheckEvidence = () => ({ steps: [{
+  method: 'organization.teamSetup', phase: 'result', shape: {
+    result: 'object', capabilityVersionOne: true, state: 'available', organizationMatches: true, organizationIdValid: true,
+    requestOrganizationMatchesAction: true, sourceMatchesAction: true, sourceRevisionValid: true
+  }
+}] })
+const refusedCheckEvidence = {
+  'no steps': evidence => { evidence.steps = [] },
+  'extra step': evidence => { evidence.steps.push(structuredClone(evidence.steps[0])) },
+  'wrong method': evidence => { evidence.steps[0].method = 'organization.setupSubscriptionStatus' },
+  'error phase': evidence => { evidence.steps[0].phase = 'error' },
+  'sent phase': evidence => { evidence.steps[0].phase = 'sent' },
+  'missing shape': evidence => { delete evidence.steps[0].shape }
+}
+for (const [key, expected] of Object.entries(validCheckEvidence().steps[0].shape)) {
+  for (const [suffix, value] of [['missing', undefined], ['null', null], ['wrong', typeof expected === 'boolean' ? false : 'other']]) {
+    refusedCheckEvidence[`${key} ${suffix}`] = evidence => { evidence.steps[0].shape[key] = value }
+  }
+}
+for (const [failure, mutate] of Object.entries(refusedCheckEvidence)) {
+  test(`actual Check helper independently refuses ${failure} evidence after exactly one action`, async () => {
+    const evidence = validCheckEvidence()
+    mutate(evidence)
+    let calls = 0, clicks = 0, continued = 0
+    const helper = checkCompletionWith({ performSetupAction: async (kind, action) => {
+      calls++
+      assert.equal(kind, 'checkConfiguration')
+      await action()
+      return evidence
+    } })
+    await assert.rejects(helper({ click: async () => { clicks++ } }).then(() => { continued++ }))
+    assert.equal(calls, 1)
+    assert.equal(clicks, 1)
+    assert.equal(continued, 0)
+  })
+}
+
+test('actual Check helper accepts exactly the complete sanitized one-result contract', async () => {
+  let calls = 0, clicks = 0
+  const helper = checkCompletionWith({ performSetupAction: async (kind, action) => {
+    calls++
+    assert.equal(kind, 'checkConfiguration')
+    await action()
+    return validCheckEvidence()
+  } })
+  await helper({ click: async () => { clicks++ } })
+  assert.equal(calls, 1)
+  assert.equal(clicks, 1)
+})
+
+for (const failure of ['no-send', 'no-reply', 'delayed-send']) {
+  test(`Check ${failure} uses one original 15s window and ignores late completion`, async () => {
+    const h = await harness()
+    const context = checkOpenWith(h, { click: async () => { if (failure === 'no-reply') sendCheck(h) } })
+    const opened = context.open().then(context.inspect)
+    let settled = false
+    opened.then(() => { settled = true }, () => { settled = true })
+    await flushCheck()
+    h.advance(7500)
+    if (failure === 'delayed-send') sendCheck(h)
+    h.advance(7499)
+    await flushCheck()
+    assert.equal(settled, false)
+    assertCheckStopped(context)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 1)
+    h.advance(1)
+    await assert.rejects(opened, error => error.message === 'subscription_operation_timeout')
+    if (failure === 'no-send') sendCheck(h)
+    receiveCheck(h)
+    await flushCheck()
+    assert.equal(context.stats.checks, 1)
+    assertCheckStopped(context)
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.delays, [15000])
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+for (const resultComplete of [false, true]) {
+  for (const failure of ['timeout', 'close', 'click-rejection']) {
+    test(`Check ${failure} preserves refusal while its click is unresolved and result is ${resultComplete ? 'complete' : 'pending'}`, { timeout: 1000 }, async () => {
+      const h = await harness(), original = new Error('original Check click exception')
+      let release, rejectClick
+      const click = new Promise((resolve, reject) => { release = resolve; rejectClick = reject })
+      const context = checkOpenWith(h, { click: async () => {
+        sendCheck(h)
+        if (resultComplete) receiveCheck(h)
+        await click
+      } })
+      const opened = context.open().then(context.inspect)
+      await flushCheck()
+      h.advance(6000)
+      assertCheckStopped(context)
+      assert.equal(h.timers.size, 1)
+      let forbiddenClicks = 0
+      for (const kind of ['checkConfiguration', 'inspect']) {
+        await assert.rejects(h.observer.performSetupAction(kind, async () => { forbiddenClicks++ }), /subscription_operation_wait_unavailable/)
+      }
+      await assert.rejects(h.observer.performOperation(method, async () => { forbiddenClicks++ }), /subscription_operation_wait_unavailable/)
+      assert.equal(forbiddenClicks, 0)
+      if (failure === 'timeout') h.advance(9000)
+      if (failure === 'close') await h.observer.close()
+      if (failure === 'click-rejection') rejectClick(original)
+      await assert.rejects(opened, error => failure === 'click-rejection' ? error === original :
+        error.message === `subscription_operation_${failure === 'timeout' ? 'timeout' : 'cancelled'}`)
+      release()
+      receiveCheck(h)
+      await flushCheck()
+      assert.equal(context.stats.checks, 1)
+      assertCheckStopped(context)
+      assert.deepEqual(h.delays, [15000])
+      assert.equal(h.timers.size, 0)
+      assertCheckPrivacy(h)
+      if (failure !== 'close') await h.observer.close()
+    })
+  }
+}
+
+test('Check completed result keeps the waiter and next inspect blocked until the single click also resolves', async () => {
+  const h = await harness()
+  let release
+  const click = new Promise(resolve => { release = resolve })
+  const context = checkOpenWith(h, { click: async () => { sendCheck(h); receiveCheck(h); await click } })
+  const opened = context.open().then(context.inspect)
+  await flushCheck()
+  h.advance(6000)
+  await flushCheck()
+  assert.equal(h.observer.read().pending, 0)
+  assertCheckStopped(context)
+  assert.equal(h.timers.size, 1)
+  release()
+  await opened
+  assert.equal(context.stats.checks, 1)
+  assert.equal(context.stats.inspectClicks, 1)
+  assert.equal(h.timers.size, 0)
+  assert.deepEqual(h.delays, [15000, 15000, 15000, 15000])
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+for (const subsequent of ['reused-id', 'same-method-new-id', 'other-method-new-id']) {
+  test(`Check terminal evidence cannot consume a subsequent ${subsequent}; pending state refuses inspect`, async () => {
+    const h = await harness()
+    let release
+    const click = new Promise(resolve => { release = resolve })
+    const context = checkOpenWith(h, { click: async () => { sendCheck(h); receiveCheck(h); await click } })
+    const opened = context.open().then(context.inspect)
+    await flushCheck()
+    const accepted = structuredClone(h.observer.read().rpc[0])
+    if (subsequent === 'reused-id') sendCheck(h)
+    if (subsequent === 'same-method-new-id') sendCheck(h, 2)
+    if (subsequent === 'other-method-new-id') h.send(2, 'organization.setupSubscriptionStatus', checkSocket)
+    assert.equal(h.observer.read().pending, 1)
+    assert.deepEqual(h.observer.read().rpc[0], accepted)
+    release()
+    await assert.rejects(opened, error => error.message === 'subscription_operation_wait_unavailable')
+    assert.equal(context.stats.checks, 1)
+    assert.equal(context.stats.inspectClicks, 0)
+    assert.deepEqual(context.stats.actions, [
+      { kind: 'checkConfiguration', pending: 0 }, { kind: 'inspect', pending: 1 }
+    ])
+    receiveCheck(h, subsequent === 'reused-id' ? 1 : 2)
+    await flushCheck()
+    assert.equal(context.stats.inspectClicks, 0)
+    assert.deepEqual(h.delays, [15000])
+    assert.equal(h.timers.size, 0)
+    assertCheckPrivacy(h)
+    await h.observer.close()
+  })
+}
+
+test('Check duplicate terminal replies cannot replace the accepted result or extend its original timer', async () => {
+  const h = await harness()
+  let release
+  const click = new Promise(resolve => { release = resolve })
+  const context = checkOpenWith(h, { click: async () => { sendCheck(h); receiveCheck(h); await click } })
+  const opened = context.open().then(context.inspect)
+  await flushCheck()
+  h.advance(6000)
+  receiveCheck(h, 1, checkResult({ state: 'blocked', organizationId: 'different-private-organization' }))
+  h.receive(1, { error: { code: -32000, message: secret } }, checkSocket)
+  assert.equal(h.observer.read().rpc[0].shape.state, 'available')
+  assert.equal(h.observer.read().pending, 0)
+  assertCheckStopped(context)
+  assert.deepEqual(h.delays, [15000])
+  release()
+  await opened
+  assert.equal(context.stats.checks, 1)
+  assert.equal(context.stats.inspectClicks, 1)
+  assert.equal(h.timers.size, 0)
+  assertCheckPrivacy(h)
+  await h.observer.close()
+})
+
+test('Check source has one awaited completion, one original click, and no retry or additional read', () => {
+  const helper = checkCompletionHelpers[0].getText(journeyParsed)
+  assert.equal((helper.match(/fixture!\.performSetupAction\('checkConfiguration'/g) ?? []).length, 1)
+  assert.equal((helper.match(/button\.click\(\)/g) ?? []).length, 1)
+  assert.doesNotMatch(helper, /waitForTimeout|setTimeout|\.evaluate\(|\.send\(|\.request\(|\.reload\(/)
+  const open = checkOpenDeclarations[0].getText(journeyParsed)
+  const enabled = open.indexOf('await expect(checkConfiguration).toBeEnabled()')
+  const completed = open.indexOf('await completeCheckConfiguration(checkConfiguration)')
+  const filled = open.indexOf("await dialog.getByLabel('Work to delegate'")
+  assert.ok(enabled >= 0 && enabled < completed && completed < filled)
+  assert.equal((open.match(/await completeCheckConfiguration\(checkConfiguration\)/g) ?? []).length, 1)
+  assert.doesNotMatch(open, /checkConfiguration\.click\(/)
+  assert.doesNotMatch(open, /waitForTimeout|setTimeout/)
+})
+// END CHECK CONFIGURATION COMPLETION
