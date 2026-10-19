@@ -1,0 +1,357 @@
+name: PR207 macOS lifecycle types proof
+
+# The reviewed source is immutable and distinct from this workflow-only
+# child commit. Publish only by creating the exact proof branch at that child.
+# Any unexpected event or branch, or changed source identity, fails closed.
+on:
+  push:
+    branches: [proof/pr207-macos-lifecycle-types-20261019]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr207-macos-lifecycle-types-${{ github.run_id }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+
+jobs:
+  subscription-native-macos:
+    name: Organization subscription native journey (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: source
+    env:
+      CI: 'true'
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      NOUS_API_KEY: ''
+      ANTHROPIC_API_KEY: ''
+      SUBSCRIPTION_PROOF_SHA: 9f287720a6c61d084fbad84c03b2c556243ccb9d
+      SUBSCRIPTION_PROOF_TREE: b087944b942b43013a5935a4f6e9262480a54bbd
+      EIDOLON_OLD_RUNTIME_PATH: ${{ github.workspace }}/old-runtime
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Require exact lifecycle-types branch, push and immutable source pins
+        working-directory: ${{ github.workspace }}
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REF" = refs/heads/proof/pr207-macos-lifecycle-types-20261019
+          test "$WORKFLOW_REF" = AetherMesh-AI/eidolon/.github/workflows/pr207-macos-lifecycle-types.yml@refs/heads/proof/pr207-macos-lifecycle-types-20261019
+          [[ "$SUBSCRIPTION_PROOF_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SUBSCRIPTION_PROOF_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$WORKFLOW_SHA"
+          {
+            printf 'event=%s\nref=%s\nworkflow_ref=%s\nworkflow_sha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$WORKFLOW_REF" "$WORKFLOW_SHA"
+            printf 'source_sha=%s\nsource_tree=%s\nrun_id=%s\nrun_attempt=%s\n' "$SUBSCRIPTION_PROOF_SHA" "$SUBSCRIPTION_PROOF_TREE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          } > "$RUNNER_TEMP/pr207-macos-lifecycle-types-trigger.txt"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SUBSCRIPTION_PROOF_SHA }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
+          path: old-runtime
+          persist-credentials: false
+      - name: Verify exact pinned source, old runtime and actual macOS host
+        run: |
+          set -euo pipefail
+          mkdir -p subscription-native-proof
+          cp "$RUNNER_TEMP/pr207-macos-lifecycle-types-trigger.txt" subscription-native-proof/trigger.txt
+          test "$(git rev-parse HEAD)" = "$SUBSCRIPTION_PROOF_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$SUBSCRIPTION_PROOF_TREE"
+          test "$(git rev-parse HEAD:.github/workflows/organization-regression.yml)" = 66605961fc8303000515059acea735ba5a82fcf8
+          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git -C ../old-runtime rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
+          test "$(git -C ../old-runtime rev-parse 'HEAD^{tree}')" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/sandbox-exec
+          git rev-parse HEAD 'HEAD^{tree}' HEAD:apps/desktop/src HEAD:apps/desktop/e2e > subscription-native-proof/source.txt
+          git show -s --format=%P HEAD > subscription-native-proof/parents.txt
+          {
+            sw_vers
+            uname -a
+            printf 'ImageOS=%s\nImageVersion=%s\nRunnerOS=%s\nRunnerArch=%s\n' "${ImageOS:-}" "${ImageVersion:-}" "${RUNNER_OS:-}" "${RUNNER_ARCH:-}"
+          } | tee subscription-native-proof/host.txt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+          npm ci
+          node --version > subscription-native-proof/node-version.txt
+          .venv/bin/python --version > subscription-native-proof/python-version.txt
+          printf 'HERMES_PYTHON=%s/.venv/bin/python\n' "$PWD" >> "$GITHUB_ENV"
+      - name: Verify synthetic subscription, policy, admission and API regressions
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_http.py tests/eidolon_cli/test_organization_setup_subscription_catalog.py tests/eidolon_cli/test_organization_setup_subscription_refresh.py tests/eidolon_cli/test_organization_setup_subscription_filesystem.py tests/eidolon_cli/test_organization_setup_subscription_recovery.py tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py tests/eidolon_cli/test_organization_setup_subscription_revocation.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py tests/eidolon_cli/test_organization_setup_subscription_transport.py tests/eidolon_cli/test_organization_setup_subscription_usage.py tests/eidolon_cli/test_organization_setup_subscription_admission.py tests/eidolon_cli/test_organization_team_subscription_generation.py tests/eidolon_cli/test_organization_team_admission.py tests/eidolon_cli/test_organization_team_budget.py tests/eidolon_cli/test_organization_team_generation.py tests/eidolon_cli/test_organization_team_setup.py tests/eidolon_cli/test_organization_owner_policy.py tests/eidolon_cli/test_organization_ledger_writer.py tests/eidolon_cli/test_organization_subscription_send_coordination.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_setup_subscription_flow.py tests/tui_gateway/test_organization_setup_subscription_preflight.py tests/eidolon_cli/test_organization_setup_subscription_catalog_passive.py tests/tui_gateway/test_organization_setup_subscription_readiness.py tests/eidolon_cli/test_organization_subscription_races.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/eidolon_cli/test_subscription_native_lifecycle.py -- -vv -o faulthandler_timeout=30 2>&1 | tee subscription-native-proof/backend.log
+      - name: Verify protected store, native host and export boundaries
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_store.py tests/eidolon_cli/test_organization_setup_subscription_host.py tests/eidolon_cli/test_setup_subscription_export_security.py 2>&1 | tee subscription-native-proof/protected-store.log
+      - name: Verify immutable old-runtime cold and already-live refusal
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py -k 'immutable_old_runtime_cold_reopen or already_live_old_runtime' --junitxml="$PWD/subscription-native-proof/old-runtime-junit.xml" 2>&1 | tee subscription-native-proof/old-runtime.log
+      - name: Verify registered native gateway journey and fail-closed network guards
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh tests/tui_gateway/test_subscription_native_journey.py -vv --tb=long --junitxml="$PWD/subscription-native-proof/gateway-junit.xml" 2>&1 | tee subscription-native-proof/gateway.log
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_setup_subscription_filesystem.py -vv --tb=long --junitxml="$PWD/subscription-native-proof/filesystem-junit.xml" 2>&1 | tee subscription-native-proof/filesystem.log
+      - name: Require supported native and old-runtime cases without skips
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PYTHON'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          required = {
+              'gateway-junit.xml': {
+                  'test_synthetic_profile_disables_passive_update_checks',
+                  'test_registered_native_subscription_full_journey[fresh]',
+                  'test_registered_native_subscription_full_journey[legacy-empty]',
+                  'test_native_uncertain_result_blocks_replay_and_new_intent',
+                  'test_native_undispatched_failure_recovers_only_on_explicit_retry[native0]',
+                  'test_native_initial_publication_failure_recovers_before_new_consent[native0]',
+                  'test_native_stranded_unsent_request_reconciles_before_explicit_retry[native0]',
+                  'test_synthetic_fixture_denies_nonlocal_sdk_socket_and_dns_paths',
+              },
+              'filesystem-junit.xml': {
+                  'test_native_darwin_empty_acl_is_accepted_without_permission_changes',
+                  'test_native_darwin_ancestor_revalidates_final_path_sibling_change',
+                  'test_native_darwin_ancestor_revalidates_complete_deny_acl[unchanged-deny]',
+                  'test_native_darwin_ancestor_revalidates_complete_deny_acl[changed-deny-rights]',
+              },
+              'old-runtime-junit.xml': {
+                  'test_immutable_old_runtime_cold_reopen_rejects_v3_without_send',
+                  'test_already_live_old_runtime_rejects_next_admission_after_v3',
+              },
+          }
+          for filename, names in required.items():
+              cases = list(ET.parse(Path('subscription-native-proof') / filename).iter('testcase'))
+              for name in sorted(names):
+                  matches = [case for case in cases if case.get('name') == name]
+                  assert len(matches) == 1, (filename, name, 'missing or duplicate')
+                  assert not any(matches[0].find(tag) is not None for tag in ('skipped', 'failure', 'error')), (filename, name, 'not passed')
+                  print(f'{filename}: {name}: passed')
+          PYTHON
+      - name: Verify subscription and baseline setup components
+        working-directory: source/apps/desktop
+        run: |
+          set -euo pipefail
+          node --test e2e/subscription-native-observer.test.cjs 2>&1 | tee ../../subscription-native-proof/observer-tests.log
+          node --test e2e/subscription-native-sandbox.test.cjs 2>&1 | tee ../../subscription-native-proof/sandbox-tests.log
+          node --test e2e/subscription-native-lifecycle.test.cjs 2>&1 | tee ../../subscription-native-proof/lifecycle-tests.log
+          npx vitest run src/app/eidolon/organization-setup-connection-client.test.ts src/app/eidolon/organization-setup-connection.test.tsx src/app/eidolon/team-setup-subscription.test.tsx src/app/eidolon/team-setup-subscription-client.test.ts src/app/eidolon/team-onboarding-subscription.test.tsx src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-onboarding-entry.test.tsx src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-editor.test.tsx src/app/eidolon/team-setup-budget-client.test.ts 2>&1 | tee ../../subscription-native-proof/components.log
+      - name: Verify desktop types
+        working-directory: source/apps/desktop
+        run: |
+          set -euo pipefail
+          npm run typecheck 2>&1 | tee ../../subscription-native-proof/typecheck.log
+      - name: Build desktop
+        working-directory: source/apps/desktop
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee ../../subscription-native-proof/build.log
+      - name: Prove a real macOS Electron window is available
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS' 2>&1 | tee subscription-native-proof/native-display.log
+          import assert from 'node:assert/strict'
+          import fs from 'node:fs'
+          import os from 'node:os'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          import { _electron } from '@playwright/test'
+          const require = createRequire(path.resolve('apps/desktop/package.json'))
+          assert.equal(process.platform, 'darwin')
+          const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-native-display-'))
+          fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ name: 'eidolon-native-display-proof', main: 'main.cjs' }))
+          fs.writeFileSync(path.join(tmp, 'main.cjs'), `
+            const { app, BrowserWindow, session } = require('electron');
+            app.setPath('userData', ${JSON.stringify(path.join(tmp, 'user-data'))});
+            app.whenReady().then(() => {
+              session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !/^(data|file|devtools):/.test(details.url) }));
+              const window = new BrowserWindow({ width: 640, height: 480, show: true, backgroundColor: '#ffffff' });
+              window.loadURL('data:text/html,<h1>Native macOS display proof</h1>');
+            });
+            app.on('window-all-closed', () => app.quit());
+          `)
+          let application
+          try {
+            application = await _electron.launch({ executablePath: require('electron'), args: [tmp], timeout: 30000 })
+            const page = await application.firstWindow({ timeout: 30000 })
+            await page.getByRole('heading', { name: 'Native macOS display proof' }).waitFor()
+            const host = await application.evaluate(({ app, screen, BrowserWindow }) => ({
+              platform: process.platform,
+              architecture: process.arch,
+              electronVersion: process.versions.electron,
+              appReady: app.isReady(),
+              displays: screen.getAllDisplays().map(display => ({ bounds: display.bounds, scaleFactor: display.scaleFactor })),
+              visibleWindows: BrowserWindow.getAllWindows().filter(window => window.isVisible()).length,
+            }))
+            fs.writeFileSync('subscription-native-proof/native-display.json', JSON.stringify(host, null, 2))
+            assert.equal(host.platform, 'darwin')
+            assert.equal(host.appReady, true)
+            assert.ok(host.displays.some(display => display.bounds.width > 0 && display.bounds.height > 0), 'Hosted macOS session has no usable native display')
+            assert.equal(host.visibleWindows, 1)
+            const capture = await page.screenshot({ path: 'subscription-native-proof/native-display.png' })
+            assert.ok(capture.length > 100)
+            console.log(JSON.stringify(host))
+          } catch (error) {
+            fs.writeFileSync('subscription-native-proof/native-display-failure.txt', String(error))
+            throw error
+          } finally {
+            try { await application?.close() } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+          }
+          JS
+      - name: Verify native subscription setup and unchanged fresh API route
+        timeout-minutes: 25
+        working-directory: source/apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: |
+          set -euo pipefail
+          npx playwright test e2e/subscription-native-journey.spec.ts e2e/organization-fresh-team-setup.spec.ts --workers=1 --retries=0 --global-timeout=1200000 2>&1 | tee ../../subscription-native-proof/playwright.log
+      - name: Require every native subscription and fresh API journey without retries
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import fs from 'node:fs'
+          const report = JSON.parse(fs.readFileSync('apps/desktop/playwright-report/results.json', 'utf8'))
+          assert.equal(report.errors?.length ?? 0, 0, 'Playwright reported global errors')
+          const specs = []
+          function collect(suite) {
+            specs.push(...(suite.specs ?? []))
+            for (const child of suite.suites ?? []) collect(child)
+          }
+          for (const suite of report.suites ?? []) collect(suite)
+          const required = [
+            ['subscription-native-journey.spec.ts', 'fresh profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
+            ['subscription-native-journey.spec.ts', 'legacy-empty profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
+            ['subscription-native-journey.spec.ts', 'uncertain synthetic inference blocks a new intent without retry or refund'],
+            ['subscription-native-journey.spec.ts', 'known unsent inference recovers through one explicit retry without losing debt'],
+            ['subscription-native-journey.spec.ts', 'initial publication refusal recovers locally before explicit new consent'],
+            ['subscription-native-journey.spec.ts', 'stranded unsent inference reconciles locally before one explicit retry'],
+            ['subscription-native-journey.spec.ts', 'second open-window refusal recovers locally before explicit new consent'],
+            ['organization-fresh-team-setup.spec.ts', 'two fresh isolated organizations configure their own models and explicitly review and create synthetic teams'],
+          ]
+          function exactKeys(value, keys, label) {
+            assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value), `${label}: expected an object`)
+            assert.deepEqual(Object.keys(value).sort(), [...keys].sort(), `${label}: unexpected keys`)
+          }
+          function requireTeardown(result, title) {
+            const receipts = (result.attachments ?? []).filter(attachment => attachment.name === 'subscription-teardown-diagnostic')
+            assert.equal(receipts.length, 1, `Missing or duplicated teardown receipt: ${title}`)
+            const attachment = receipts[0]
+            assert.equal(attachment.contentType, 'application/json', `Wrong teardown receipt content type: ${title}`)
+            assert.ok(typeof attachment.body === 'string' && attachment.body.length > 0 && attachment.body.length <= 5464, `Missing or oversized teardown receipt body: ${title}`)
+            assert.match(attachment.body, /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/, `Malformed teardown receipt base64: ${title}`)
+            const bytes = Buffer.from(attachment.body, 'base64')
+            assert.ok(bytes.length > 0 && bytes.length <= 4096, `Oversized decoded teardown receipt: ${title}`)
+            assert.equal(bytes.toString('base64'), attachment.body, `Noncanonical teardown receipt base64: ${title}`)
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+            const receipt = JSON.parse(text)
+            // JSON.parse alone silently accepts repeated keys, including escaped aliases.
+            const tokens = text.match(/"(?:\\.|[^"\\])*"|[{}\[\]:,]/g) ?? []
+            const stack = []
+            for (let index = 0; index < tokens.length; index++) {
+              const token = tokens[index]
+              if (token === '{') stack.push(new Set())
+              else if (token === '[') stack.push(null)
+              else if (token === '}' || token === ']') stack.pop()
+              else if (token.startsWith('"') && tokens[index + 1] === ':') {
+                const key = JSON.parse(token)
+                assert.ok(stack.at(-1) instanceof Set && !stack.at(-1).has(key), `Duplicated teardown receipt key: ${title}`)
+                stack.at(-1).add(key)
+              }
+            }
+            exactKeys(receipt, ['version', 'lifecycle', 'cleanupError', 'remaining'], `Teardown receipt ${title}`)
+            assert.equal(receipt.version, 1, `Unsupported teardown receipt version: ${title}`)
+            assert.equal(receipt.cleanupError, 'none', `Teardown cleanup failed: ${title}`)
+            const lifecycle = receipt.lifecycle
+            exactKeys(lifecycle, ['phase', 'reason', 'capturedCount', 'initialLive', 'remainingLive', 'rootExited'], `Teardown lifecycle ${title}`)
+            assert.equal(lifecycle.phase, 'settled', `Teardown did not settle: ${title}`)
+            assert.equal(lifecycle.reason, 'none', `Teardown lifecycle refused: ${title}`)
+            assert.ok(Number.isInteger(lifecycle.capturedCount) && lifecycle.capturedCount >= 1 && lifecycle.capturedCount <= 65, `Invalid captured process count: ${title}`)
+            assert.ok(Number.isInteger(lifecycle.initialLive) && lifecycle.initialLive >= 0 && lifecycle.initialLive <= lifecycle.capturedCount, `Invalid initially live process count: ${title}`)
+            assert.equal(lifecycle.remainingLive, 0, `Teardown left live processes: ${title}`)
+            assert.equal(lifecycle.rootExited, true, `Teardown root exit is unverified: ${title}`)
+            const remaining = receipt.remaining
+            exactKeys(remaining, ['state', 'truncated', 'counts'], `Teardown remaining entries ${title}`)
+            assert.equal(remaining.state, 'removed', `Teardown sandbox was not removed: ${title}`)
+            assert.equal(remaining.truncated, false, `Teardown remaining entries were truncated: ${title}`)
+            const categories = ['home', 'userData', 'userHome', 'evidence', 'observer', 'other']
+            exactKeys(remaining.counts, categories, `Teardown remaining counts ${title}`)
+            for (const category of categories) assert.equal(remaining.counts[category], 0, `Teardown left ${category} entries: ${title}`)
+          }
+          for (const [file, title] of required) {
+            const matches = specs.filter(spec => spec.file?.replaceAll('\\', '/').endsWith(file) && spec.title === title)
+            assert.equal(matches.length, 1, `Missing or duplicated native case: ${title}`)
+            const tests = matches[0].tests ?? []
+            assert.equal(tests.length, 1, `Missing or duplicated native execution: ${title}`)
+            const test = tests[0]
+            assert.equal(test.status, 'expected', `Native case did not pass: ${title}`)
+            assert.equal(test.results?.length, 1, `Native case did not run exactly once: ${title}`)
+            assert.equal(test.results[0].status, 'passed', `Native case skipped or failed: ${title}`)
+            assert.equal(test.results[0].retry, 0, `Native case retried: ${title}`)
+            if (file === 'subscription-native-journey.spec.ts') requireTeardown(test.results[0], title)
+            console.log(`${file}: ${title}: passed once`)
+          }
+          JS
+      - name: Record source integrity after verification
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p subscription-native-proof
+          test "$(git rev-parse HEAD)" = "$SUBSCRIPTION_PROOF_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$SUBSCRIPTION_PROOF_TREE"
+          git rev-parse HEAD 'HEAD^{tree}' HEAD:apps/desktop/src HEAD:apps/desktop/e2e > subscription-native-proof/final-source.txt
+          cmp subscription-native-proof/source.txt subscription-native-proof/final-source.txt
+          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
+          git diff --cached --exit-code
+          git status --short > subscription-native-proof/worktree-status.txt
+          git diff --exit-code > subscription-native-proof/tracked-diff.txt
+      - name: Retain source receipts, native screenshots, traces, and reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: subscription-native-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            source/subscription-native-proof/
+            source/apps/desktop/test-results/
+            source/apps/desktop/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
