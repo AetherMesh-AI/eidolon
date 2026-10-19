@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import sys
 import threading
 
 import pytest
@@ -17,6 +18,291 @@ from eidolon_cli import organization_setup_subscription_transport as transport
 from eidolon_cli import organization_team_generation as generation
 from tests.eidolon_cli import subscription_native_fixture as fixture
 from tests.eidolon_cli.subscription_native_fixture import RecoveryFaults, SyntheticEdges
+
+
+def _diagnose_post_revoke_status(call, emit):
+    """Temporary, single-call observation; never a canonical acceptance result.
+
+    Observe exceptions before the unchanged host/store/auth redaction boundaries.
+    Only fixed labels leave the tracer: no messages, locals, paths or identifiers.
+    This thread's prior tracer is restored even when the original call raises.
+    """
+    import errno
+    from eidolon_cli import organization_setup_subscription_auth as auth
+    from eidolon_cli import organization_setup_subscription_host as host
+    modules = {
+        auth.__name__: 'auth', host.__name__: 'host', store.__name__: 'store',
+        filesystem.__name__: 'filesystem',
+        'tui_gateway.methods_organization_setup_subscription': 'gateway',
+        'tui_gateway.organization_credential_transport': 'owner',
+        'eidolon_cli.organization_db': 'ledger',
+        'eidolon_cli.organization_ledger_writer': 'writer',
+        'eidolon_cli.organization_owner_policy': 'owner_policy',
+        'eidolon_cli.organization_team_setup': 'team_setup',
+    }
+    functions = {
+        'auth': {'call': 'safe', 'status': 'status', '_status_locked': 'status_locked',
+                 '_guard': 'owner_guard', '_host_identity_state': 'host_identity',
+                 '_binding': 'binding', '_migration_ready': 'migration_ready'},
+        'host': {'call': 'guard', '_locked': 'locked', '_check_authority': 'authority',
+                 '_store_evidence': 'store_evidence', '_installation': 'installation',
+                 '_provider_host': 'provider_host', '_host_consent': 'consent',
+                 '_host_identity_state': 'identity_state', 'host_identity_state': 'identity',
+                 'inspect': 'inspect', '_read_attempt': 'attempt'},
+        'store': {'guarded': 'guard', 'status': 'status', 'ticket_status': 'ticket',
+                  'returning_binding': 'returning_binding', 'history_status': 'history',
+                  '_binding_digest': 'binding_digest', '_locked': 'locked'},
+        'gateway': {'guard': 'owner_guard', 'setup_guard': 'setup_guard',
+                    '_durable_scope': 'durable_scope'},
+        'filesystem': {'_check': 'check', '_read_json': 'read_json',
+                       'locked': 'locked', '_check_directory': 'directory'},
+        'owner_policy': {'_connection': 'connection', '_source': 'source'},
+        'team_setup': {'_current': 'current'},
+    }
+    classes = {
+        auth.AuthError: 'AuthError', host.HostError: 'HostError', store.StoreError: 'StoreError',
+        sqlite3.OperationalError: 'SQLiteOperationalError', sqlite3.DatabaseError: 'SQLiteDatabaseError',
+        OSError: 'OSError', FileNotFoundError: 'FileNotFoundError', PermissionError: 'PermissionError',
+        FileExistsError: 'FileExistsError', TimeoutError: 'TimeoutError',
+        ValueError: 'ValueError', TypeError: 'TypeError', KeyError: 'KeyError',
+        AssertionError: 'AssertionError', RuntimeError: 'RuntimeError',
+        json.JSONDecodeError: 'JSONDecodeError',
+    }
+    reasons = {'operation_failed', 'stale_owner', 'invalid_request', 'recovery_required',
+               'storage_recovery_required', 'unsafe_filesystem', 'recursive_use',
+               'invalid_binding', 'invalid_attempt', 'host_identity_migration_required',
+               'unsupported_host', 'stale_revision', 'cleanup_pending'}
+    errnos = {errno.ENOENT: 'not_found', errno.EACCES: 'permission', errno.EPERM: 'permission',
+              errno.EBUSY: 'busy', errno.EAGAIN: 'would_block', errno.EIO: 'io',
+              errno.ENOSPC: 'no_space', errno.EBADF: 'bad_descriptor', errno.ELOOP: 'symlink_loop'}
+    sqlite_codes = {sqlite3.SQLITE_BUSY: 'busy', sqlite3.SQLITE_LOCKED: 'locked',
+                    sqlite3.SQLITE_IOERR: 'io', sqlite3.SQLITE_CANTOPEN: 'cannot_open',
+                    sqlite3.SQLITE_READONLY: 'readonly', sqlite3.SQLITE_CORRUPT: 'corrupt',
+                    sqlite3.SQLITE_SCHEMA: 'schema', sqlite3.SQLITE_ERROR: 'error'}
+    report = {'version': 1, 'scope': 'post_revoke_status', 'outcome': 'raised',
+              'phases': [], 'exceptions': [], 'truncated': False, 'observerFailed': False}
+
+    def observe(frame, event, argument):
+        try:
+            module = modules.get(frame.f_globals.get('__name__'))
+            if module is None:
+                return None
+            phase = module + '.' + functions.get(module, {}).get(frame.f_code.co_name, 'other')
+            if event == 'call' and phase not in report['phases']:
+                if len(report['phases']) < 32:
+                    report['phases'].append(phase)
+                else:
+                    report['truncated'] = True
+            if event == 'exception':
+                error = argument[1]
+                kind = type(error)
+                if kind in {StopIteration, GeneratorExit}:
+                    return observe
+                reason = error.reason if kind in {auth.AuthError, host.HostError, store.StoreError} else None
+                reason = reason if type(reason) is str and reason in reasons else 'other'
+                code = 'none'
+                if kind in {sqlite3.OperationalError, sqlite3.DatabaseError}:
+                    value = getattr(error, 'sqlite_errorcode', None)
+                    code = sqlite_codes.get(value & 0xff, 'other') if type(value) is int else 'none'
+                elif kind in classes and isinstance(error, OSError):
+                    code = errnos.get(error.errno, 'other') if type(error.errno) is int else 'none'
+                row = {'phase': phase, 'class': classes.get(kind, 'other'), 'reason': reason, 'code': code}
+                if not report['exceptions'] or report['exceptions'][-1] != row:
+                    if len(report['exceptions']) == 32:
+                        # Preserve the first cause and the latest propagation.
+                        report['exceptions'].pop(16)
+                        report['truncated'] = True
+                    report['exceptions'].append(row)
+        except Exception:
+            report['observerFailed'] = True
+        return observe
+
+    previous = sys.gettrace()
+    try:
+        try:
+            sys.settrace(observe)
+        except Exception:
+            report['observerFailed'] = True
+        result = call()
+        report['outcome'] = 'returned'
+        return result
+    finally:
+        try:
+            sys.settrace(previous)
+        except Exception:
+            report['observerFailed'] = True
+        try:
+            emit(report)
+        except Exception:
+            # Diagnostic delivery must never change the production call outcome.
+            pass
+
+
+def _save_status_diagnostic(report, revoke_supported):
+    directory = Path.cwd() / 'host-migration-status-diagnostic'
+    directory.mkdir(exist_ok=True)
+    name = 'supported.json' if revoke_supported else 'unsupported.json'
+    (directory / name).write_text(json.dumps(report, sort_keys=True) + '\n')
+
+
+@pytest.mark.parametrize('boundary', ['host', 'store'])
+def test_status_diagnostic_sees_original_nested_exception_without_private_data(boundary):
+    from eidolon_cli import organization_setup_subscription_auth as auth
+    from eidolon_cli import organization_setup_subscription_host as host
+    error = sqlite3.OperationalError('PRIVATE path SQL token identity')
+    error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+    calls, reports = [], []
+
+    def original():
+        calls.append(True)
+        raise error
+
+    wrapped = host._guard(original) if boundary == 'host' else store._guarded(original)
+    with pytest.raises(auth.AuthError, match='operation_failed'):
+        _diagnose_post_revoke_status(auth._safe(wrapped), reports.append)
+    assert calls == [True] and len(reports) == 1
+    assert reports[0]['outcome'] == 'raised' and not reports[0]['observerFailed']
+    assert any(row['class'] == 'SQLiteOperationalError' and row['code'] == 'busy'
+               and row['phase'] == boundary + '.guard' for row in reports[0]['exceptions'])
+    assert any(row['class'] == 'AuthError' for row in reports[0]['exceptions'])
+    assert 'PRIVATE' not in json.dumps(reports)
+
+
+def test_status_diagnostic_preserves_result_exception_and_prior_tracer():
+    previous = sys.gettrace()
+    reports, calls = [], []
+    sentinel, error = object(), ValueError('PRIVATE')
+
+    def prior(frame, event, argument):
+        return prior
+
+    def succeed():
+        calls.append('success')
+        return sentinel
+
+    def fail():
+        calls.append('failure')
+        raise error
+
+    sys.settrace(prior)
+    try:
+        assert _diagnose_post_revoke_status(succeed, reports.append) is sentinel
+        assert sys.gettrace() is prior
+        with pytest.raises(ValueError) as raised:
+            _diagnose_post_revoke_status(fail, reports.append)
+        assert raised.value is error and sys.gettrace() is prior
+    finally:
+        sys.settrace(previous)
+    assert calls == ['success', 'failure']
+    assert [report['outcome'] for report in reports] == ['returned', 'raised']
+
+
+def test_status_diagnostic_observes_original_exception_inside_host_lock():
+    from types import SimpleNamespace
+    from eidolon_cli import organization_setup_subscription_auth as auth
+    from eidolon_cli import organization_setup_subscription_host as host
+    error = PermissionError(13, 'PRIVATE filesystem detail', '/PRIVATE/profile')
+    pending = object.__new__(host.PendingAttempts)
+    pending.authority = SimpleNamespace(root_identity=('portable', 'diagnostic'))
+    reports, calls = [], []
+
+    def fail_authority():
+        calls.append(True)
+        raise error
+
+    pending._check_authority = fail_authority
+
+    def enter_lock():
+        with pending._locked():
+            pytest.fail('Faulted authority reached native filesystem')
+
+    with pytest.raises(auth.AuthError, match='operation_failed'):
+        _diagnose_post_revoke_status(auth._safe(enter_lock), reports.append)
+    assert calls == [True]
+    assert {'phase': 'host.locked', 'class': 'PermissionError', 'reason': 'other',
+            'code': 'permission'} in reports[0]['exceptions']
+    assert 'PRIVATE' not in json.dumps(reports)
+
+
+def test_status_diagnostic_emitter_failure_does_not_replace_original_outcome():
+    sentinel, original = object(), RuntimeError('PRIVATE original')
+
+    def emit(_):
+        raise ValueError('PRIVATE emitter')
+
+    def fail():
+        raise original
+
+    assert _diagnose_post_revoke_status(lambda: sentinel, emit) is sentinel
+    with pytest.raises(RuntimeError) as raised:
+        _diagnose_post_revoke_status(fail, emit)
+    assert raised.value is original
+
+
+@pytest.mark.parametrize('failed_phase', ['install', 'restore'])
+@pytest.mark.parametrize('call_raises', [False, True])
+def test_status_diagnostic_trace_failure_preserves_single_call_outcome(monkeypatch, failed_phase, call_raises):
+    previous, real_settrace = sys.gettrace(), sys.settrace
+    reports, calls, tracing_calls = [], [], []
+    sentinel, original = object(), ValueError('PRIVATE original')
+
+    def settrace(value):
+        tracing_calls.append(value)
+        phase = 'install' if len(tracing_calls) == 1 else 'restore'
+        if phase == 'restore' or failed_phase != phase:
+            real_settrace(value)
+        if phase == failed_phase:
+            raise RuntimeError('PRIVATE tracer failure')
+
+    def call():
+        calls.append(True)
+        if call_raises:
+            raise original
+        return sentinel
+
+    monkeypatch.setattr(sys, 'settrace', settrace)
+    try:
+        if call_raises:
+            with pytest.raises(ValueError) as raised:
+                _diagnose_post_revoke_status(call, reports.append)
+            assert raised.value is original
+        else:
+            assert _diagnose_post_revoke_status(call, reports.append) is sentinel
+        assert calls == [True] and reports[0]['observerFailed'] is True
+        assert sys.gettrace() is previous
+    finally:
+        real_settrace(previous)
+
+
+def test_status_diagnostic_caps_events_and_uses_only_closed_error_values():
+    from eidolon_cli import organization_setup_subscription_auth as auth
+    reports = []
+    PrivateTokenClass = type('PRIVATE_TOKEN_CLASS', (Exception,), {})
+    error = PrivateTokenClass('PRIVATE /profile/path SQL account token')
+    error.reason = 'PRIVATE_REASON'
+
+    def fail():
+        raise error
+
+    def repeated():
+        def first():
+            raise FileNotFoundError(2, 'PRIVATE first cause', '/PRIVATE/profile')
+        try:
+            auth._safe(first)()
+        except auth.AuthError:
+            pass
+        for _ in range(40):
+            try:
+                auth._safe(fail)()
+            except auth.AuthError:
+                pass
+
+    _diagnose_post_revoke_status(repeated, reports.append)
+    assert reports[0]['truncated'] is True and len(reports[0]['exceptions']) == 32
+    assert reports[0]['exceptions'][0]['class'] == 'FileNotFoundError'
+    assert not reports[0]['observerFailed']
+    assert any(row['class'] == 'other' and row['reason'] == 'other' for row in reports[0]['exceptions'])
+    assert 'PRIVATE' not in json.dumps(reports)
 
 
 @pytest.fixture
@@ -1131,7 +1417,8 @@ def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path,
             assert result['state'] == ('completed' if revoke_supported else 'admitted')
             assert result['receipt']['localRetired'] is True
             assert result['receipt']['remoteRevocation'] == ('confirmed' if revoke_supported else 'unconfirmed')
-            retired = service.status()
+            retired = _diagnose_post_revoke_status(service.status,
+                lambda report: _save_status_diagnostic(report, revoke_supported))
             assert retired['connectionState'] == 'disconnected' and retired['cleanupPending'] is False
             assert retired['hostIdentityState'] == 'migration_required'
             assert retired['canMigrateHostIdentity'] is revoke_supported
