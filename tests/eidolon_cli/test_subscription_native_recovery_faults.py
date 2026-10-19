@@ -80,7 +80,8 @@ requires_descriptor = pytest.mark.skipif(
 )
 
 
-def acl_rig(home, monkeypatch, *, target=None, worker=False, ancestor=False, wrong_code=False):
+def acl_rig(home, monkeypatch, *, target=None, worker=False, ancestor=False, wrong_code=False,
+            fault_kind='acl_publication_once', native_calls=None):
     target = target or home
     outcomes = []
 
@@ -120,11 +121,14 @@ def acl_rig(home, monkeypatch, *, target=None, worker=False, ancestor=False, wro
     # substitute the unavailable Darwin C edge after real stable metadata gates.
     # Actual open/fstat/mode comparison/refusal and restoration are unchanged.
     if ancestor:
-        monkeypatch.setattr(filesystem, '_read_darwin_acl',
-            lambda api, fstatx, fd, before, **kwargs: (os.fstat(fd), None))
+        def native_read(api, fstatx, fd, before, **kwargs):
+            if native_calls is not None:
+                native_calls.append(True)
+            return os.fstat(fd), None
+        monkeypatch.setattr(filesystem, '_read_darwin_acl', native_read)
     monkeypatch.setattr(store.SubscriptionStore, '_decrypt', decrypt)
     monkeypatch.setattr(store.SubscriptionStore, '_connect_ticket_grant', connect)
-    faults = RecoveryFaults(home, 'acl_publication_once')
+    faults = RecoveryFaults(home, fault_kind)
     faults.install(monkeypatch.setattr)
     instance = object.__new__(store.SubscriptionStore)
     instance.profile = home
@@ -818,3 +822,112 @@ def test_acl_fault_rejects_structurally_equal_but_distinct_helper_code(home, mon
         assert stat.S_IMODE(home.stat().st_mode) == 0o700
     finally:
         faults.close()
+
+
+@requires_descriptor
+def test_open_recheck_fault_refuses_second_real_change_before_acl_and_restores_once(home, monkeypatch):
+    import errno
+    import inspect
+    native_calls = []
+    faults, instance, outcomes = acl_rig(home, monkeypatch, target=home.parent, ancestor=True,
+        fault_kind='acl_open_recheck_once', native_calls=native_calls)
+    pinned_fd = inspect.getclosurevars(faults._close_open_recheck).nonlocals['parent_fd']
+    with pytest.raises(store.StoreError) as failure:
+        instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
+    assert failure.value.reason == 'unsafe_filesystem'
+    assert faults.triggered == faults.restored == 1 and native_calls == [] and outcomes == []
+    assert not (home.parent / 'synthetic-open-recheck-sibling').exists()
+    with pytest.raises(OSError) as closed:
+        os.fstat(pinned_fd)
+    assert closed.value.errno == errno.EBADF
+    assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
+    assert native_calls == [True] and outcomes == ['descriptor_checked']
+    faults.close()
+    faults.close()
+    assert faults.triggered == faults.restored == 1
+
+
+@requires_descriptor
+@pytest.mark.parametrize('scope', ['wrong_path', 'wrong_thread', 'wrong_code', 'wrong_store', 'later_consent', 'not_consent'])
+def test_open_recheck_fault_is_limited_to_exact_initial_consent(home, monkeypatch, scope):
+    other = home / 'other'
+    other.mkdir(mode=0o700)
+    faults, instance, outcomes = acl_rig(home, monkeypatch, ancestor=True,
+        target=other if scope == 'wrong_path' else home.parent, worker=scope == 'wrong_thread',
+        wrong_code=scope == 'wrong_code', fault_kind='acl_open_recheck_once')
+    if scope == 'wrong_store':
+        instance.profile = other
+    if scope == 'not_consent':
+        assert instance._decrypt({}) == 'unchanged'
+    else:
+        assert instance._connect_ticket_grant(None, b'', {
+            'phase': 'disconnected', 'revision': 1 if scope == 'later_consent' else 0}) == 'unchanged'
+    assert faults.triggered == faults.restored == 0 and outcomes == ['descriptor_checked']
+    faults.close()
+
+
+@requires_descriptor
+@pytest.mark.parametrize('authority', ['code_clone', 'globals_copy'])
+def test_open_recheck_fault_rejects_nonexact_helper_identity(home, monkeypatch, authority):
+    from types import FunctionType
+    faults, instance, outcomes = acl_rig(home, monkeypatch, target=home.parent,
+        ancestor=True, fault_kind='acl_open_recheck_once')
+    original = filesystem._check_ancestor_acl
+    altered = FunctionType(original.__code__.replace() if authority == 'code_clone' else original.__code__,
+        dict(vars(filesystem)) if authority == 'globals_copy' else vars(filesystem))
+    monkeypatch.setattr(filesystem, '_check_ancestor_acl', altered)
+    assert instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0}) == 'unchanged'
+    assert faults.triggered == faults.restored == 0 and outcomes == ['descriptor_checked']
+    faults.close()
+
+
+@requires_descriptor
+@pytest.mark.parametrize('mutation', ['skip_recheck', 'replacement', 'nonempty'])
+def test_open_recheck_fault_finally_restores_or_refuses_changed_child_and_closes_fd(home, monkeypatch, mutation):
+    import errno
+    import inspect
+    import sys
+    faults, instance, _ = acl_rig(home, monkeypatch, target=home.parent,
+        ancestor=True, fault_kind='acl_open_recheck_once')
+    pinned_fd = inspect.getclosurevars(faults._close_open_recheck).nonlocals['parent_fd']
+    child = home.parent / 'synthetic-open-recheck-sibling'
+    saved = home.parent / 'saved-open-recheck-sibling'
+    original_lstat = Path.lstat
+    code = filesystem._check_ancestor_acl.__code__
+    def interrupted(path, *args, **kwargs):
+        caller = sys._getframe(1)
+        if path == home.parent and caller.f_code is code and caller.f_lineno == 79:
+            if mutation == 'skip_recheck':
+                raise RuntimeError('Synthetic pre-recheck interruption')
+            if mutation == 'replacement':
+                child.rename(saved)
+                child.mkdir()
+            else:
+                (child / 'retained-child').write_text('synthetic')
+            raise RuntimeError('Synthetic changed child')
+        return original_lstat(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'lstat', interrupted)
+    with pytest.raises(RuntimeError if mutation == 'skip_recheck' else AssertionError):
+        instance._connect_ticket_grant(None, b'', {'phase': 'disconnected', 'revision': 0})
+    assert faults.triggered == 1
+    assert faults.restored == (1 if mutation == 'skip_recheck' else 0)
+    assert child.exists() is (mutation != 'skip_recheck')
+    if mutation == 'replacement':
+        assert saved.exists()
+    if mutation == 'nonempty':
+        assert (child / 'retained-child').read_text() == 'synthetic'
+    with pytest.raises(OSError) as closed:
+        os.fstat(pinned_fd)
+    assert closed.value.errno == errno.EBADF
+    faults.close()
+
+
+def test_open_recheck_fault_sites_are_exact_before_first_native_acl_read():
+    import errno
+    import inspect
+    source = inspect.getsource(filesystem).splitlines()
+    assert 'fd = os.open(path,' in source[71]
+    assert 'renewed_at_open = ' in source[76]
+    assert 'Path(path).lstat()' in source[78] and '_file_identity(baseline)' in source[78]
+    assert "raise StoreError('unsafe_filesystem')" in source[79]
+    assert '_read_darwin_acl(' in source[80]

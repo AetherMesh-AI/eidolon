@@ -296,6 +296,7 @@ class BoundaryDiagnostics:
                  ('acl_descriptor', 56): ('final_path', 'before'),
                  ('native_acl_read', 151): ('native_acl', 'before'),
                  ('ancestor_acl', 77): ('initial_fd', 'before'),
+                 ('ancestor_acl', 79): ('initial_recheck', 'baseline'),
                  ('ancestor_acl', 88): ('final_path', 'final_fd'),
             ('ancestor_acl', 91): ('native_acl', 'before'),
             ('ancestor_acl', 92): ('final_fd', 'before'),
@@ -324,10 +325,20 @@ class BoundaryDiagnostics:
             return  # The right-hand operand and unchanged snapshots emit nothing.
         kind = ('directory' if stat.S_ISDIR(value[2]) and stat.S_ISDIR(baseline[2]) else
                 'regular_file' if stat.S_ISREG(value[2]) and stat.S_ISREG(baseline[2]) else 'other')
-        scope = self.identity_scope(parent.f_locals.get('path'))
+        path = parent.f_locals.get('path')
+        scope = self.identity_scope(path)
+        position = 'none'
+        if self.home is not None and type(path) is type(self.home):
+            for index, ancestor in enumerate(self.home.parents):
+                if path == ancestor:
+                    position = ('parent' if index == 0 else
+                                'ancestor_' + str(index + 1) if index < 7 else 'ancestor_8_or_higher')
+                    break
+        direction = 'increase' if value[5] > baseline[5] else 'decrease' if value[5] < baseline[5] else 'unchanged'
         self.emit({'lane': lane, 'stage': 'filesystem_identity', 'line': parent.f_lineno,
             'event': 'identity_mismatch', 'identity': {'comparison': site, 'targetKind': kind,
-                'targetScope': scope, 'changedFields': dict(zip(
+                'targetScope': scope, 'ancestorPosition': position, 'linksDirection': direction,
+                'changedFields': dict(zip(
                     ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'), changed))}})
 
     @staticmethod
@@ -486,12 +497,12 @@ class RecoveryFaults:
     Counters remain in memory while production critical frames are active.
     """
     def __init__(self, home, kind):
-        if kind not in {'sqlite_dispatch_once', 'acl_publication_once'}:
+        if kind not in {'sqlite_dispatch_once', 'acl_publication_once', 'acl_open_recheck_once'}:
             raise ValueError('Unknown synthetic recovery fault')
         self.home = Path(home).resolve(strict=True)
         info = self.home.lstat()
         if not stat.S_ISDIR(info.st_mode) or (
-                (os.name == 'posix' or kind == 'acl_publication_once')
+                (os.name == 'posix' or kind != 'sqlite_dispatch_once')
                 and stat.S_IMODE(info.st_mode) != 0o700):
             raise ValueError('Synthetic recovery home must be a private directory')
         self.identity = (info.st_dev, info.st_ino)
@@ -500,6 +511,7 @@ class RecoveryFaults:
         self.restored = 0
         self._local = threading.local()
         self._restore_fd = None
+        self._close_open_recheck = None
         self._lock = threading.Lock()
         self._claimed = False
         self.operation_thread = None
@@ -529,7 +541,142 @@ class RecoveryFaults:
                 writer.rollback()
                 self.restored += 1
 
+    def _install_open_recheck(self, patch):
+        """Two real sibling changes around the pinned descriptor's first recheck."""
+        from eidolon_cli import organization_setup_subscription_store as store
+        from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+        ancestor = self.home.parent
+        parent_before = ancestor.lstat()
+        assert stat.S_ISDIR(parent_before.st_mode) and parent_before.st_uid == os.geteuid()
+        assert not stat.S_IMODE(parent_before.st_mode) & 0o022
+        original_open, original_lstat = os.open, Path.lstat
+        parent_fd = original_open(ancestor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            assert filesystem._file_identity(os.fstat(parent_fd)) == filesystem._file_identity(parent_before)
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        parent_identity = filesystem._directory_identity(parent_before)
+        child_name = 'synthetic-open-recheck-sibling'
+        child_identity = None
+        code = filesystem._check_ancestor_acl.__code__
+        original_connect = store.SubscriptionStore._connect_ticket_grant
+        original_decrypt = store.SubscriptionStore._decrypt
+
+        def remove_child():
+            nonlocal child_identity
+            if child_identity is None:
+                return
+            assert filesystem._directory_identity(original_lstat(ancestor)) == parent_identity
+            assert filesystem._directory_identity(os.fstat(parent_fd)) == parent_identity
+            assert filesystem._file_identity(os.stat(child_name, dir_fd=parent_fd,
+                follow_symlinks=False)) == child_identity
+            child_fd = original_open(child_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=parent_fd)
+            try:
+                assert filesystem._file_identity(os.fstat(child_fd)) == child_identity
+                assert os.listdir(child_fd) == []
+            finally:
+                os.close(child_fd)
+            # Identity checks refuse observed replacements. This is not an atomic
+            # compare-and-remove primitive; rmdir cannot remove a nonempty tree.
+            os.rmdir(child_name, dir_fd=parent_fd)
+            child_identity = None
+            self.restored += 1
+
+        def close():
+            nonlocal parent_fd
+            if parent_fd is None:
+                return
+            try:
+                remove_child()
+            finally:
+                os.close(parent_fd)
+                parent_fd = None
+        self._close_open_recheck = close
+
+        @wraps(original_connect)
+        def connect(instance, binding, secret, state):
+            selected = (self._home_store(instance, store.SubscriptionStore)
+                and type(state) is dict and state.get('phase') == 'disconnected'
+                and state.get('revision') == 0 and not self._claimed)
+            previous = getattr(self._local, 'consent_store', None)
+            if selected:
+                self._local.consent_store = instance
+            try:
+                return original_connect(instance, binding, secret, state)
+            finally:
+                self._local.consent_store = previous
+
+        @wraps(original_decrypt)
+        def decrypt(instance, state):
+            selected = (self._home_store(instance, store.SubscriptionStore)
+                and getattr(self._local, 'consent_store', None) is instance)
+            previous = getattr(self._local, 'decrypt_store', None)
+            if selected:
+                self._local.decrypt_store = instance
+            try:
+                return original_decrypt(instance, state)
+            finally:
+                try:
+                    if selected and self._claimed:
+                        close()
+                finally:
+                    self._local.decrypt_store = previous
+
+        @wraps(original_open)
+        def opened(path, flags, *args, **kwargs):
+            nonlocal child_identity
+            fd = original_open(path, flags, *args, **kwargs)
+            caller = sys._getframe(1)
+            selected = (type(path) is type(ancestor) and path == ancestor
+                and caller.f_code is code and caller.f_globals is vars(filesystem) and caller.f_lineno == 72
+                and getattr(self._local, 'decrypt_store', None) is not None)
+            if not selected:
+                return fd
+            with self._lock:
+                if self._claimed:
+                    return fd
+                self._claimed = True
+                self.operation_thread = threading.get_ident()
+                try:
+                    before = os.fstat(fd)
+                    assert filesystem._directory_identity(before) == parent_identity
+                    assert filesystem._file_identity(original_lstat(ancestor)) == filesystem._file_identity(before)
+                    assert filesystem._directory_identity(os.fstat(parent_fd)) == parent_identity
+                    os.mkdir(child_name, mode=0o700, dir_fd=parent_fd)
+                    child_identity = filesystem._file_identity(os.stat(child_name,
+                        dir_fd=parent_fd, follow_symlinks=False))
+                    self.triggered += 1
+                    assert os.fstat(fd).st_nlink != before.st_nlink
+                except BaseException:
+                    try:
+                        close()
+                    finally:
+                        os.close(fd)
+                    raise
+            return fd
+
+        @wraps(original_lstat)
+        def lstat(path, *args, **kwargs):
+            caller = sys._getframe(1)
+            if (type(path) is type(ancestor) and path == ancestor
+                    and caller.f_code is code and caller.f_globals is vars(filesystem) and caller.f_lineno == 79
+                    and getattr(self._local, 'decrypt_store', None) is not None
+                    and self.operation_thread == threading.get_ident() and self.triggered == 1):
+                with self._lock:
+                    remove_child()
+            return original_lstat(path, *args, **kwargs)
+
+        patch(store.SubscriptionStore, '_connect_ticket_grant', connect)
+        patch(store.SubscriptionStore, '_decrypt', decrypt)
+        patch(os, 'open', opened)
+        patch(Path, 'lstat', lstat)
+
     def install(self, patch):
+        if self.kind == 'acl_open_recheck_once':
+            self._install_open_recheck(patch)
+            return
         from eidolon_cli import organization_setup_subscription_store as store
         from eidolon_cli import organization_setup_subscription_admission as admission
         from eidolon_cli import organization_setup_subscription_transport as transport
@@ -619,7 +766,11 @@ class RecoveryFaults:
         patch(os, 'open', opened)
 
     def close(self):
-        self._restore_mode()
+        try:
+            self._restore_mode()
+        finally:
+            if self._close_open_recheck is not None:
+                self._close_open_recheck()
 
 
 class AvailabilityProbe:

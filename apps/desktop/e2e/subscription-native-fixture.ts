@@ -222,8 +222,8 @@ function boundaryDiagnostic(rows: Row[]) {
     'value_too_large'
   ])
 
-  const known = (value: unknown, allowed: Set<string>) =>
-    typeof value === 'string' && allowed.has(value) ? value : 'other'
+  const known = (value: unknown, allowed: Set<string>, fallback = 'other') =>
+    typeof value === 'string' && allowed.has(value) ? value : fallback
 
   const count = (value: unknown, maximum: number) =>
     Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum ? value : null
@@ -243,9 +243,32 @@ function boundaryDiagnostic(rows: Row[]) {
       ...(row.event === 'identity_mismatch'
         ? {
             identity: {
-              comparison: known(identity.comparison, new Set(['initial_fd', 'native_acl', 'final_fd', 'final_path'])),
+              comparison: known(
+                identity.comparison,
+                new Set(['initial_fd', 'initial_recheck', 'native_acl', 'final_fd', 'final_path'])
+              ),
               targetKind: known(identity.targetKind, new Set(['directory', 'regular_file', 'other'])),
               targetScope: known(identity.targetScope, new Set(['private_store', 'profile', 'ancestor', 'other'])),
+              ancestorPosition: known(
+                identity.ancestorPosition,
+                new Set([
+                  'parent',
+                  'ancestor_2',
+                  'ancestor_3',
+                  'ancestor_4',
+                  'ancestor_5',
+                  'ancestor_6',
+                  'ancestor_7',
+                  'ancestor_8_or_higher',
+                  'none'
+                ]),
+                'none'
+              ),
+              linksDirection: known(
+                identity.linksDirection,
+                new Set(['increase', 'decrease', 'unchanged', 'unknown']),
+                'unknown'
+              ),
               changedFields: Object.fromEntries(
                 ['device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'].map(field => [
                   field,
@@ -692,7 +715,7 @@ export async function setupNativeSubscription(
   options: {
     legacy?: boolean
     uncertain?: boolean
-    recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once'
+    recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
     availabilityProbe?:
       'ancestor_churn_once' | 'ancestor_final_path_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
   } = {}

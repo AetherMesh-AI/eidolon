@@ -341,6 +341,8 @@ def test_identity_diagnostic_observes_real_metadata_change_without_weakening_gua
     assert len(identities) == 1
     assert identities[0] == {
         'comparison': 'initial_fd', 'targetKind': 'directory', 'targetScope': 'ancestor',
+        'ancestorPosition': 'parent',
+        'linksDirection': 'increase' if change_kind == 'directory' else 'unchanged',
         'changedFields': changed_fields}
     assert 'synthetic-private-' not in json.dumps(rows)
 
@@ -678,6 +680,7 @@ def test_extracted_identity_source_sites_and_selected_stat_locals_are_exact(tmp_
         56: ('acl_descriptor', 'final_path', 'before'),
         151: ('native_acl_read', 'native_acl', 'before'),
         77: ('ancestor_acl', 'initial_fd', 'before'),
+        79: ('ancestor_acl', 'initial_recheck', 'baseline'),
         88: ('ancestor_acl', 'final_path', 'final_fd'),
         91: ('ancestor_acl', 'native_acl', 'before'),
         92: ('ancestor_acl', 'final_fd', 'before'),
@@ -718,7 +721,7 @@ def test_extracted_identity_source_sites_and_selected_stat_locals_are_exact(tmp_
     try:
         for line, (stage, comparison, baseline) in sites.items():
             parent = SimpleNamespace(f_code=codes[stage], f_globals=vars(filesystem), f_lineno=line,
-                f_locals={'before': Private(), 'final_fd': Private(), 'path': home})
+                f_locals={'before': Private(), 'final_fd': Private(), 'baseline': Private(), 'path': home})
             parent.f_locals[baseline] = before
             if stage == 'native_acl_read':
                 parent.f_locals.pop('path')  # No caller-stack path lookup is allowed.
@@ -848,3 +851,116 @@ def test_observer_code_cache_rejects_equal_but_distinct_identity_and_caller_code
     finally:
         diagnostics.close()
     assert 'synthetic-private-home' not in json.dumps(read_trace(tmp_path))
+
+
+def test_initial_recheck_diagnostic_has_closed_position_direction_and_no_local_getters(tmp_path):
+    import os
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+
+    home = tmp_path.joinpath(*('level' + str(i) for i in range(9)))
+    home.mkdir(parents=True)
+    baseline = home.lstat()
+    original = filesystem._file_identity(baseline)
+    accesses = []
+    class Private:
+        def __getattribute__(self, name):
+            accesses.append(name)
+            raise AssertionError('Private object getter')
+    parent = SimpleNamespace(f_code=filesystem._check_ancestor_acl.__code__,
+        f_globals=vars(filesystem), f_lineno=79, f_locals={'baseline': baseline, 'path': home})
+    frame = SimpleNamespace(f_code=filesystem._file_identity.__code__, f_globals=vars(filesystem),
+        f_lineno=39, f_back=parent)
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
+    diagnostics.install()
+    try:
+        for delta, direction in [(1, 'increase'), (-1, 'decrease'), (0, 'unchanged')]:
+            value = list(original)
+            value[5] += delta
+            value[6] += 1
+            for index, ancestor in enumerate(home.parents):
+                parent.f_locals['path'] = ancestor
+                diagnostics.trace(frame, 'return', tuple(value))
+                identity = diagnostics.rows[-1]['identity']
+                assert identity['comparison'] == 'initial_recheck'
+                assert identity['linksDirection'] == direction
+                assert identity['ancestorPosition'] == ('parent' if index == 0 else
+                    'ancestor_' + str(index + 1) if index < 7 else 'ancestor_8_or_higher')
+        for path in [home, home / 'unrelated', Private()]:
+            parent.f_locals['path'] = path
+            diagnostics.trace(frame, 'return', tuple(value))
+            assert diagnostics.rows[-1]['identity']['ancestorPosition'] == 'none'
+        count = diagnostics.count
+        parent.f_locals['baseline'] = Private()
+        diagnostics.trace(frame, 'return', tuple(value))
+        assert diagnostics.count == count
+        parent.f_locals = Private()
+        parent.f_lineno = 78
+        diagnostics.trace(frame, 'return', tuple(value))
+        parent.f_lineno = 79
+        parent.f_code = filesystem._check_ancestor_acl.__code__.replace()
+        diagnostics.trace(frame, 'return', tuple(value))
+        parent.f_code = filesystem._check_ancestor_acl.__code__
+        parent.f_globals = {'__name__': filesystem.__name__}
+        diagnostics.trace(frame, 'return', tuple(value))
+        assert diagnostics.count == count and accesses == []
+    finally:
+        diagnostics.close()
+    assert str(home) not in json.dumps(read_trace(tmp_path))
+
+
+@pytest.mark.skipif(importlib.util.find_spec('fcntl') is None,
+                    reason='Real POSIX directory mutation requires fcntl platform')
+def test_real_second_open_window_is_refused_and_reports_exact_recheck(tmp_path, monkeypatch):
+    import os
+    import sys
+    from pathlib import Path
+    from eidolon_cli import organization_setup_subscription_filesystem as filesystem
+    from eidolon_cli.organization_setup_subscription_store import StoreError
+
+    ancestor = tmp_path / 'private-ancestor'
+    home = ancestor / 'profile'
+    home.mkdir(parents=True)
+    child = ancestor / 'private-child'
+    original_open, original_lstat = os.open, Path.lstat
+    code = filesystem._check_ancestor_acl.__code__
+    snapshots = []
+    reads = []
+    def opened(path, flags, *args, **kwargs):
+        fd = original_open(path, flags, *args, **kwargs)
+        caller = sys._getframe(1)
+        if path == ancestor and caller.f_code is code and caller.f_globals is vars(filesystem):
+            snapshots.append(os.fstat(fd))
+            child.mkdir()
+            snapshots.append(os.fstat(fd))
+            assert snapshots[-1].st_nlink != snapshots[-2].st_nlink
+        return fd
+    def lstat(path, *args, **kwargs):
+        caller = sys._getframe(1)
+        if path == ancestor and caller.f_code is code and caller.f_globals is vars(filesystem) and caller.f_lineno == 79:
+            child.rmdir()
+        return original_lstat(path, *args, **kwargs)
+    def no_native_read(*args, **kwargs):
+        reads.append(True)
+        pytest.fail('Second open-window refusal must precede native ACL inspection')
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
+    with monkeypatch.context() as patch:
+        patch.setattr(os, 'open', opened)
+        patch.setattr(Path, 'lstat', lstat)
+        patch.setattr(filesystem, '_read_darwin_acl', no_native_read)
+        diagnostics.install()
+        try:
+            with pytest.raises(StoreError, match='unsafe_filesystem'):
+                filesystem._check_ancestor_acl(ancestor, None, None)
+        finally:
+            diagnostics.close()
+    rows = read_trace(tmp_path)
+    identity = [row['identity'] for row in rows if row.get('event') == 'identity_mismatch']
+    assert [row['comparison'] for row in identity] == ['initial_fd', 'initial_recheck']
+    assert [row['linksDirection'] for row in identity] == ['increase', 'decrease']
+    assert all(row['ancestorPosition'] == 'parent' for row in identity)
+    assert all(not any(row['changedFields'][name] for name in ('device', 'inode', 'mode', 'owner', 'group')) for row in identity)
+    assert all(row['changedFields']['links'] for row in identity)
+    assert any(row.get('stage') == 'ancestor_acl' and row.get('line') == 80 and
+        row.get('reason') == 'unsafe_filesystem' for row in rows)
+    assert reads == [] and not child.exists()
+    assert 'private-ancestor' not in json.dumps(rows) and 'private-child' not in json.dumps(rows)

@@ -579,6 +579,142 @@ test.describe('host-native subscription setup', () => {
     })
   })
 
+  test('second open-window refusal recovers locally before explicit new consent', async () => {
+    allowErrorBanners()
+    fixture = await setupNativeSubscription({ recoveryFault: 'acl_open_recheck_once' })
+    const dialog = await openSetup(false)
+    const before = fixture.snapshot()
+    const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
+    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+
+    const consent = connection.getByRole('checkbox', {
+      name: 'Allow this dedicated connection to be stored locally',
+      exact: true
+    })
+
+    await consent.check()
+    await connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).click()
+
+    const blocked = connection.getByText(
+      'Setup cannot proceed with the current policy or uncertain request. Check status; no request will be resent automatically.',
+      { exact: true }
+    )
+
+    // The explicit action plus setup/status/policy each use a 15s RPC envelope.
+    await expect(blocked).toBeVisible({ timeout: 65_000 })
+    const faults = fixture.events().filter(row => row.kind === 'recovery-fault')
+    expect(faults).toHaveLength(1)
+    expect(faults[0]).toMatchObject({
+      fault: 'acl_open_recheck_once',
+      triggered: true,
+      restored: true,
+      nativePutCount: 1
+    })
+    const boundaries = fixture.diagnostic().boundaries
+
+    const recheckIndex = boundaries.findIndex(
+      row =>
+        row.event === 'identity_mismatch' &&
+        row.identity?.comparison === 'initial_recheck' &&
+        row.identity?.ancestorPosition === 'parent' &&
+        row.identity?.linksDirection === 'decrease'
+    )
+
+    expect(recheckIndex).toBeGreaterThan(0)
+    const recheck = boundaries[recheckIndex]
+
+    const initial = boundaries
+      .slice(0, recheckIndex)
+      .find(
+        row =>
+          row.event === 'identity_mismatch' &&
+          row.lane === recheck.lane &&
+          row.identity?.comparison === 'initial_fd' &&
+          row.identity?.ancestorPosition === 'parent' &&
+          row.identity?.linksDirection === 'increase'
+      )
+
+    expect(initial).toBeDefined()
+
+    for (const row of [initial!, recheck]) {
+      expect(row.identity?.changedFields).toMatchObject({
+        device: false,
+        inode: false,
+        mode: false,
+        owner: false,
+        group: false,
+        links: true
+      })
+    }
+
+    expect(
+      boundaries
+        .slice(recheckIndex + 1)
+        .some(
+          row =>
+            row.lane === recheck.lane &&
+            row.stage === 'ancestor_acl' &&
+            row.line === 80 &&
+            row.reason === 'unsafe_filesystem'
+        )
+    ).toBe(true)
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'jwks')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(0)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await expect(connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })).toHaveCount(0)
+    await expect(consent).toHaveCount(0)
+    const recover = connection.getByRole('button', { name: 'Reconcile saved operation', exact: true })
+    await expect(recover).toBeEnabled()
+    await recover.click()
+    // Recover plus its setup/status/policy reads: four 15s envelopes + 5s UI.
+    await expect(
+      connection.getByText(
+        'The saved authorization attempt was retired locally. Remote revocation is unconfirmed. Connect again only when you choose to.',
+        { exact: true }
+      )
+    ).toBeVisible({ timeout: 65_000 })
+    await expect(blocked).toHaveCount(0)
+    await expect(connection.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled()
+    const checkpoints = fixture.events().filter(row => row.kind === 'recovery-checkpoint')
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      fault: 'acl_open_recheck_once',
+      triggered: true,
+      restored: true,
+      nativePutCount: 1,
+      nativeDeleteCount: 1
+    })
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'jwks')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(0)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await expect(consent).not.toBeChecked()
+    const begin = connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
+    await expect(begin).toBeDisabled()
+    await consent.check()
+    await begin.click()
+    const load = connection.getByRole('button', { name: 'Load account models', exact: true })
+    await expect(load).toBeEnabled({ timeout: 65_000 })
+    expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(2)
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(2)
+    await load.click()
+    await connection.getByLabel('Setup model', { exact: true }).selectOption(subscriptionModel)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(1)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await test.info().attach('subscription-open-recheck-recovered', {
+      contentType: 'image/png',
+      body: await connection.screenshot()
+    })
+    await test.info().attach('subscription-open-recheck-recovery-proof', {
+      contentType: 'application/json',
+      body: JSON.stringify({ before, after: fixture.snapshot(), events: fixture.events() })
+    })
+  })
+
   test('uncertain synthetic inference blocks a new intent without retry or refund', async () => {
     allowErrorBanners()
     fixture = await setupNativeSubscription({ uncertain: true })

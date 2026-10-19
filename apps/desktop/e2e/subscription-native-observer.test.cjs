@@ -365,3 +365,86 @@ for (const cancellation of ['timeout', 'close']) {
     }
   )
 }
+
+const boundaryMatches = parsed.statements.filter(
+  node => ts.isFunctionDeclaration(node) && node.name?.text === 'boundaryDiagnostic'
+)
+assert.equal(boundaryMatches.length, 1)
+const boundaryCompiled = ts.transpileModule(`(${boundaryMatches[0].getText(parsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const sanitizeBoundary = rows => JSON.parse(JSON.stringify(vm.runInNewContext(boundaryCompiled)(rows)))
+
+test('boundary sanitizer exports only closed recheck position and direction enums', () => {
+  const positions = [
+    'parent',
+    'ancestor_2',
+    'ancestor_3',
+    'ancestor_4',
+    'ancestor_5',
+    'ancestor_6',
+    'ancestor_7',
+    'ancestor_8_or_higher',
+    'none'
+  ]
+  for (const position of positions) {
+    for (const direction of ['increase', 'decrease', 'unchanged', 'unknown']) {
+      const [row] = sanitizeBoundary([
+        {
+          stage: 'filesystem_identity',
+          event: 'identity_mismatch',
+          identity: {
+            comparison: 'initial_recheck',
+            targetKind: 'directory',
+            targetScope: 'ancestor',
+            ancestorPosition: position,
+            linksDirection: direction,
+            changedFields: { links: true },
+            path: secret,
+            inode: 123,
+            rawStat: secret
+          }
+        }
+      ])
+      assert.equal(row.identity.comparison, 'initial_recheck')
+      assert.equal(row.identity.ancestorPosition, position)
+      assert.equal(row.identity.linksDirection, direction)
+      assert.equal(row.identity.changedFields.links, true)
+      assert.ok(!JSON.stringify(row).includes(secret))
+      assert.deepEqual(Object.keys(row.identity).sort(), [
+        'ancestorPosition',
+        'changedFields',
+        'comparison',
+        'linksDirection',
+        'targetKind',
+        'targetScope'
+      ])
+    }
+  }
+})
+
+test('boundary sanitizer rejects unknown labels and retains row/count bounds', () => {
+  for (const value of [secret, 2, true, null, {}, ['parent']]) {
+    const input = {
+      sequence: -1,
+      lane: 33,
+      line: 10001,
+      event: 'identity_mismatch',
+      identity: {
+        comparison: value,
+        ancestorPosition: value,
+        linksDirection: value,
+        changedFields: { links: value, changeTime: value, secret }
+      }
+    }
+    const rows = sanitizeBoundary(Array(600).fill(input))
+    assert.equal(rows.length, 128)
+    assert.equal(rows[0].identity.comparison, 'other')
+    assert.equal(rows[0].identity.ancestorPosition, 'none')
+    assert.equal(rows[0].identity.linksDirection, 'unknown')
+    assert.equal(rows[0].sequence, null)
+    assert.equal(rows[0].lane, null)
+    assert.equal(rows[0].line, null)
+    assert.ok(!JSON.stringify(rows).includes(secret))
+  }
+})
