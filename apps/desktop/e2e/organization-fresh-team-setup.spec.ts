@@ -40,6 +40,55 @@ const models = ['synthetic-studio-one', 'synthetic-studio-two']
 const keys = ['synthetic-fresh-team-key-one-never-real', 'synthetic-fresh-team-key-two-never-real']
 const names = ['Isolated Studio One', 'Isolated Studio Two']
 
+// Filesystem enumeration is not send order. Bind every receipt to one intent,
+// while requiring all earlier validated receipts to remain present unchanged.
+function requireFreshTeamSend(
+  rows: Record<string, unknown>[],
+  prior: Record<string, unknown>[],
+  guard: Pick<Guard, 'home' | 'profile' | 'organizationId' | 'ownerId' | 'pid' | 'create_time'>,
+  requestKey: unknown
+) {
+  const key = (row: Record<string, unknown>) => {
+    const reservation = row?.reservation
+
+    return reservation && typeof reservation === 'object' && !Array.isArray(reservation)
+      ? (reservation as Record<string, unknown>).idempotency_key
+      : undefined
+  }
+
+  expect(rows).toHaveLength(prior.length + 1)
+  expect(typeof requestKey).toBe('string')
+  expect(requestKey).not.toBe('')
+  const priorKeys = prior.map(key)
+
+  for (const previousKey of priorKeys) {
+    expect(typeof previousKey).toBe('string')
+    expect(previousKey).not.toBe('')
+  }
+
+  expect(new Set([...priorKeys, requestKey]).size).toBe(prior.length + 1)
+
+  for (const previous of prior) {
+    const matches = rows.filter(row => key(row) === key(previous))
+    expect(matches).toHaveLength(1)
+    expect(matches[0]).toEqual(previous)
+  }
+
+  const matches = rows.filter(row => key(row) === requestKey)
+  expect(matches).toHaveLength(1)
+  expect(matches[0]).toMatchObject({
+    home: guard.home,
+    profile: guard.profile,
+    organizationId: guard.organizationId,
+    ownerId: guard.ownerId,
+    pid: guard.pid,
+    create_time: guard.create_time,
+    reservation: { idempotency_key: requestKey, organization_id: guard.organizationId }
+  })
+
+  return matches[0]
+}
+
 function seedUnknownMetadata(home: string) {
   const helper = path.join(import.meta.dirname, 'fresh-team-provider-guard.py')
 
@@ -304,6 +353,7 @@ test('two fresh isolated organizations configure their own models and explicitly
   const rpc: Array<{ method: string; params: Record<string, unknown>; profile?: string; result?: unknown }> = []
   const verified: object[] = []
   const snapshots: Snapshot[] = []
+  const verifiedSends: Record<string, unknown>[] = []
   const catalogSeeds: object[] = []
   let armed: { guard: Guard; observed: Descriptor; inputs: Inputs; index: number; sourceRevision: string } | undefined
 
@@ -776,7 +826,16 @@ print(json.dumps(matches))
       expect(Object.values(after.counts)).toEqual([0, 0, 0, 0, 0])
       expect(after.budget).toEqual(before.budget)
       expect(after.operationTable).toBe(false)
-      const sent = sends()[index]
+
+      const generated = rpc.filter(
+        item =>
+          item.method === 'organization.generateTeam' && item.params.expectedOrganizationId === receipt.organizationId
+      )
+
+      expect(generated).toHaveLength(2)
+      expect(generated[0].params).toEqual(generated[1].params)
+
+      const sent = requireFreshTeamSend(sends(), verifiedSends, guard, generated[0].params.idempotencyKey)
 
       const accounting = sent.wireAccounting as {
         wireInputBound: number
@@ -803,14 +862,7 @@ print(json.dumps(matches))
         physicalNetworkSend: false
       })
       expect((sent.reservation as Record<string, unknown>).idempotency_key).toBe(after.generations[0].idempotency_key)
-
-      const generated = rpc.filter(
-        item =>
-          item.method === 'organization.generateTeam' && item.params.expectedOrganizationId === receipt.organizationId
-      )
-
-      expect(generated).toHaveLength(2)
-      expect(generated[0].params).toEqual(generated[1].params)
+      verifiedSends.push(structuredClone(sent))
 
       const created = rpc.filter(
         item =>

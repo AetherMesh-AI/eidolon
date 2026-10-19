@@ -2066,3 +2066,328 @@ test('Check source has one awaited completion, one original click, and no retry 
   assert.doesNotMatch(open, /waitForTimeout|setTimeout/)
 })
 // END CHECK CONFIGURATION COMPLETION
+
+// BEGIN FRESH TEAM RECEIPT SELECTION
+// Run the actual pure selector and the caller's existing assertions. Synthetic
+// JSON receipts exercise the filesystem-order boundary without a provider call.
+const freshSource = readFileSync(path.join(__dirname, 'organization-fresh-team-setup.spec.ts'), 'utf8')
+const freshParsed = ts.createSourceFile('organization-fresh-team-setup.spec.ts', freshSource, ts.ScriptTarget.Latest, true)
+const freshNodes = (root, predicate) => {
+  const found = []
+  const visit = node => {
+    if (predicate(node)) found.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(root)
+  return found
+}
+const freshOne = (root, predicate) => {
+  const found = freshNodes(root, predicate)
+  assert.equal(found.length, 1)
+  return found[0]
+}
+const freshVariable = name => freshOne(freshParsed, node => ts.isVariableDeclaration(node) && node.name.getText(freshParsed) === name)
+const freshHelper = freshOne(freshParsed, node => ts.isFunctionDeclaration(node) && node.name?.text === 'requireFreshTeamSend')
+const freshCompile = code => ts.transpileModule(code, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const freshExpect = require('@playwright/test').expect
+const selectFreshSend = vm.runInNewContext(freshCompile(`(${freshHelper.getText(freshParsed)})`), { expect: freshExpect })
+const freshIdentityFields = ['home', 'profile', 'organizationId', 'ownerId', 'pid', 'create_time']
+const freshGuard = row => Object.fromEntries(freshIdentityFields.map(field => [field, row[field]]))
+const freshKey = row => row.reservation.idempotency_key
+const freshModels = ['synthetic-studio-one', 'synthetic-studio-two', 'synthetic-studio-three']
+const freshKeys = ['synthetic-fresh-team-key-one-never-real', 'synthetic-fresh-team-key-two-never-real', 'synthetic-fresh-team-key-three-never-real']
+function freshReceipt(index = 0) {
+  return {
+    home: `/synthetic/fresh/profiles/studio-${index + 1}`,
+    profile: `studio-${index + 1}`,
+    organizationId: `synthetic-organization-${index + 1}`,
+    ownerId: `synthetic-owner-${index + 1}`,
+    pid: [9302, 10088, 11001][index],
+    create_time: 1700000000.25 + index,
+    model: freshModels[index],
+    keySha256: createHash('sha256').update(freshKeys[index]).digest('hex'),
+    inputs: { jobs: `Review draft ${index + 1}.`, goals: `Finish draft ${index + 1}.`, namingStyle: `Studio ${index + 1}` },
+    physicalNetworkSend: false,
+    wireAccounting: { wireInputBound: 1500, contextReserve: 2048, outputLimit: 8000, reservedTokens: 11548 },
+    reservation: {
+      idempotency_key: `synthetic-generation-${index + 1}`,
+      organization_id: `synthetic-organization-${index + 1}`,
+      reserved_tokens: 11548,
+      dispatched: 1
+    }
+  }
+}
+function freshFreeze(value) {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(freshFreeze)
+    Object.freeze(value)
+  }
+  return value
+}
+function freshSelection(rows, prior, guard, key) {
+  const before = structuredClone({ rows, prior, guard, key })
+  const refs = [...rows]
+  freshFreeze(rows)
+  freshFreeze(prior)
+  freshFreeze(guard)
+  try {
+    return selectFreshSend(rows, prior, guard, key)
+  } finally {
+    assert.deepEqual({ rows, prior, guard, key }, before, 'selection must not edit or drop receipt evidence')
+    rows.forEach((row, index) => assert.equal(row, refs[index], 'selection must not reorder the source'))
+  }
+}
+function freshReject(rows, prior, guard, key) {
+  assert.throws(() => freshSelection(rows, prior, guard, key), error => Boolean(error.matcherResult),
+    'invalid evidence must fail an assertion rather than an incidental exception')
+}
+const freshRecords = freshVariable('records')
+const freshSends = freshVariable('sends')
+function readFreshRows(order, receipts) {
+  const files = new Map(receipts.map(row => [path.join('/synthetic/evidence', `sends-${row.pid}.jsonl`), JSON.stringify(row) + '\n']))
+  const read = vm.runInNewContext(freshCompile(`(() => {
+    const ${freshRecords.getText(freshParsed)}
+    const ${freshSends.getText(freshParsed)}
+    return sends
+  })()`), {
+    evidence: '/synthetic/evidence', path,
+    existsSync: name => { assert.equal(name, '/synthetic/evidence'); return true },
+    readdirSync: name => { assert.equal(name, '/synthetic/evidence'); return [...order] },
+    readFileSync: (name, encoding) => { assert.equal(encoding, 'utf8'); assert.ok(files.has(name)); return files.get(name) }
+  })
+  // JSON is the fixture's on-disk format; normalize only the VM's Array realm.
+  return JSON.parse(JSON.stringify(read()))
+}
+
+for (const order of [[9302, 10088], [10088, 9302]]) {
+  test(`fresh receipt selection retains first receipt then both with PID enumeration ${order.join(',')}`, () => {
+    const first = freshReceipt(0), second = freshReceipt(1)
+    const prior = []
+    const firstRows = readFreshRows(['sends-9302.jsonl'], [first])
+    const selectedFirst = freshSelection(firstRows, [], freshGuard(first), freshKey(first))
+    assert.equal(selectedFirst, firstRows[0])
+    prior.push(structuredClone(selectedFirst))
+    const both = readFreshRows(order.map(pid => `sends-${pid}.jsonl`), [first, second])
+    assert.deepEqual(both.map(row => row.pid), order)
+    const selectedSecond = freshSelection(both, prior, freshGuard(second), freshKey(second))
+    assert.equal(selectedSecond, both.find(row => row.pid === second.pid))
+    assert.deepEqual(selectedSecond, second)
+    assert.deepEqual(prior, [first])
+    assert.equal(both.length, 2)
+  })
+}
+
+for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+  test(`fresh receipt selection is independent of all three-row permutations ${order.join(',')}`, () => {
+    const receipts = [freshReceipt(0), freshReceipt(1), freshReceipt(2)]
+    const rows = order.map(index => receipts[index])
+    const selected = freshSelection(rows, structuredClone(receipts.slice(0, 2)), freshGuard(receipts[2]), freshKey(receipts[2]))
+    assert.equal(selected, receipts[2])
+    assert.deepEqual(rows.map(row => row.pid), order.map(index => receipts[index].pid))
+  })
+}
+
+for (const [name, prepare] of [
+  ['missing current', (a, b) => ({ rows: [a], prior: [a] })],
+  ['missing prior', (a, b) => ({ rows: [b], prior: [a] })],
+  ['empty evidence', (a, b) => ({ rows: [], prior: [] })],
+  ['duplicate current key with excess row', (a, b) => ({ rows: [a, b, structuredClone(b)], prior: [a] })],
+  ['duplicate current key replacing prior', (a, b) => ({ rows: [b, structuredClone(b)], prior: [a] })],
+  ['duplicate prior key with excess row', (a, b) => ({ rows: [a, structuredClone(a), b], prior: [a] })],
+  ['duplicate prior key replacing current', (a, b) => ({ rows: [a, structuredClone(a)], prior: [a] })],
+  ['duplicate key in prior snapshots', (a, b) => ({ rows: [a, structuredClone(a), b], prior: [a, structuredClone(a)] })],
+  ['duplicate prior snapshots masked by an unrelated row', (a, b) => ({ rows: [a, b, freshReceipt(2)], prior: [a, structuredClone(a)] })],
+  ['current key reused from prior', (a, b) => { b.reservation.idempotency_key = freshKey(a); return { rows: [a, b], prior: [a], key: freshKey(a) } }],
+  ['foreign extra receipt', (a, b) => ({ rows: [a, b, freshReceipt(2)], prior: [a] })],
+  ['unrelated replacement for current', (a, b) => ({ rows: [a, freshReceipt(2)], prior: [a] })],
+  ['foreign replacement for prior', (a, b) => ({ rows: [freshReceipt(2), b], prior: [a] })],
+  ['same-identity extra receipt under another key', (a, b) => {
+    const extra = structuredClone(b); extra.reservation.idempotency_key += '-extra'
+    return { rows: [a, b, extra], prior: [a] }
+  }],
+  ['same-identity replacement under another key', (a, b) => {
+    const replacement = structuredClone(b); replacement.reservation.idempotency_key += '-replacement'
+    return { rows: [a, replacement], prior: [a] }
+  }],
+  ['forged prior snapshot', (a, b) => {
+    const forged = structuredClone(a); forged.wireAccounting.reservedTokens++
+    return { rows: [a, b], prior: [forged] }
+  }]
+]) {
+  test(`fresh receipt selection rejects ${name}`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1)
+    const { rows, prior, key = freshKey(b) } = prepare(a, b)
+    freshReject(rows, structuredClone(prior), freshGuard(b), key)
+  })
+}
+
+test('fresh receipt selection cannot reuse an unchanged validated receipt as the current intent', () => {
+  const a = freshReceipt(0), b = freshReceipt(1)
+  freshReject([a, b], [structuredClone(a)], freshGuard(a), freshKey(a))
+})
+
+for (const [name, mutate] of [
+  ...freshIdentityFields.map(field => [field, row => { row[field] = typeof row[field] === 'number' ? row[field] + 1 : row[field] + '-foreign' }]),
+  ['reservation organization', row => { row.reservation.organization_id += '-foreign' }]
+]) {
+  test(`fresh receipt selection rejects current ${name} mismatch despite the exact request key`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1), bad = structuredClone(b)
+    mutate(bad)
+    freshReject([a, bad], [structuredClone(a)], freshGuard(b), freshKey(b))
+  })
+}
+
+for (const [name, mutate] of [
+  ['identity replacement', row => { row.ownerId += '-replaced' }],
+  ['nested accounting edit', row => { row.wireAccounting.wireInputBound++ }],
+  ['nested reservation edit', row => { row.reservation.dispatched = 0 }],
+  ['model edit', row => { row.model += '-forged' }],
+  ['input edit', row => { row.inputs.jobs += '-forged' }],
+  ['property deletion', row => { delete row.keySha256 }],
+  ['unexpected property addition', row => { row.unexpected = true }],
+  ['key replacement', row => { row.reservation.idempotency_key += '-replaced' }]
+]) {
+  test(`fresh receipt selection rejects prior ${name}`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1), modified = structuredClone(a)
+    mutate(modified)
+    freshReject([b, modified], [structuredClone(a)], freshGuard(b), freshKey(b))
+  })
+}
+
+for (const [name, key] of [['wrong', 'synthetic-wrong-key'], ['empty', ''], ['missing', undefined], ['null', null], ['number', 7], ['boolean', true], ['object', {}], ['array', ['synthetic-generation-2']]]) {
+  test(`fresh receipt selection rejects ${name} observed request key`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1)
+    freshReject([b, a], [structuredClone(a)], freshGuard(b), key)
+  })
+}
+
+for (const [name, key] of [['empty', ''], ['missing', undefined], ['null', null], ['number', 7], ['boolean', true]]) {
+  test(`fresh receipt selection rejects ${name} request key even when the current reservation matches it`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1)
+    b.reservation.idempotency_key = key
+    freshReject([a, b], [structuredClone(a)], freshGuard(b), key)
+  })
+}
+
+for (const [name, reservation] of [
+  ['missing', undefined], ['null', null], ['string', 'synthetic-generation-2'], ['number', 2], ['boolean', true],
+  ['array', []], ['empty object', {}], ['nonstring key', { idempotency_key: 2, organization_id: 'synthetic-organization-2' }],
+  ['missing organization', { idempotency_key: 'synthetic-generation-2' }],
+  ['nonstring organization', { idempotency_key: 'synthetic-generation-2', organization_id: 2 }]
+]) {
+  test(`fresh receipt selection rejects current reservation with ${name}`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1), malformed = structuredClone(b)
+    malformed.reservation = reservation
+    freshReject([a, malformed], [structuredClone(a)], freshGuard(b), freshKey(b))
+  })
+}
+
+for (const [name, reservation] of [['missing', undefined], ['null', null], ['array', []], ['missing key', {}], ['empty key', { idempotency_key: '' }], ['nonstring key', { idempotency_key: 1 }]]) {
+  test(`fresh receipt selection rejects malformed prior reservation with ${name}`, () => {
+    const a = freshReceipt(0), b = freshReceipt(1)
+    a.reservation = reservation
+    freshReject([a, b], [structuredClone(a)], freshGuard(b), freshKey(b))
+  })
+}
+
+const freshSent = freshVariable('sent')
+const freshCallerBlock = freshSent.parent.parent.parent
+assert.ok(ts.isBlock(freshCallerBlock))
+const freshCallerStatements = [...freshCallerBlock.statements]
+const freshSentIndex = freshCallerStatements.indexOf(freshSent.parent.parent)
+const freshSaved = freshOne(freshCallerBlock, node => ts.isCallExpression(node) && node.expression.getText(freshParsed) === 'verifiedSends.push')
+const freshSavedIndex = freshCallerStatements.indexOf(freshSaved.parent)
+assert.ok(freshSentIndex >= 0 && freshSavedIndex > freshSentIndex)
+const freshAssertionStatements = freshCallerStatements.slice(freshSentIndex + 1, freshSavedIndex)
+const checkFreshCaller = vm.runInNewContext(freshCompile(`((sent, after, home, receipt, index, inputs) => {
+  ${freshAssertionStatements.map(node => node.getText(freshParsed)).join('\n')}
+})`), { expect: freshExpect, createHash, models: freshModels, keys: freshKeys, realpathSync: home => home })
+function freshCallerFixture() {
+  const sent = freshReceipt(1)
+  return {
+    sent,
+    after: { generations: [{ reserved_tokens: sent.wireAccounting.reservedTokens, idempotency_key: freshKey(sent) }] },
+    home: sent.home, receipt: freshGuard(sent), index: 1, inputs: structuredClone(sent.inputs)
+  }
+}
+const runFreshCaller = data => checkFreshCaller(data.sent, data.after, data.home, data.receipt, data.index, data.inputs)
+
+test('fresh receipt caller accepts the actual full identity, model, inputs, ledger and accounting assertions', () => {
+  assert.doesNotThrow(() => runFreshCaller(freshCallerFixture()))
+})
+
+for (const [name, mutate] of [
+  ...['home', 'profile', 'organizationId', 'ownerId', 'model', 'keySha256'].map(field => [field, data => { data.sent[field] += '-foreign' }]),
+  ...['jobs', 'goals', 'namingStyle'].map(field => [`input ${field}`, data => { data.sent.inputs[field] += '-changed' }]),
+  ['physical network send', data => { data.sent.physicalNetworkSend = true }],
+  ['output limit', data => { data.sent.wireAccounting.outputLimit++ }],
+  ['context reserve', data => { data.sent.wireAccounting.contextReserve++ }],
+  ['wire input accounting', data => { data.sent.wireAccounting.wireInputBound++ }],
+  ['reservation arithmetic', data => { data.sent.wireAccounting.reservedTokens++ }],
+  ['reservation upper limit', data => {
+    data.sent.wireAccounting.wireInputBound = 13953
+    data.sent.wireAccounting.reservedTokens = 24001
+    data.after.generations[0].reserved_tokens = 24001
+  }],
+  ['ledger reserved tokens', data => { data.after.generations[0].reserved_tokens++ }],
+  ['ledger idempotency key', data => { data.after.generations[0].idempotency_key += '-different' }]
+]) {
+  test(`fresh receipt caller retains rejection for ${name}`, () => {
+    const data = freshCallerFixture()
+    mutate(data)
+    assert.throws(() => runFreshCaller(data), error => Boolean(error.matcherResult))
+  })
+}
+
+const freshGenerated = freshVariable('generated')
+const freshGeneratedIndex = freshCallerStatements.indexOf(freshGenerated.parent.parent)
+const freshReplayStatements = freshCallerStatements.slice(freshGeneratedIndex, freshSentIndex)
+const checkFreshReplay = vm.runInNewContext(freshCompile(`((rpc, receipt) => {
+  ${freshReplayStatements.map(node => node.getText(freshParsed)).join('\n')}
+})`), { expect: freshExpect })
+const freshGenerateRequests = () => [0, 1].map(() => ({
+  method: 'organization.generateTeam',
+  params: { expectedOrganizationId: 'synthetic-organization-2', idempotencyKey: 'synthetic-generation-2', jobs: 'same original intent' }
+}))
+
+test('fresh receipt caller preserves two identical generation requests before selecting evidence', () => {
+  assert.ok(freshGeneratedIndex >= 0 && freshGeneratedIndex < freshSentIndex)
+  assert.doesNotThrow(() => checkFreshReplay(freshGenerateRequests(), freshGuard(freshReceipt(1))))
+})
+for (const [name, mutate] of [
+  ['missing replay', rows => { rows.pop() }],
+  ['additional generate', rows => { rows.push(structuredClone(rows[0])) }],
+  ['different replay key', rows => { rows[1].params.idempotencyKey += '-different' }],
+  ['different replay input', rows => { rows[1].params.jobs += '-different' }],
+  ['foreign replay organization', rows => { rows[1].params.expectedOrganizationId += '-foreign' }]
+]) {
+  test(`fresh receipt caller rejects ${name} before receipt selection`, () => {
+    const rpc = freshGenerateRequests()
+    mutate(rpc)
+    assert.throws(() => checkFreshReplay(rpc, freshGuard(freshReceipt(1))), error => Boolean(error.matcherResult))
+  })
+}
+
+test('fresh receipt caller reads all rows once, binds live guard and observed intent, and saves only fully validated clones', () => {
+  const selections = freshNodes(freshParsed, node => ts.isCallExpression(node) && node.expression.getText(freshParsed) === 'requireFreshTeamSend')
+  assert.equal(selections.length, 1)
+  assert.equal(freshSent.initializer, selections[0])
+  assert.deepEqual([...selections[0].arguments].map(node => node.getText(freshParsed)),
+    ['sends()', 'verifiedSends', 'guard', 'generated[0].params.idempotencyKey'])
+  assert.equal(freshNodes(freshCallerBlock, node => ts.isCallExpression(node) && node.expression.getText(freshParsed) === 'sends').length, 1)
+  assert.equal(freshVariable('guard').initializer.getText(freshParsed), "await requireGuard(home, receipt, 'before-generate')")
+  assert.equal(freshVariable('verifiedSends').initializer.getText(freshParsed), '[]')
+  assert.equal(freshSaved.arguments.length, 1)
+  assert.equal(freshSaved.arguments[0].getText(freshParsed), 'structuredClone(sent)')
+  const ledgerAssertion = freshOne(freshCallerBlock, node => ts.isCallExpression(node) &&
+    node.expression.getText(freshParsed) === 'expect((sent.reservation as Record<string, unknown>).idempotency_key).toBe')
+  assert.ok(ledgerAssertion.getStart(freshParsed) > freshSent.end)
+  assert.ok(freshSaved.getStart(freshParsed) > ledgerAssertion.end)
+  assert.equal(freshNodes(freshCallerBlock, node => ts.isCallExpression(node) && node.expression.getText(freshParsed) === 'generate.click').length, 2)
+  assert.equal(freshNodes(freshHelper, node => ts.isAwaitExpression(node)).length, 0)
+  assert.doesNotMatch(freshHelper.getText(freshParsed), /waitForTimeout|setTimeout|setInterval|\.click\(|\.evaluate\(|\.send\(|\.request\(|\.reload\(|\.sort\(|\.splice\(/)
+  assert.doesNotMatch(freshAssertionStatements.map(node => node.getText(freshParsed)).join('\n'), /waitForTimeout|setTimeout|setInterval|\.click\(|\.evaluate\(|\.send\(|\.request\(|\.reload\(/)
+})
+// END FRESH TEAM RECEIPT SELECTION
