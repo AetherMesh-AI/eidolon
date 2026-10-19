@@ -1,0 +1,251 @@
+name: Host migration status diagnostic (not acceptance)
+'on':
+  workflow_dispatch: {}
+  push:
+    branches:
+    - proof/pr208-host-status-diagnostic-20261019
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    name: Mac post-revoke status diagnosis
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: 181b943ad4d70bad58335d8745304ff04452e1a0
+        persist-credentials: false
+        fetch-depth: 2
+    - name: Verify diagnostic source and actual Mac host
+      run: |
+        set -euo pipefail
+        mkdir -p host-migration-status-diagnostic
+        test "$(git rev-parse HEAD)" = 181b943ad4d70bad58335d8745304ff04452e1a0
+        test "$(git rev-parse HEAD^{tree})" = b331d0925d8e42d136f94026fb39b6c56a4db96a
+        test "$(git rev-parse HEAD^)" = 75da4f1b0081bbd9933b8af0b0d893d0e21db16c
+        test "$(uname -s)" = Darwin
+        git rev-parse HEAD HEAD^{tree} HEAD^ > host-migration-status-diagnostic/source.txt
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.12'
+    - name: Install locked Python runtime and test dependencies
+      run: |
+        python -m pip install uv==0.12.23
+        uv sync --locked --python 3.12 --extra dev
+        uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+    - name: Observe original 108-file Mac workload once (diagnostic only)
+      run: |
+        set -euo pipefail
+        ledger_identity_tests=(
+          tests/eidolon_cli/test_organization_setup_subscription_filesystem.py
+          tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py
+          tests/eidolon_cli/test_subscription_native_diagnostics.py
+          tests/eidolon_cli/test_subscription_native_recovery_faults.py
+          tests/eidolon_cli/test_subscription_native_lifecycle.py
+          tests/tui_gateway/test_subscription_native_journey.py
+          tests/eidolon_cli/test_organization_store.py
+          tests/eidolon_cli/test_organization_schema_initialization.py
+          tests/eidolon_cli/test_organization_budget_migration.py
+          tests/eidolon_cli/test_organization_completion_reserve.py
+          tests/eidolon_cli/test_organization_completion_reserve_policy.py
+          tests/eidolon_cli/test_organization_completion_reserve_e2e.py
+          tests/eidolon_cli/test_organization_pacing.py
+          tests/eidolon_cli/test_organization_pacing_runtime.py
+          tests/eidolon_cli/test_organization_pacing_cli.py
+          tests/eidolon_cli/test_organization_model_routing.py
+          tests/eidolon_cli/test_organization_model_routing_e2e.py
+          tests/eidolon_cli/test_organization_routing_observations.py
+          tests/eidolon_cli/test_organization_route_benchmarks.py
+          tests/eidolon_cli/test_organization_owner_policy.py
+          tests/eidolon_cli/test_organization_ledger_writer.py
+          tests/eidolon_cli/test_organization_subscription_send_coordination.py
+          tests/eidolon_cli/test_organization_team_setup.py
+          tests/eidolon_cli/test_organization_team_admission.py
+          tests/eidolon_cli/test_organization_team_generation.py
+          tests/tui_gateway/test_organization_team_setup.py
+          tests/eidolon_cli/test_organization_shared_allowance.py
+          tests/eidolon_cli/test_organization_shared_allowance_cli.py
+          tests/eidolon_cli/test_organization_shared_budget.py
+          tests/eidolon_cli/test_organization_shared_runtime.py
+          tests/eidolon_cli/test_organization_shared_contention.py
+          tests/tui_gateway/test_organization_shared_allowance.py
+          tests/tui_gateway/test_organization_owner_policy.py
+          tests/agent/test_bounded_context.py
+          tests/eidolon_cli/test_organization_artifact_retention.py
+          tests/eidolon_cli/test_organization_identity.py
+          tests/eidolon_cli/test_organization_metadata.py
+          tests/eidolon_cli/test_organization_metadata_read.py
+          tests/eidolon_cli/test_organization_phases.py
+          tests/eidolon_cli/test_organization_observation.py
+          tests/tui_gateway/test_organization_observation.py
+          tests/tui_gateway/test_organization_metadata.py
+          tests/eidolon_cli/test_organization_identity_memory.py
+          tests/eidolon_cli/test_organization_identity_assignments.py
+          tests/eidolon_cli/test_organization_history.py
+          tests/eidolon_cli/test_organization_cross_feature_recovery.py
+          tests/eidolon_cli/test_organization_request_recovery.py
+          tests/eidolon_cli/test_organization_selective_recovery.py
+          tests/eidolon_cli/test_organization_replacement.py
+          tests/eidolon_cli/test_organization_tool_receipts.py
+        )
+        outcomes_attention_tests=(
+          tests/eidolon_cli/test_organization_attention.py
+          tests/eidolon_cli/test_organization_outcomes.py
+          tests/eidolon_cli/test_organization_outcomes_revisions.py
+          tests/eidolon_cli/test_organization_outcomes_pagination.py
+          tests/eidolon_cli/test_organization_outcomes_validation.py
+          tests/gateway/test_organization_policy_reload.py
+          tests/tui_gateway/test_organization_outcomes.py
+        )
+        projects_config_tests=(
+          tests/eidolon_cli/test_organization_workspaces.py
+          tests/tui_gateway/test_organization_workspaces.py
+          tests/eidolon_cli/test_organization_project_registry.py
+          tests/eidolon_cli/test_organization_milestones.py
+          tests/eidolon_cli/test_organization_goal_allowances.py
+          tests/eidolon_cli/test_organization_goal_continuation.py
+          tests/eidolon_cli/test_organization_goal_reauthorization.py
+          tests/tui_gateway/test_organization_milestones.py
+          tests/tui_gateway/test_organization_goals.py
+          tests/eidolon_cli/test_organization_project_registry_processes.py
+          tests/eidolon_cli/test_organization_project_registry_conflicts.py
+          tests/eidolon_cli/test_organization_project_registry_links.py
+          tests/eidolon_cli/test_organization_project_portability.py
+          tests/eidolon_cli/test_organization_multi_project_execution.py
+          tests/eidolon_cli/test_organization_inspection_acceptance.py
+          tests/eidolon_cli/test_organization_project_execution_e2e.py
+          tests/eidolon_cli/test_managed_install_shapes.py
+          tests/gateway/test_organization_config_serialization.py
+          tests/tui_gateway/test_organization_project_setup.py
+        )
+        leadership_staffing_tests=(
+          tests/eidolon_cli/test_organization_question_routing.py
+          tests/eidolon_cli/test_organization_question_wire.py
+          tests/eidolon_cli/test_organization_owner_chat*.py
+          tests/tui_gateway/test_organization_owner_chat*.py
+          tests/eidolon_cli/test_organization_conversations.py
+          tests/eidolon_cli/test_organization_conversation_security.py
+          tests/eidolon_cli/test_organization_conversation_runtime.py
+          tests/eidolon_cli/test_organization_conversation_wire.py
+          tests/eidolon_cli/test_organization_management_configuration.py
+          tests/eidolon_cli/test_organization_management_staffing.py
+          tests/eidolon_cli/test_organization_management_transfers.py
+          tests/eidolon_cli/test_organization_management_leadership.py
+          tests/eidolon_cli/test_organization_leadership_handoffs_planning.py
+          tests/eidolon_cli/test_organization_leadership_handoffs_integration.py
+          tests/eidolon_cli/test_organization_leadership_handoffs_acceptance.py
+          tests/eidolon_cli/test_organization_leadership_handoffs_work.py
+          tests/eidolon_cli/test_organization_leadership_handoff_validation.py
+          tests/eidolon_cli/test_organization_leadership_handoff_continuation.py
+          tests/eidolon_cli/test_organization_paused_handoffs.py
+          tests/eidolon_cli/test_organization_leadership_routes_owner.py
+          tests/eidolon_cli/test_organization_leadership_routes_agent.py
+          tests/eidolon_cli/test_organization_leadership_routes_rollback.py
+          tests/eidolon_cli/test_organization_persistent_leadership.py
+        )
+        work_package_tests=(
+          tests/eidolon_cli/test_organization_work_packages.py
+          tests/eidolon_cli/test_organization_work_packages_e2e.py
+          tests/eidolon_cli/test_organization_package_handoffs_routes.py
+          tests/eidolon_cli/test_organization_package_handoffs_transfers.py
+          tests/eidolon_cli/test_organization_package_handoffs_obligations.py
+          tests/eidolon_cli/test_organization_package_handoffs_validation.py
+          tests/eidolon_cli/test_organization_package_evidence.py
+        )
+        case 'all' in
+          all) native_tests=("${ledger_identity_tests[@]}" "${outcomes_attention_tests[@]}" "${projects_config_tests[@]}" "${leadership_staffing_tests[@]}" "${work_package_tests[@]}") ;;
+          ledger-identity) native_tests=("${ledger_identity_tests[@]}") ;;
+          outcomes-attention) native_tests=("${outcomes_attention_tests[@]}") ;;
+          projects-config) native_tests=("${projects_config_tests[@]}") ;;
+          leadership-staffing) native_tests=("${leadership_staffing_tests[@]}") ;;
+          work-packages) native_tests=("${work_package_tests[@]}") ;;
+          *) echo 'Unknown native suite' >&2; exit 1 ;;
+        esac
+        diagnostic_args=()
+        file_budget_args=()
+        if [[ 'macos-latest' == 'windows-latest' && ( 'all' == 'outcomes-attention' || 'all' == 'ledger-identity' ) ]]; then
+          # Retain every assertion. Phase timings and
+          # live stacks distinguish slow setup from a blocked test operation.
+          diagnostic_args=(-vv -s -p scripts.ci.organization_timing --organization-timing-dir=organization-timing -o faulthandler_timeout=30)
+        fi
+        if [[ 'macos-latest' == 'windows-latest' ]]; then
+          # 108 real task lifecycles: retained run 38803777266 made continuous
+          # progress but spent 218s in close and 58s in commit before 300s.
+          # Only this file gets 600s; all others keep 300s and concurrency stays 3.
+          file_budget_args=(--file-timeout-override tests/eidolon_cli/test_organization_artifact_retention.py=600)
+        fi
+        HERMES_TEST_FILE_RETRIES=0 scripts/run_tests.sh "${native_tests[@]}" -j 3 "${file_budget_args[@]}" -- "${diagnostic_args[@]}" 2>&1 | tee host-migration-status-diagnostic/suite.log
+    - name: Require both closed status observations and unchanged source
+      if: always()
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = 181b943ad4d70bad58335d8745304ff04452e1a0
+        test "$(git rev-parse HEAD^{tree})" = b331d0925d8e42d136f94026fb39b6c56a4db96a
+        test "$(git write-tree)" = b331d0925d8e42d136f94026fb39b6c56a4db96a
+        git diff --exit-code
+        git diff --cached --exit-code
+        { git rev-parse HEAD HEAD^{tree} HEAD^; git write-tree; } > host-migration-status-diagnostic/final-source.txt
+        python - <<'PYCODE'
+        """Temporary evidence validator; no product imports or diagnostic re-read."""
+        import json
+        from pathlib import Path
+
+        PHASES = {
+            'auth': {'other', 'safe', 'status', 'status_locked', 'owner_guard', 'host_identity', 'binding', 'migration_ready'},
+            'host': {'other', 'guard', 'locked', 'authority', 'store_evidence', 'installation', 'provider_host', 'consent', 'identity_state', 'identity', 'inspect', 'attempt'},
+            'store': {'other', 'guard', 'status', 'ticket', 'returning_binding', 'history', 'binding_digest', 'locked'},
+            'filesystem': {'other', 'check', 'read_json', 'locked', 'directory'},
+            'gateway': {'other', 'owner_guard', 'setup_guard', 'durable_scope'},
+            'owner': {'other'}, 'ledger': {'other'}, 'writer': {'other'},
+            'owner_policy': {'other', 'connection', 'source'}, 'team_setup': {'other', 'current'},
+        }
+        PHASES = {module + '.' + value for module, values in PHASES.items() for value in values}
+        CLASSES = {'AuthError', 'HostError', 'StoreError', 'SQLiteOperationalError', 'SQLiteDatabaseError',
+                   'OSError', 'FileNotFoundError', 'PermissionError', 'FileExistsError', 'TimeoutError',
+                   'ValueError', 'TypeError', 'KeyError', 'AssertionError', 'RuntimeError', 'JSONDecodeError', 'other'}
+        REASONS = {'operation_failed', 'stale_owner', 'invalid_request', 'recovery_required',
+                   'storage_recovery_required', 'unsafe_filesystem', 'recursive_use', 'invalid_binding',
+                   'invalid_attempt', 'host_identity_migration_required', 'unsupported_host',
+                   'stale_revision', 'cleanup_pending', 'other'}
+        CODES = {'none', 'other', 'not_found', 'permission', 'busy', 'would_block', 'io', 'no_space',
+                 'bad_descriptor', 'symlink_loop', 'locked', 'cannot_open', 'readonly', 'corrupt', 'schema', 'error'}
+
+
+        def validate(report):
+            assert type(report) is dict
+            assert set(report) == {'version', 'scope', 'outcome', 'phases', 'exceptions', 'truncated', 'observerFailed'}
+            assert type(report['version']) is int and report['version'] == 1
+            assert type(report['scope']) is str and report['scope'] == 'post_revoke_status'
+            assert type(report['outcome']) is str and report['outcome'] in {'returned', 'raised'}
+            assert report['observerFailed'] is False and type(report['truncated']) is bool
+            assert type(report['phases']) is list and 0 < len(report['phases']) <= 32
+            assert all(type(phase) is str and phase in PHASES for phase in report['phases'])
+            assert len(set(report['phases'])) == len(report['phases']) and 'auth.status' in report['phases']
+            assert type(report['exceptions']) is list and len(report['exceptions']) <= 32
+            for row in report['exceptions']:
+                assert type(row) is dict and set(row) == {'phase', 'class', 'reason', 'code'}
+                for key, allowed in [('phase', PHASES), ('class', CLASSES), ('reason', REASONS), ('code', CODES)]:
+                    assert type(row[key]) is str and row[key] in allowed
+
+
+        if __name__ == '__main__':
+            root = Path('host-migration-status-diagnostic')
+            for name in ('supported.json', 'unsupported.json'):
+                path = root / name
+                assert path.stat().st_size < 16384
+                report = json.loads(path.read_text())
+                validate(report)
+                print(name, json.dumps(report, sort_keys=True))
+        PYCODE
+    - name: Retain diagnostic evidence, never canonical acceptance
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: host-migration-status-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        path: host-migration-status-diagnostic/
+        if-no-files-found: error
+        retention-days: 7
