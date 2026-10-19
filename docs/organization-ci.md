@@ -223,3 +223,35 @@ aggregate/allocation exhaustion before transport, and six-locale two-palette
 orphan debits, replay refusal, scope pins, execution fences, explicit periods,
 manual observation pacing, and passive read compatibility. These fixtures never
 activate a user's installation or call a paid provider.
+
+## Packaged macOS acceptance boundary
+
+The `Organization packaged Eidolon journey (macOS)` job runs the existing
+`npm run pack` command, with publishing disabled by the existing packager wrapper.
+It does not modify signing, notarization, release configuration or user machines.
+The required desktop aggregate fails if this job fails, is cancelled or is skipped.
+
+It launches the actual `Eidolon.app/Contents/MacOS/Eidolon` output, with no source
+app argument or stock-Electron fallback. Missing bundles fail. The fresh
+subscription journey runs exactly once with retries disabled: synthetic consent,
+credential and provider edges, policy review, Improve review/apply/discard, explicit
+team creation and local disconnect. The owner flow, gateway, protected store and
+packaged renderer remain real. Every profile, HOME and userData directory is
+disposable; existing network guards install before renderer creation.
+
+This proves the packaged shell against an explicitly selected Python runtime in
+the exact tested checkout. It does not prove first-install backend downloads,
+an installed user's profile, production OAuth registration or grants, live
+provider calls, release signing, notarization or an installed/live acceptance run.
+
+Required receipts bind source commit/tree and the clean bundle stamp to the
+actual executable, app resources, renderer and main hashes. Bundled node-pty must
+resolve inside the bundle, load its native module under the packaged Electron ABI,
+and complete real PTY I/O. The live Python gateway must use the expected checkout
+venv and source path with the synthetic guard installed. Teardown must report
+settled processes and a removed sandbox. The report gate rejects missing, skipped,
+retried, duplicated or substituted tests and malformed runtime evidence; its
+negative controls run in the same job. Evidence is uploaded outside the checkout.
+
+`launch-packaged-app.spec.ts` remains optional fake-boot visual smoke for broad E2E
+runs. Its skip or visual outcome never counts as packaged macOS acceptance.

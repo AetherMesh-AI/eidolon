@@ -9,6 +9,7 @@ import type { Page } from '@playwright/test'
 import {
   buildAppEnv,
   launchDesktop,
+  launchPackagedDesktop,
   type MockBackendFixture,
   waitForAppReady,
   writeEnvFile,
@@ -714,6 +715,7 @@ function python(code: string, home: string, args: string[] = []) {
 
 export async function setupNativeSubscription(
   options: {
+    packaged?: boolean
     legacy?: boolean
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
@@ -830,7 +832,13 @@ export async function setupNativeSubscription(
 
     delete env.EIDOLON_HOME
     launchAttempted = true
-    launch = await launchDesktop(env, 'subscription-native-network.cjs')
+    // The packaged lane explicitly uses this checkout's guarded Python runtime.
+    // It never exercises first-install bootstrap or an installed user profile.
+    if (options.packaged) { env.HERMES_DESKTOP_PYTHON = switchPython }
+
+    launch = options.packaged
+      ? await launchPackagedDesktop(env)
+      : await launchDesktop(env, 'subscription-native-network.cjs')
     lifecycle = createSubscriptionLifecycle(launch.app.process(), {
       python: switchPython,
       script: path.join(import.meta.dirname, 'subscription-native-lifecycle.py'),

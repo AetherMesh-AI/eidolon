@@ -666,6 +666,127 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # Packaged-shell acceptance is separate from the stock-Electron native lane.
+  # The Python runtime is an explicitly pinned checkout, not an installed user runtime.
+  packaged-macos:
+    name: Organization packaged Eidolon journey (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: source
+    env:
+      EIDOLON_PACKAGED_PROOF_SHA: ${{ github.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      NOUS_API_KEY: ''
+      ANTHROPIC_API_KEY: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact source and native host before packaging
+        run: |
+          set -euo pipefail
+          mkdir -p ../packaged-macos-proof
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/sandbox-exec
+          test "$(git rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git rev-parse HEAD 'HEAD^{tree}' > ../packaged-macos-proof/source.txt
+          { sw_vers; uname -a; } > ../packaged-macos-proof/host.txt
+          # This lane never consumes signing or notarization credentials.
+          for name in CSC_LINK CSC_KEY_PASSWORD CSC_NAME APPLE_NOTARY_PROFILE APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            test -z "${!name:-}" || { echo "Unexpected signing configuration: $name" >&2; exit 1; }
+          done
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked source dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          npm ci
+          printf 'HERMES_PYTHON=%s/.venv/bin/python\n' "$PWD" >> "$GITHUB_ENV"
+      - name: Verify packaged resolver, negative controls and desktop types
+        working-directory: source/apps/desktop
+        run: |
+          set -euo pipefail
+          node --test scripts/check-packaged-macos-proof.test.cjs 2>&1 | tee ../../../packaged-macos-proof/gate-tests.log
+          npx vitest run --project electron e2e/packaged-binary.unit.test.ts 2>&1 | tee ../../../packaged-macos-proof/resolver-tests.log
+          npm run typecheck 2>&1 | tee ../../../packaged-macos-proof/typecheck.log
+      - name: Build the actual Eidolon app without publishing
+        working-directory: source/apps/desktop
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+          # Existing supported command and signing behavior. No release or signing overrides.
+          npm run pack 2>&1 | tee ../../../packaged-macos-proof/pack.log
+          node --input-type=module <<'JS'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { createHash } from 'node:crypto'
+          import { execFileSync } from 'node:child_process'
+          const root = fs.realpathSync('../..')
+          const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+          const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const expected = { commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), root,
+            electron: pkg.build.electronVersion, arch: process.arch,
+            mainSha256: hash('dist/electron-main.mjs'), rendererSha256: hash('dist/index.html') }
+          fs.writeFileSync('../../../packaged-macos-proof/expected.json', JSON.stringify(expected, null, 2) + '\n')
+          JS
+      - name: Require real packaged startup and synthetic subscription journey
+        timeout-minutes: 8
+        working-directory: source/apps/desktop
+        env:
+          EIDOLON_TEST_PACKAGED_APP: '1'
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: |
+          set -euo pipefail
+          npx playwright test e2e/subscription-native-journey.spec.ts --grep 'host-native subscription setup fresh profile consents, chooses policy, reviews Improve, generates and explicitly creates$' --workers=1 --retries=0 --global-timeout=420000 2>&1 | tee ../../../packaged-macos-proof/playwright.log
+      - name: Require exact packaged, native ABI, backend and teardown receipts
+        if: ${{ always() && !cancelled() }}
+        run: |
+          set -euo pipefail
+          node apps/desktop/scripts/check-packaged-macos-proof.cjs apps/desktop/playwright-report/results.json ../packaged-macos-proof/expected.json ../packaged-macos-proof/accepted.json
+      - name: Verify source integrity after packaged acceptance
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EIDOLON_PACKAGED_PROOF_SHA"
+          git rev-parse HEAD 'HEAD^{tree}' > ../packaged-macos-proof/final-source.txt
+          cmp ../packaged-macos-proof/source.txt ../packaged-macos-proof/final-source.txt
+          test "$(git write-tree)" = "$(git rev-parse 'HEAD^{tree}')"
+          git diff --exit-code
+          git diff --cached --exit-code
+          git status --short > ../packaged-macos-proof/worktree-status.txt
+      - name: Retain packaged acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packaged-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            packaged-macos-proof/
+            source/apps/desktop/test-results/
+            source/apps/desktop/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
+
   desktop-native-suite:
     name: Organization native scenarios (Linux) - ${{ matrix.suite }}
     runs-on: ubuntu-22.04
@@ -882,18 +1003,19 @@ jobs:
   desktop:
     # Preserve the existing required check name and fail it if any native gate fails or is cancelled.
     name: Organization desktop and native smoke (Linux)
-    needs: [desktop-native, directory-acceptance, owner-policy-acceptance, subscription-native-macos]
+    needs: [desktop-native, directory-acceptance, owner-policy-acceptance, subscription-native-macos, packaged-macos]
     if: always()
     runs-on: ubuntu-22.04
     timeout-minutes: 2
     steps:
-      - name: Require standard, directory, owner policy and subscription native acceptance
+      - name: Require standard, directory, owner policy, native and packaged subscription acceptance
         env:
           STANDARD_RESULT: ${{ needs.desktop-native.result }}
           DIRECTORY_RESULT: ${{ needs.directory-acceptance.result }}
           OWNER_POLICY_RESULT: ${{ needs.owner-policy-acceptance.result }}
           SUBSCRIPTION_RESULT: ${{ needs.subscription-native-macos.result }}
-        run: test "$STANDARD_RESULT" = success && test "$DIRECTORY_RESULT" = success && test "$OWNER_POLICY_RESULT" = success && test "$SUBSCRIPTION_RESULT" = success
+          PACKAGED_RESULT: ${{ needs.packaged-macos.result }}
+        run: test "$STANDARD_RESULT" = success && test "$DIRECTORY_RESULT" = success && test "$OWNER_POLICY_RESULT" = success && test "$SUBSCRIPTION_RESULT" = success && test "$PACKAGED_RESULT" = success
 
   workspace-gallery:
     name: Workspace gallery (${{ matrix.group }}, Linux)

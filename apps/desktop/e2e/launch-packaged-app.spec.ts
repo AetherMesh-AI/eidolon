@@ -9,12 +9,14 @@ import {
 import { expectVisualSnapshot } from './visual-snapshot'
 
 /**
- * E2E smoke tests for the packaged Hermes desktop app.
+ * E2E smoke tests for the packaged Eidolon desktop app.
  *
  * Launches the real packaged Electron binary (produced by `npm run pack` →
  * `electron-builder --dir`) with BOOT_FAKE=1 and full sandbox isolation
  * (credential stripping, isolated HERMES_HOME + userData, unique app name).
  *
+ * Optional fake-boot visual smoke only; this is not packaged runtime acceptance.
+ * The mandatory packaged macOS lane runs the real subscription journey instead.
  * Skips if the packaged binary doesn't exist — run `npm run pack` first.
  */
 
@@ -34,9 +36,9 @@ test.afterAll(async () => {
   fixture = null
 })
 
-test('window opens with the Hermes title', async () => {
+test('window opens with the Eidolon title', async () => {
   const title = await fixture!.page.title()
-  expect(title).toContain('Hermes')
+  expect(title).toContain('Eidolon')
 })
 
 test('renderer loads and shows DOM content', async () => {

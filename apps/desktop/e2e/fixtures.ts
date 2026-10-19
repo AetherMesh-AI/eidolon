@@ -30,6 +30,7 @@ import { resolveElectronBinary } from './electron-binary'
 import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer, type MockServerOptions } from './mock-server'
 import { mockProviderConfig } from './mock-provider-config'
+import { packagedBinaryPath, requirePackagedBinary } from './packaged-binary'
 import { installErrorBannerGuard } from './test'
 
 const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
@@ -504,24 +505,53 @@ providers:
  * Resolve the packaged Electron binary path, per-platform, matching
  * electron-builder's output layout under release/.
  */
-function resolvePackagedBinaryPath(): string {
-  if (process.platform === 'win32') {
-    return path.join(RELEASE_ROOT, 'win-unpacked', 'Hermes.exe')
-  }
-
-  if (process.platform === 'darwin') {
-    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-
-    return path.join(RELEASE_ROOT, `mac-${arch}`, 'Hermes.app', 'Contents', 'MacOS', 'Hermes')
-  }
-
-  return path.join(RELEASE_ROOT, 'linux-unpacked', 'hermes')
-}
-
-export const PACKAGED_BINARY_PATH = resolvePackagedBinaryPath()
+export const PACKAGED_BINARY_PATH = packagedBinaryPath(RELEASE_ROOT)
 
 export function packagedBinaryExists(): boolean {
   return fs.existsSync(PACKAGED_BINARY_PATH)
+}
+
+/** Real packaged shell with the explicit exact-checkout Python fixture backend.
+ * No source app argument, fake boot, dev server, or stock-Electron fallback.
+ * The subscription fixture owns shutdown and sandbox cleanup on every path.
+ */
+export async function launchPackagedDesktop(env: Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
+  if (process.platform !== 'darwin') {
+    throw new Error('Packaged subscription acceptance requires native macOS')
+  }
+
+  const binary = requirePackagedBinary(RELEASE_ROOT)
+
+  for (const key of ['HERMES_DESKTOP_BOOT_FAKE', 'HERMES_DESKTOP_BOOT_FAKE_ERROR', 'HERMES_DESKTOP_DEV_SERVER', 'ELECTRON_RUN_AS_NODE']) {
+    if (env[key]) {
+      throw new Error(`Packaged acceptance refuses ${key}`)
+    }
+  }
+
+  if (env.HERMES_DESKTOP_HERMES_ROOT !== REPO_ROOT || !env.HOME || env.HOME === process.env.HOME ||
+      !env.HERMES_HOME || !env.HERMES_DESKTOP_USER_DATA_DIR || !env.EIDOLON_FRESH_TEAM_GUARD_DIR) {
+    throw new Error('Packaged acceptance requires its isolated synthetic backend fixture')
+  }
+
+  const app = await _electron.launch({
+    executablePath: binary,
+    args: [
+      '-r', path.join(DESKTOP_ROOT, 'e2e', 'isolated-update-check.cjs'),
+      '-r', path.join(DESKTOP_ROOT, 'e2e', 'subscription-native-network.cjs'),
+    ],
+    env,
+    cwd: env.HOME,
+  })
+
+  try {
+    const page = await app.firstWindow()
+    installErrorBannerGuard(page)
+
+    return { app, page }
+  } catch (error) {
+    await app.close()
+    throw error
+  }
 }
 
 export interface PackagedAppFixture {

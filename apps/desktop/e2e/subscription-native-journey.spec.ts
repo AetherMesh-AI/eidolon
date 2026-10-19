@@ -4,6 +4,7 @@ import path from 'node:path'
 /** Native owner UI → production registered gateway → synthetic Responses → explicit Create. */
 import type { Locator } from '@playwright/test'
 
+import { packagedMacosProof } from './packaged-macos-proof'
 import {
   setupNativeSubscription,
   subscriptionAck,
@@ -155,8 +156,17 @@ test.describe('host-native subscription setup', () => {
     test(`${legacy ? 'legacy-empty' : 'fresh'} profile consents, chooses policy, reviews Improve, generates and explicitly creates`, async () => {
       fixture = await setupNativeSubscription({
         legacy,
+        packaged: process.env.EIDOLON_TEST_PACKAGED_APP === '1',
         availabilityProbe: legacy ? 'scheduler_writer_once' : 'ancestor_final_path_once'
       })
+
+      if (process.env.EIDOLON_TEST_PACKAGED_APP === '1') {
+        await test.info().attach('packaged-macos-proof', {
+          contentType: 'application/json',
+          body: JSON.stringify(await packagedMacosProof(fixture.app, fixture.page, fixture.sandbox))
+        })
+      }
+
       const dialog = await openSetup(legacy)
       const before = await activate(dialog, legacy)
       await completeInference(
