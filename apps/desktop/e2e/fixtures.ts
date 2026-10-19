@@ -99,8 +99,8 @@ export interface Sandbox {
   cleanup: () => void
 }
 
-export function createSandbox(prefix: string): Sandbox {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), `hermes-e2e-${prefix}-${Math.random()}`))
+export function createSandbox(prefix: string, parentDirectory = os.tmpdir()): Sandbox {
+  const root = fs.mkdtempSync(path.join(parentDirectory, `hermes-e2e-${prefix}-${Math.random()}`))
   const hermesHome = path.join(root, 'hermes-home')
   const userDataDir = path.join(root, 'electron-user-data')
 

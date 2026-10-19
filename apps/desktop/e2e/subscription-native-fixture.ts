@@ -8,7 +8,6 @@ import type { Page } from '@playwright/test'
 
 import {
   buildAppEnv,
-  createSandbox,
   launchDesktop,
   type MockBackendFixture,
   waitForAppReady,
@@ -18,6 +17,7 @@ import {
 import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer } from './mock-server'
 import { switchPython } from './organization-switch-fixture'
+import { createSubscriptionSandbox } from './subscription-native-sandbox'
 import { expect } from './test'
 
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -720,7 +720,7 @@ export async function setupNativeSubscription(
       'ancestor_churn_once' | 'ancestor_final_path_once' | 'scheduler_writer_once' | 'scheduler_cleanup_once'
   } = {}
 ) {
-  const sandbox = createSandbox('subscription-native')
+  const sandbox = createSubscriptionSandbox(root)
   // The production protected-store rejects symlink ancestors, including /var on macOS.
   sandbox.root = realpathSync(sandbox.root)
   sandbox.hermesHome = realpathSync(sandbox.hermesHome)
