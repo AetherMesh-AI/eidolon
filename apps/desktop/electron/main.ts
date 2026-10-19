@@ -3556,13 +3556,15 @@ const desktopParentStartMarker = createParentStartMarkerResolver({
   }
 })
 
-async function claimBackendChild(child, command, profile, nonce, outputTail: BackendOutputTail | null = null) {
+async function claimBackendChild(child, command, profile, nonce, outputTail: BackendOutputTail | null = null,
+  assertCurrent = () => backendShutdown.assertCanStart()) {
   // Probe/claim policy lives in backend-claim.ts (#93608): a marker probe
   // that fails against a LIVE child degrades to PID-only identity — matching
   // createParentStartMarkerResolver — instead of killing a healthy backend
   // over a flaky Get-Process (PS 5.1 cold starts, #87169). Only a child that
   // actually died keeps the fail-closed throw, now carrying its stderr tail.
   const probe = await probeStartMarker(child.pid)
+  assertCurrent()
   const decision = claimDecision(child.exitCode === null && !child.killed, probe)
 
   if (decision.action === 'fail') {
@@ -3586,6 +3588,13 @@ async function claimBackendChild(child, command, profile, nonce, outputTail: Bac
   }
 
   try {
+    const parentStartMarker = await desktopParentStartMarker()
+    assertCurrent()
+
+    if (child.exitCode !== null || child.signalCode !== null || child.killed) {
+      throw new Error('Eidolon backend exited or was cancelled before its identity could be recorded.')
+    }
+
     const identity = await backendOwnership.claim({
       command,
       nonce,
@@ -3596,15 +3605,25 @@ async function claimBackendChild(child, command, profile, nonce, outputTail: Bac
       // backend (parent gone) from one owned by a live instance — a live
       // parent's backend is never reaped (#87295).
       parentPid: process.pid,
-      parentStartMarker: await desktopParentStartMarker()
+      parentStartMarker
     })
 
     child.hermesBackendIdentity = identity
+    assertCurrent()
+
+    if (child.exitCode !== null || child.signalCode !== null || child.killed) {
+      throw new Error('Eidolon backend exited or was cancelled while its identity was recorded.')
+    }
 
     return identity
   } catch (error) {
     stopBackendChild(child)
     await waitForBackendExit(child)
+
+    if (child.exitCode !== null || child.signalCode !== null) {
+      releaseBackendChild(child)
+    }
+
     throw new Error(
       `Could not persist ownership for the Eidolon backend: ${error.message}${outputTail?.describe() ?? ''}`
     )
@@ -11344,6 +11363,7 @@ function profileRouteOptions(profile, request?) {
 // resolveProfileBackendRoute(). An empty / unknown profile resolves to the
 // primary, so legacy callers are unchanged.
 async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnPriority } = {}) {
+  backendShutdown.assertCanStart()
   const key = profile && String(profile).trim() ? String(profile).trim() : primaryProfileKey()
   const spawnPriority = spawnPriorityFrom(opts.spawnPriority)
 
@@ -11353,6 +11373,7 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
 
   if (route.backend === 'primary') {
     const connection = await startHermes()
+    backendShutdown.assertCanStart()
     assertOAuthDescriptorAuthority(connection)
 
     // Shared-member lookups can reuse this same cached descriptor. Do not let
@@ -11393,6 +11414,7 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
     await stopping
   }
 
+  backendShutdown.assertCanStart()
   const existing = backendPool.get(key)
 
   if (existing) {
@@ -11403,6 +11425,7 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
     }
 
     const connection = await existing.connectionPromise
+    assertPoolEntryStillOwned(key, existing)
     setWslBridgeProfileState(key, connection.mode !== 'remote')
 
     return connection
@@ -11436,6 +11459,7 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
   startPoolIdleReaper()
 
   const connection = await entry.connectionPromise
+  assertPoolEntryStillOwned(key, entry)
   setWslBridgeProfileState(key, connection.mode !== 'remote')
 
   return connection
@@ -11454,6 +11478,7 @@ async function ensureRegistryBackend(
   managedUpdateCorrelation = '',
   opts: { spawnPriority?: LocalBackendSpawnPriority } = {}
 ) {
+  backendShutdown.assertCanStart()
   const spawnPriority = spawnPriorityFrom(opts.spawnPriority)
   const registry = readDesktopConnectionsRegistry()
   const id = String(connectionId || '').trim() || registry.primary
@@ -11517,6 +11542,8 @@ async function ensureRegistryBackend(
     source
   })
 
+  backendShutdown.assertCanStart()
+
   if (primary) {
     return {
       ...primary,
@@ -11533,6 +11560,7 @@ async function ensureRegistryBackend(
   // are not interchangeable.
   if (id === registry.primary && source.kind !== 'local' && source.kind !== 'ssh') {
     const primaryDescriptor = await ensureBackend(profile)
+    backendShutdown.assertCanStart()
 
     if (registrySourceOwnsPrimaryBackend(registry, id, primaryDescriptor)) {
       return {
@@ -11571,6 +11599,7 @@ async function ensureRegistryBackend(
       await stoppingLocal
     }
 
+    backendShutdown.assertCanStart()
     const existingLocal = backendPool.get(localRoute.poolKey)
 
     if (existingLocal) {
@@ -11580,7 +11609,10 @@ async function ensureRegistryBackend(
         promotePoolEntry(existingLocal)
       }
 
-      return existingLocal.connectionPromise
+      const connection = await existingLocal.connectionPromise
+      assertPoolEntryStillOwned(localRoute.poolKey, existingLocal)
+
+      return connection
     }
 
     evictLruPoolBackends(poolMaxBackends() - 1)
@@ -11612,7 +11644,10 @@ async function ensureRegistryBackend(
     backendPool.set(localRoute.poolKey, localEntry)
     startPoolIdleReaper()
 
-    return localEntry.connectionPromise
+    const connection = await localEntry.connectionPromise
+    assertPoolEntryStillOwned(localRoute.poolKey, localEntry)
+
+    return connection
   }
 
   const key = backendScopeKey(id, profile)
@@ -11626,7 +11661,7 @@ async function ensureRegistryBackend(
     // Validate the exact cached descriptor at dispatch time; background
     // revalidation is renderer-driven and may never run while the Bots pane is
     // closed. Concurrent clicks share one retire/reconnect sequence.
-    return registryDispatchRevalidation.run(connectionPromise, () =>
+    const connection = await registryDispatchRevalidation.run(connectionPromise, () =>
       ensureHealthyPooledRemoteBackendForDispatch({
         connectionPromise,
         currentConnectionPromise: () => backendPool.get(key)?.connectionPromise || null,
@@ -11651,6 +11686,10 @@ async function ensureRegistryBackend(
         }
       })
     )
+
+    backendShutdown.assertCanStart()
+
+    return connection
   }
 
   evictLruPoolBackends(poolMaxBackends() - 1)
@@ -11682,7 +11721,10 @@ async function ensureRegistryBackend(
   backendPool.set(key, entry)
   startPoolIdleReaper()
 
-  return entry.connectionPromise
+  const connection = await entry.connectionPromise
+  assertPoolEntryStillOwned(key, entry)
+
+  return connection
 }
 
 // Dial a non-local registry connection for one profile. Never spawns a local
@@ -11698,6 +11740,7 @@ async function connectRegistryBackend(
   managedUpdateCorrelation = '',
   tokenPersistenceSource = ''
 ) {
+  backendShutdown.assertCanStart()
   const profileKey = String(profile ?? '').trim() || 'default'
 
   if (source.kind === 'ssh') {
@@ -11725,6 +11768,7 @@ async function connectRegistryBackend(
       }
     )
 
+    assertPoolEntryStillOwned(key, poolEntry)
     poolEntry.remoteBaseUrl = connection.baseUrl
 
     return {
@@ -11757,6 +11801,7 @@ async function connectRegistryBackend(
   )
 
   await waitForHermes(connection.baseUrl, connection.token, undefined, connection.authMode, connection.headers)
+  assertPoolEntryStillOwned(key, poolEntry)
   poolEntry.remoteBaseUrl = connection.baseUrl
 
   return {
@@ -12358,9 +12403,16 @@ function releaseLocalBackendSlot(entry: any) {
 }
 
 function assertPoolEntryStillOwned(poolKey: string, entry: any) {
+  backendShutdown.assertCanStart()
+
   if (backendPool.get(poolKey) !== entry) {
-    releaseLocalBackendSlot(entry)
-    throw new Error(`Profile backend start for "${poolKey}" was cancelled before spawn.`)
+    // A queued/acquired reservation can settle after its entry was evicted.
+    // Once a child exists, only its exit/teardown may release that capacity.
+    if (!entry.process) {
+      releaseLocalBackendSlot(entry)
+    }
+
+    throw new Error(`Profile backend start for "${poolKey}" was cancelled.`)
   }
 }
 
@@ -12408,9 +12460,11 @@ function teardownFailedLocalBackend(poolKey: string, entry: any): Promise<void> 
 // is the backendPool key when it differs from the profile name (composite
 // registry scopes) so the exit/error cleanup evicts the right entry.
 async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; poolKey?: string } = {}) {
+  backendShutdown.assertCanStart()
   const poolKey = opts.poolKey || profile
 
   await reapOrphanedBackendsOnce()
+  assertPoolEntryStillOwned(poolKey, entry)
   profileDeletionGate.assertCanStart(profile)
 
   // A profile may point at its OWN remote backend (connection.json
@@ -12420,10 +12474,13 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
   // entry keeps `entry.process === null`, which stopPoolBackend/evict already
   // tolerate.
   const remote = opts.forceLocal ? null : await resolveRemoteBackend(profile, { poolKey })
+  assertPoolEntryStillOwned(poolKey, entry)
   profileDeletionGate.assertCanStart(profile)
 
   if (remote) {
     await waitForHermes(remote.baseUrl, remote.token, undefined, remote.authMode, remote.headers)
+
+    assertPoolEntryStillOwned(poolKey, entry)
 
     // Recorded on the entry so revalidation can probe this descriptor without
     // awaiting connectionPromise, which may still be pending for a sibling.
@@ -12522,7 +12579,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
   const parentIdentityEnv = parentWatchdogEnv(process.pid, parentStartMarker, backendNonce)
   assertPoolEntryStillOwned(poolKey, entry)
 
-  const child = spawn(
+  const child = backendShutdown.spawnChild(() => spawn(
     backend.command,
     backend.args,
     hiddenWindowsChildOptions({
@@ -12549,7 +12606,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
       shell: backend.shell,
       stdio: ['ignore', 'pipe', 'pipe']
     })
-  )
+  ))
 
   entry.process = child
   entry.token = token
@@ -12574,7 +12631,8 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
   // Mark handled so an early rejection (child dies during the claim) can't
   // surface as an unhandled rejection before the Promise.race below attaches.
   portAnnouncement.catch(() => {})
-  await claimBackendChild(child, `${backend.command} ${backend.args.join(' ')}`, profile, backendNonce, outputTail)
+  await claimBackendChild(child, `${backend.command} ${backend.args.join(' ')}`, profile, backendNonce, outputTail,
+    () => assertPoolEntryStillOwned(poolKey, entry))
   assertPoolEntryStillOwned(poolKey, entry)
 
   child.stdout.on('data', rememberLog)
@@ -12616,6 +12674,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
 
   // Discover the ephemeral port the child bound to
   const port = await Promise.race([portAnnouncement, startFailed])
+  assertPoolEntryStillOwned(poolKey, entry)
 
   if (readyFile) {
     fs.unlink(readyFile, () => {})
@@ -12625,6 +12684,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
 
   const baseUrl = `http://127.0.0.1:${port}`
   await Promise.race([waitForHermes(baseUrl, token), startFailed])
+  assertPoolEntryStillOwned(poolKey, entry)
   ready = true
 
   const authToken = await adoptServedDashboardToken(baseUrl, token, {
@@ -12633,12 +12693,14 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
     rememberLog
   })
 
+  assertPoolEntryStillOwned(poolKey, entry)
   entry.token = authToken
 
   // Verify the WebSocket session token before declaring backend ready.
   // HTTP /api/status can pass while WS auth fails (separate transport, separate guards).
   const wsUrl = `ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(authToken)}`
   const wsProbe = await probeGatewayWebSocket(wsUrl, { WebSocketImpl: globalThis.WebSocket })
+  assertPoolEntryStillOwned(poolKey, entry)
 
   if (!wsProbe.ok) {
     throw new Error(
@@ -12683,14 +12745,19 @@ async function teardownPoolBackendAndWait(profile) {
 
 async function stopAllPoolBackends() {
   const entries = [...backendPool.values()]
+  // Cancel queued slot admission immediately; acquired slots remain held until
+  // their owned child has completed the existing bounded teardown.
+  entries.forEach(entry => entry.localBackendSpawnRequest?.cancel())
   await poolStopper.stopAll()
   entries.forEach(releaseLocalBackendSlot)
 }
 
-const backendShutdown = createBackendShutdownCoordinator(async () => {
+const backendShutdown = createBackendShutdownCoordinator<ReturnType<typeof spawn>>(async children => {
   const primary = backendConnectionState.invalidate()
-
-  stopBackendChild(primary)
+  // Connection caches can already be invalidated or evicted while a child is
+  // still exiting. Direct handles, enrolled before claim, remain authoritative.
+  const owned = new Set([...children, ...(primary ? [primary] : [])])
+  owned.forEach(stopBackendChild)
   const pooledStops = stopAllPoolBackends()
 
   if (poolIdleReaper) {
@@ -12698,7 +12765,7 @@ const backendShutdown = createBackendShutdownCoordinator(async () => {
     poolIdleReaper = null
   }
 
-  await Promise.all([waitForBackendExit(primary), pooledStops])
+  await Promise.all([...owned].map(child => waitForBackendExit(child)).concat(pooledStops))
 })
 
 async function exitAfterBackendShutdown(code) {
@@ -12759,6 +12826,8 @@ async function prepareProfileRenameRequest(request) {
 }
 
 async function startHermes() {
+  backendShutdown.assertCanStart()
+
   // Only the single-instance lock holder may reap/spawn/claim the desktop
   // backend. A lock-losing instance must stay inert even if some path reaches
   // here (e.g. the deferred-quit window before `ready`): its reapOrphans()
@@ -12769,6 +12838,7 @@ async function startHermes() {
   }
 
   await reapOrphanedBackendsOnce()
+  backendShutdown.assertCanStart()
 
   // Latched-failure short-circuit: once bootstrap has failed in this
   // process, every subsequent startHermes() call re-throws the same error
@@ -12804,7 +12874,14 @@ async function startHermes() {
   const existingConnectionPromise = backendConnectionState.getPromise()
 
   if (existingConnectionPromise) {
-    return existingConnectionPromise
+    const connection = await existingConnectionPromise
+    backendShutdown.assertCanStart()
+
+    if (backendConnectionState.getPromise() !== existingConnectionPromise) {
+      throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
+    }
+
+    return connection
   }
 
   // Seed active-profile.json from legacy signals BEFORE the first
@@ -12820,6 +12897,16 @@ async function startHermes() {
   const primaryProfile = launch.profile
   const connectionAttempt = backendConnectionState.startAttempt(primaryProfile)
 
+  const assertCurrent = () => {
+    backendShutdown.assertCanStart()
+
+    if (!backendConnectionState.isCurrentAttempt(connectionAttempt)) {
+      throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
+    }
+  }
+
+  let startedProcess: ReturnType<typeof spawn> | null = null
+
   // Legacy path callers without an explicit profile belong to the primary
   // window backend. Profile-scoped callers still pass their key directly.
   setActiveGatewayProfile(primaryProfile)
@@ -12831,21 +12918,14 @@ async function startHermes() {
 
   const connectionPromise = (async () => {
     const connectRemote = async remote => {
-      // resolveRemote() may take arbitrarily long (settings resolve / ws-ticket
-      // mint). If a newer attempt started meanwhile (e.g. the user switched
-      // remotes and Apply invalidated this attempt), bail before probing.
-      if (!backendConnectionState.isCurrentAttempt(connectionAttempt)) {
-        throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
-      }
+      // Resolve, health and readiness may finish after a re-home or final quit.
+      assertCurrent()
 
       await advanceBootProgress('backend.remote', `Connecting to remote Eidolon backend at ${remote.baseUrl}`, 24)
+      assertCurrent()
       await waitForHermes(remote.baseUrl, remote.token, undefined, remote.authMode, remote.headers)
 
-      // Second async boundary: the health probe itself can outlive the
-      // attempt. A late success here must not publish a stale descriptor.
-      if (!backendConnectionState.isCurrentAttempt(connectionAttempt)) {
-        throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
-      }
+      assertCurrent()
 
       updateBootProgress({
         phase: 'backend.ready',
@@ -12859,6 +12939,7 @@ async function startHermes() {
     }
 
     await advanceBootProgress('backend.resolve', 'Resolving Eidolon backend', 8)
+    assertCurrent()
     // Resolve for the desktop's primary profile so a per-profile remote
     // override on the active profile is honored (falls back to env / global).
 
@@ -12870,6 +12951,7 @@ async function startHermes() {
     // ~/.local/bin-installed CLIs. Single-flight with the whenReady warmup;
     // failure-hardened — a broken shell profile never blocks boot.
     const loginShellPath = await ensureLoginShellPath()
+    assertCurrent()
 
     if (loginShellPath.applied) {
       rememberLog('[env] merged login-shell PATH into process.env for backend spawn')
@@ -12884,13 +12966,20 @@ async function startHermes() {
 
     const setup = await runPrimaryBackendStartup({
       connectRemote,
-      ensureLocalRuntime: ensureRuntime,
+      ensureLocalRuntime: backend => {
+        assertCurrent()
+
+        return ensureRuntime(backend)
+      },
       prepareLocalBackend: async () => {
+        assertCurrent()
         await advanceBootProgress('backend.runtime', 'Resolving Eidolon runtime', 28)
+        assertCurrent()
 
         return resolveHermesBackend(backendArgs)
       },
       resolveRemote: () => {
+        assertCurrent()
         // Classify immediately before each throwing resolve. This callback runs
         // both for an already-saved remote and after first-run remote Apply.
         attemptedRemote = managedPrimaryRestoreOwners.size > 0 || primaryBackendIsRemote()
@@ -12902,6 +12991,8 @@ async function startHermes() {
       // return before this waiter; local starts park until the updater exits.
       waitForLocalStart: waitForUpdateToFinish
     })
+
+    assertCurrent()
 
     if (setup.kind === 'remote') {
       // Paths from the remote backend belong to a host the Windows desktop
@@ -12924,6 +13015,7 @@ async function startHermes() {
     const readyFile = backend.readyFile ? makeDashboardReadyFile() : null
 
     await advanceBootProgress('backend.spawn', `Starting Eidolon backend via ${backend.label}`, 84)
+    assertCurrent()
     rememberLog(`Starting Eidolon backend via ${backend.label}`)
 
     const profile = primaryProfile
@@ -12931,7 +13023,9 @@ async function startHermes() {
     const backendNonce = crypto.randomBytes(16).toString('hex')
     const parentIdentityEnv = parentWatchdogEnv(process.pid, parentStartMarker, backendNonce)
 
-    const hermesProcess = spawn(
+    assertCurrent()
+
+    const hermesProcess = backendShutdown.spawnChild(() => spawn(
       backend.command,
       backend.args,
       hiddenWindowsChildOptions({
@@ -12963,7 +13057,9 @@ async function startHermes() {
         shell: backend.shell,
         stdio: ['ignore', 'pipe', 'pipe']
       })
-    )
+    ))
+
+    startedProcess = hermesProcess
 
     // Buffer stdout+stderr from the instant of spawn (#93608): an early
     // crash's traceback must survive into the claim error and the
@@ -12994,8 +13090,10 @@ async function startHermes() {
       `${backend.command} ${backend.args.join(' ')}`,
       profile,
       backendNonce,
-      primaryOutputTail
+      primaryOutputTail,
+      assertCurrent
     )
+    assertCurrent()
     const processOwner = backendConnectionState.attachProcess(connectionAttempt, hermesProcess)
 
     if (!processOwner) {
@@ -13076,6 +13174,7 @@ async function startHermes() {
 
     // Discover the ephemeral port the child bound to
     const port = await Promise.race([portAnnouncement, backendStartFailed])
+    assertCurrent()
 
     if (readyFile) {
       fs.unlink(readyFile, () => {})
@@ -13083,7 +13182,9 @@ async function startHermes() {
 
     const baseUrl = `http://127.0.0.1:${port}`
     await advanceBootProgress('backend.wait', 'Waiting for Eidolon backend to become ready', 90)
+    assertCurrent()
     await Promise.race([waitForHermes(baseUrl, token), backendStartFailed])
+    assertCurrent()
     backendReady = true
     backendStartFailure = null
 
@@ -13092,9 +13193,12 @@ async function startHermes() {
       rememberLog
     })
 
+    assertCurrent()
+
     // Verify the WebSocket session token before declaring backend ready.
     const wsUrl = `ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(authToken)}`
     const wsProbe = await probeGatewayWebSocket(wsUrl, { WebSocketImpl: globalThis.WebSocket })
+    assertCurrent()
 
     if (!wsProbe.ok) {
       throw new Error(
@@ -13133,13 +13237,22 @@ async function startHermes() {
       ...getWindowState()
     }
   })().catch(async error => {
-    if (!backendConnectionState.clearPromiseForAttempt(connectionAttempt)) {
-      throw error
-    }
-
-    const failedProcess = backendConnectionState.invalidate()
+    const current = backendConnectionState.clearPromiseForAttempt(connectionAttempt)
+    const failedProcess = current ? backendConnectionState.invalidate() || startedProcess : startedProcess
+    const failureAttempt = backendConnectionState.startAttempt()
     stopBackendChild(failedProcess)
     await waitForBackendExit(failedProcess)
+
+    if (failedProcess && (failedProcess.exitCode !== null || failedProcess.signalCode !== null)) {
+      releaseBackendChild(failedProcess)
+    }
+
+    // Cleanup belongs to this attempt even after invalidation. Error UI and
+    // failure latches do not: a newer attempt or final shutdown owns those.
+    if (!current || backendShutdown.hasStarted() || !backendConnectionState.isCurrentAttempt(failureAttempt)
+      || backendConnectionState.getPromise()) {
+      throw error
+    }
 
     if (error instanceof FirstRunSetupResetError) {
       throw error
@@ -13212,7 +13325,10 @@ async function startHermes() {
 
   backendConnectionState.setPromise(connectionAttempt, connectionPromise)
 
-  return connectionPromise
+  const connection = await connectionPromise
+  assertCurrent()
+
+  return connection
 }
 
 // Shared navigation guards + window chrome wiring applied to every window

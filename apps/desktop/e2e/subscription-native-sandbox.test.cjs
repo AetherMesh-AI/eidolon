@@ -358,3 +358,129 @@ test('one ENOTEMPTY refusal is retained with safe surviving categories and no re
   assert.equal(receipt.counts.home, 1)
   assert.equal(receipt.counts.userData, 1)
 })
+
+function failedCleanup(t, overrides = {}) {
+  const root = workspace(t)
+  let removals = 0
+  const error = Object.assign(new Error('private error text'), { code: 'ENOTEMPTY' })
+  const sandbox = harness({
+    ...overrides,
+    rmSync: () => {
+      removals++
+      throw error
+    }
+  }).createSubscriptionSandbox(root)
+  assert.throws(sandbox.cleanup, value => value === error)
+  assert.equal(removals, 1)
+  return sandbox
+}
+
+test('home identity is failure-only and successful receipt shape stays unchanged', posix, t => {
+  const sandbox = harness().createSubscriptionSandbox(workspace(t))
+  assert.equal(Object.hasOwn(sandbox.diagnostic(), 'homeIdentity'), false)
+  sandbox.cleanup()
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.diagnostic())), {
+    state: 'removed', truncated: false,
+    counts: { home: 0, userData: 0, userHome: 0, evidence: 0, observer: 0, other: 0 }
+  })
+})
+
+test('failed cleanup reports the same captured home without enumerating inside it', posix, t => {
+  const enumerated = []
+  const sandbox = failedCleanup(t, {
+    opendirSync: location => { enumerated.push(location); return fs.opendirSync(location) }
+  })
+  const receipt = sandbox.diagnostic()
+  assert.equal(receipt.homeIdentity, 'same')
+  assert.deepEqual(enumerated, [sandbox.root])
+  assert.equal(JSON.stringify(receipt).includes(sandbox.root), false)
+  assert.equal(JSON.stringify(receipt).includes('private error text'), false)
+})
+
+test('failure identity reports a valid recreated home without inspecting its contents', posix, t => {
+  const sandbox = failedCleanup(t)
+  fs.renameSync(sandbox.hermesHome, `${sandbox.hermesHome}-old`)
+  fs.mkdirSync(sandbox.hermesHome, { mode: 0o700 })
+  fs.writeFileSync(path.join(sandbox.hermesHome, 'private-secret-name'), 'private-secret-content')
+  const receipt = sandbox.diagnostic()
+  assert.equal(receipt.homeIdentity, 'recreated')
+  assert.equal(JSON.stringify(receipt).includes('private-secret'), false)
+})
+
+for (const mutation of ['symlink', 'file', 'mode', 'owner', 'group']) {
+  test(`failure identity refuses unsafe home ${mutation}`, posix, t => {
+    let changed = false
+    let selected
+    const sandbox = failedCleanup(t, {
+      lstatSync: location => {
+        const result = fs.lstatSync(location)
+        if (changed && location === selected && mutation === 'owner') result.uid++
+        if (changed && location === selected && mutation === 'group') result.gid++
+        return result
+      }
+    })
+    selected = sandbox.hermesHome
+    changed = true
+    if (mutation === 'mode') fs.chmodSync(selected, 0o500)
+    if (mutation === 'file' || mutation === 'symlink') {
+      fs.renameSync(selected, `${selected}-old`)
+      if (mutation === 'file') fs.writeFileSync(selected, '')
+      else fs.symlinkSync(`${selected}-old`, selected)
+    }
+    assert.equal(sandbox.diagnostic().homeIdentity, 'unsafe')
+  })
+}
+
+test('failure identity distinguishes missing home', posix, t => {
+  const sandbox = failedCleanup(t)
+  fs.rmdirSync(sandbox.hermesHome)
+  assert.equal(sandbox.diagnostic().homeIdentity, 'missing')
+})
+
+test('failure identity discards differing repeated observations', posix, t => {
+  let selected, reads = 0
+  const sandbox = failedCleanup(t, {
+    lstatSync: location => {
+      const result = fs.lstatSync(location)
+      if (location === selected) result.ino += ++reads
+      return result
+    }
+  })
+  selected = sandbox.hermesHome
+  assert.equal(sandbox.diagnostic().homeIdentity, 'inspection_failed')
+  assert.equal(reads, 2)
+})
+
+test('failure identity refuses replaced root before reading home', posix, t => {
+  let selected, reads = 0
+  const sandbox = failedCleanup(t, {
+    lstatSync: location => {
+      if (location === selected) reads++
+      return fs.lstatSync(location)
+    }
+  })
+  selected = sandbox.hermesHome
+  fs.renameSync(sandbox.root, `${sandbox.root}-old`)
+  fs.mkdirSync(sandbox.root, { mode: 0o700 })
+  const receipt = sandbox.diagnostic()
+  assert.equal(receipt.state, 'identity_unverified')
+  assert.equal(receipt.homeIdentity, 'inspection_failed')
+  assert.equal(reads, 0)
+})
+
+test('failure identity suppresses error text and never invokes a code getter', posix, t => {
+  let selected, accesses = 0
+  const error = new Error('private failure detail')
+  Object.defineProperty(error, 'code', { get: () => { accesses++; return 'ENOENT' } })
+  const sandbox = failedCleanup(t, {
+    lstatSync: location => {
+      if (location === selected) throw error
+      return fs.lstatSync(location)
+    }
+  })
+  selected = sandbox.hermesHome
+  const receipt = sandbox.diagnostic()
+  assert.equal(receipt.homeIdentity, 'inspection_failed')
+  assert.equal(accesses, 0)
+  assert.equal(JSON.stringify(receipt).includes('private failure detail'), false)
+})

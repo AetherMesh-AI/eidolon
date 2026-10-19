@@ -30,9 +30,12 @@ function directory(location: string, uid: number, privateMode = false): number[]
   return identity(value)
 }
 
+type HomeIdentity = 'same' | 'recreated' | 'unsafe' | 'missing' | 'inspection_failed'
+
 export interface RemainingEntries {
   state: 'observed' | 'removed' | 'identity_unverified' | 'inspection_failed'
   truncated: boolean
+  homeIdentity?: HomeIdentity
   counts: { home: number; userData: number; userHome: number; evidence: number; observer: number; other: number }
 }
 export interface SubscriptionSandbox extends Sandbox {
@@ -81,8 +84,11 @@ export function createSubscriptionSandbox(workspace: string): SubscriptionSandbo
   }
 
   chmodSync(sandbox.hermesHome, 0o700)
+  const ownedHome = sandbox.hermesHome
+  const homeIdentity = directory(ownedHome, uid, true)
 
   let closed = false
+  let cleanupFailed = false
 
   const verify = () => {
     if (
@@ -91,6 +97,49 @@ export function createSubscriptionSandbox(workspace: string): SubscriptionSandbo
       !sameIdentity(directory(ownedRoot, uid, true), rootIdentity)
     ) {
       throw new Error('subscription_sandbox_identity_changed')
+    }
+  }
+
+  const remainingHomeIdentity = (): HomeIdentity => {
+    const observe = (): { kind: HomeIdentity; identity?: number[] } => {
+      try {
+        const current = lstatSync(ownedHome)
+
+        if (
+          !current.isDirectory() ||
+          current.isSymbolicLink() ||
+          current.mode !== homeIdentity[2] ||
+          current.uid !== homeIdentity[3] ||
+          current.gid !== homeIdentity[4]
+        ) {
+          return { kind: 'unsafe', identity: identity(current) }
+        }
+
+        return {
+          kind: sameIdentity(identity(current), homeIdentity) ? 'same' : 'recreated',
+          identity: identity(current)
+        }
+      } catch (error) {
+        const code = error instanceof Error ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined
+
+        return { kind: code === 'ENOENT' ? 'missing' : 'inspection_failed' }
+      }
+    }
+
+    try {
+      verify()
+      const first = observe()
+      verify()
+      const second = observe()
+      verify()
+
+      return first.kind === second.kind &&
+        ((!first.identity && !second.identity) ||
+          (first.identity && second.identity && sameIdentity(first.identity, second.identity)))
+        ? first.kind
+        : 'inspection_failed'
+    } catch {
+      return 'inspection_failed'
     }
   }
 
@@ -107,6 +156,10 @@ export function createSubscriptionSandbox(workspace: string): SubscriptionSandbo
 
       if (closed) {
         return result
+      }
+
+      if (cleanupFailed) {
+        result.homeIdentity = remainingHomeIdentity()
       }
 
       try {
@@ -161,9 +214,14 @@ export function createSubscriptionSandbox(workspace: string): SubscriptionSandbo
 
       // Refuse observed substitution. Node's recursive removal does not follow
       // child symlinks; this is not an atomic compare-and-remove guarantee.
-      verify()
-      rmSync(ownedRoot, { recursive: true })
-      closed = true
+      try {
+        verify()
+        rmSync(ownedRoot, { recursive: true })
+        closed = true
+      } catch (error) {
+        cleanupFailed = true
+        throw error
+      }
     }
   }
 }
