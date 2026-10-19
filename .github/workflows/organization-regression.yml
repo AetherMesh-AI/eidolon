@@ -91,11 +91,27 @@ jobs:
             tests/gateway/test_delivery*.py tests/gateway/test_dead_targets.py \
             tests/gateway/test_session*.py tests/gateway/test_restart*.py tests/gateway/test_shutdown*.py -j 4
 
-      - name: Verify updater process isolation and first-upgrade selector
+      - name: Verify updater process isolation
         run: |
           scripts/run_tests.sh -j 2 tests/test_update_gateway_install_isolation.py tests/test_update_gateway_signal_identity.py tests/test_update_gateway_coexistence_live.py tests/test_update_gateway_service_authority.py
-          git fetch --no-tags --depth=1 origin c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
-          git show c00c29cf4e071e5844eeda20b2719bcfd31aa2c3:eidolon_cli/update_cmd_fleet.py > "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
+      # Keep legacy proof input outside the tested checkout's mutable Git state.
+      # This sparse checkout supplies one module as data, never the Python runtime.
+      - name: Check out immutable first-upgrade selector fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: AetherMesh-AI/eidolon
+          ref: c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
+          path: .ci-fixtures/pre-isolation
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: eidolon_cli/update_cmd_fleet.py
+          sparse-checkout-cone-mode: false
+      - name: Verify first-upgrade selector with current runtime
+        run: |
+          fixture="$GITHUB_WORKSPACE/.ci-fixtures/pre-isolation"
+          test -d "$fixture/.git"
+          test "$(git -C "$fixture" rev-parse HEAD)" = c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
+          git -C "$fixture" show HEAD:eidolon_cli/update_cmd_fleet.py > "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
           test "$(git hash-object "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py")" = a6eeb39fe0641bfc1849b75fda5a6053fb3115c8
           HERMES_HOME="$(mktemp -d)" PYTHONPATH="$PWD" .venv/bin/python scripts/ci/prove_gateway_legacy_selector.py "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
 
@@ -280,12 +296,30 @@ jobs:
           fi
           scripts/run_tests.sh "${native_tests[@]}" -j 3 "${file_budget_args[@]}" -- "${diagnostic_args[@]}"
 
-      - name: Verify native updater process isolation and first-upgrade selector
+      - name: Verify native updater process isolation
         if: matrix.os == 'macos-latest'
         run: |
           scripts/run_tests.sh -j 2 tests/test_update_gateway_install_isolation.py tests/test_update_gateway_signal_identity.py tests/test_update_gateway_coexistence_live.py tests/test_update_gateway_service_authority.py
-          git fetch --no-tags --depth=1 origin c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
-          git show c00c29cf4e071e5844eeda20b2719bcfd31aa2c3:eidolon_cli/update_cmd_fleet.py > "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
+      # Keep legacy proof input outside the tested checkout's mutable Git state.
+      # This sparse checkout supplies one module as data, never the Python runtime.
+      - name: Check out immutable first-upgrade selector fixture
+        if: matrix.os == 'macos-latest'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: AetherMesh-AI/eidolon
+          ref: c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
+          path: .ci-fixtures/pre-isolation
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: eidolon_cli/update_cmd_fleet.py
+          sparse-checkout-cone-mode: false
+      - name: Verify first-upgrade selector with current runtime
+        if: matrix.os == 'macos-latest'
+        run: |
+          fixture="$GITHUB_WORKSPACE/.ci-fixtures/pre-isolation"
+          test -d "$fixture/.git"
+          test "$(git -C "$fixture" rev-parse HEAD)" = c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
+          git -C "$fixture" show HEAD:eidolon_cli/update_cmd_fleet.py > "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
           test "$(git hash-object "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py")" = a6eeb39fe0641bfc1849b75fda5a6053fb3115c8
           HERMES_HOME="$(mktemp -d)" PYTHONPATH="$PWD" .venv/bin/python scripts/ci/prove_gateway_legacy_selector.py "$RUNNER_TEMP/eidolon-pre-isolation-fleet.py"
 
