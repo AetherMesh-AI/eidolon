@@ -139,12 +139,23 @@ def test_registered_rpc_uses_adapter_dispatch_and_rejects_client_authority(monke
     fake_server.dispatch = lambda *args: pytest.fail('called generic RPC dispatch recursively')
     methods.register(fake_server)
     monkeypatch.setattr(methods, '_context', lambda *args, **kwargs: object())
-    monkeypatch.setattr(methods, '_service', lambda *args: SimpleNamespace(status=lambda: {'stage': 'idle'}))
+    migrations = []
+    def begin(revision, *, confirm_host_identity_change=False):
+        migrations.append((revision, confirm_host_identity_change))
+        return {'stage': 'pending'}
+    monkeypatch.setattr(methods, '_service', lambda *args: SimpleNamespace(
+        status=lambda: {'stage': 'idle'}, begin=begin))
     token = bind_transport(Transport())
     try:
         handler = fake_server._methods['organization.setupSubscriptionStatus']
         assert handler(1, params())['result'] == {'stage': 'idle'}
         assert handler(2, params(accessToken='forbidden'))['error']['code'] == 5077
+        migrate = fake_server._methods['organization.beginSetupSubscriptionHostMigration']
+        assert migrate(3, params(expectedRevision=7, confirmed=True, consentVersion=2))['result'] == {
+            'stage': 'pending'}
+        assert migrations == [(7, True)]
+        assert migrate(4, params(expectedRevision=7, confirmed=True, consentVersion=1))['error']['code'] == 5077
+        assert migrations == [(7, True)]
     finally:
         reset_transport(token)
 
@@ -352,6 +363,7 @@ def test_concurrent_source_turnover_retires_only_captured_service(tmp_path, monk
     ('status', {}, False), ('cancel', {'attemptId': 'attempt'}, False),
     ('prepareOperation', {'kind': 'revoke', 'expectedRevision': 1, 'confirmed': True}, False),
     ('begin', {'expectedRevision': 0, 'confirmed': True, 'consentVersion': 1}, True),
+    ('beginMigration', {'expectedRevision': 0, 'confirmed': True, 'consentVersion': 2}, True),
 ])
 def test_authentication_requires_fresh_but_local_lifecycle_does_not(monkeypatch, operation, extra, requires_fresh):
     seen = []
@@ -590,3 +602,69 @@ def test_historical_completion_cannot_request_catalog_even_if_service_mislabels(
     with pytest.raises(methods.BoundaryError):
         methods.dispatch('reconcileOperation', params(sourceRevision='d' * 64,
             ticket=ticket()), Transport(), object())
+
+
+
+@pytest.mark.parametrize('change', [
+    {'confirmed': False}, {'confirmed': 1}, {'expectedRevision': True},
+    {'expectedRevision': -1}, {'consentVersion': True}, {'consentVersion': 1},
+    {'confirm_host_identity_change': True}, {'canMigrateHostIdentity': True},
+    {'hostIdentityState': 'current'}, {'returningBinding': {}},
+])
+def test_host_migration_requires_distinct_consent_without_caller_authority(change):
+    value = params(expectedRevision=7, confirmed=True, consentVersion=2)
+    value.update(change)
+    with pytest.raises(methods.BoundaryError):
+        methods._parameters('beginMigration', value)
+
+
+def test_host_migration_dispatch_requires_fresh_owner_and_exact_revision(monkeypatch):
+    calls = []
+    original_context = methods._context
+    def context(*args, require_fresh):
+        assert require_fresh is True
+        return object()
+    def begin(revision, *, confirm_host_identity_change=False):
+        calls.append((revision, confirm_host_identity_change))
+        if revision != 7:
+            raise RuntimeError('revision_conflict')
+        return {'stage': 'pending'}
+    monkeypatch.setattr(methods, '_context', context)
+    monkeypatch.setattr(methods, '_service', lambda *args: SimpleNamespace(begin=begin))
+    assert methods.dispatch('beginMigration', params(expectedRevision=7, confirmed=True, consentVersion=2),
+                            Transport(), object()) == {'stage': 'pending'}
+    assert calls == [(7, True)]
+    with pytest.raises(RuntimeError, match='revision_conflict'):
+        methods.dispatch('beginMigration', params(expectedRevision=6, confirmed=True, consentVersion=2),
+                         Transport(), object())
+    assert calls == [(7, True), (6, True)]
+    calls.clear()
+    monkeypatch.setattr(methods, '_context', original_context)
+    monkeypatch.setattr(credentials, 'owner_home', lambda *args: None)
+    with pytest.raises(methods.BoundaryError):
+        methods.dispatch('beginMigration', params(expectedRevision=7, confirmed=True, consentVersion=2),
+                         Transport(), object())
+    assert calls == []
+
+
+def test_host_migration_dispatch_uses_worker_with_captured_owner_transport(monkeypatch):
+    from tui_gateway import server
+    from tui_gateway.transport import current_transport
+    submitted, writes, calls = [], [], []
+    transport = SimpleNamespace(write=writes.append, closed=False)
+
+    def begin(revision, *, confirm_host_identity_change):
+        assert current_transport() is transport
+        calls.append((revision, confirm_host_identity_change))
+        return {'stage': 'pending'}
+
+    monkeypatch.setattr(server, '_pool', SimpleNamespace(submit=submitted.append))
+    monkeypatch.setattr(methods, '_context', lambda *args, **kwargs: object())
+    monkeypatch.setattr(methods, '_service', lambda *args: SimpleNamespace(begin=begin))
+    request = {'id': 1, 'method': 'organization.beginSetupSubscriptionHostMigration',
+               'params': params(expectedRevision=7, confirmed=True, consentVersion=2)}
+    assert server.dispatch(request, transport) is None
+    assert len(submitted) == 1 and calls == [] and writes == []
+    submitted[0]()
+    assert calls == [(7, True)]
+    assert writes == [{'jsonrpc': '2.0', 'id': 1, 'result': {'stage': 'pending'}}]

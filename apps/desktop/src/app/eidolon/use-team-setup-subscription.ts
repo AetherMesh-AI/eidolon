@@ -43,6 +43,14 @@ export function useTeamSetupSubscription({
   const [model, setModel] = useState('')
   const [draft, setDraft] = useState(initialDraft)
   const [consent, setConsent] = useState(false)
+
+  const [hostMigrationConsent, setHostMigrationConsent] = useState<{
+    client: TeamOnboardingClient
+    organizationId: string
+    sourceRevision: string
+    connectionRevision: number
+  } | null>(null)
+
   const [acknowledged, setAcknowledged] = useState(false)
   const [preview, setPreview] = useState<SubscriptionPreview | null>(null)
   const [pending, setPending] = useState(false)
@@ -68,6 +76,8 @@ export function useTeamSetupSubscription({
   const current = (serial: number) => alive.current && action.current === serial && client.current()
 
   const act = async (run: (serial: number) => Promise<void>) => {
+    setHostMigrationConsent(null)
+
     if (busy.current || !client.current()) {
       return
     }
@@ -220,6 +230,12 @@ export function useTeamSetupSubscription({
     model,
     draft,
     consent,
+    hostMigrationConsent:
+      hostMigrationConsent !== null &&
+      hostMigrationConsent.client === client &&
+      hostMigrationConsent.organizationId === setup.organizationId &&
+      hostMigrationConsent.sourceRevision === setup.sourceRevision &&
+      hostMigrationConsent.connectionRevision === status?.connectionRevision,
     acknowledged,
     preview: applicablePreview,
     pending,
@@ -231,6 +247,17 @@ export function useTeamSetupSubscription({
     canReview:
       !!candidate() && !!policy && policy.sourceRevision === setup.sourceRevision && policy.state === 'available',
     setConsent,
+    setHostMigrationConsent: (confirmed: boolean) =>
+      setHostMigrationConsent(
+        confirmed && status?.canMigrateHostIdentity && setup.organizationId && setup.sourceRevision
+          ? {
+              client,
+              organizationId: setup.organizationId,
+              sourceRevision: setup.sourceRevision,
+              connectionRevision: status.connectionRevision
+            }
+          : null
+      ),
     setAcknowledged,
     change: (field: keyof SubscriptionDraft, value: string) => {
       setDraft(previous => ({ ...previous, [field]: value }))
@@ -256,7 +283,7 @@ export function useTeamSetupSubscription({
       }),
     begin: () =>
       void act(async serial => {
-        if (!consent || !status) {
+        if (!consent || !status || !['new', 'current'].includes(status.hostIdentityState ?? '')) {
           return
         }
 
@@ -267,6 +294,40 @@ export function useTeamSetupSubscription({
           setConsent(false)
         }
 
+        await read(serial)
+      }),
+    beginHostMigration: () =>
+      void act(async serial => {
+        if (
+          !hostMigrationConsent ||
+          !status ||
+          hostMigrationConsent.client !== client ||
+          hostMigrationConsent.organizationId !== setup.organizationId ||
+          hostMigrationConsent.sourceRevision !== setup.sourceRevision ||
+          hostMigrationConsent.connectionRevision !== status?.connectionRevision ||
+          status.hostIdentityState !== 'migration_required' ||
+          !status.canMigrateHostIdentity ||
+          setup.setupSubscriptionState !== 'available'
+        ) {
+          return
+        }
+
+        // Consent is bound to this exact view, not a later connection or setup.
+        // Check again without silently authorizing a newer revision.
+        const { next, connection } = await read(serial, false)
+
+        if (
+          next.sourceRevision !== hostMigrationConsent.sourceRevision ||
+          connection.connectionRevision !== hostMigrationConsent.connectionRevision ||
+          connection.hostIdentityState !== 'migration_required' ||
+          !connection.canMigrateHostIdentity ||
+          next.setupSubscriptionState !== 'available'
+        ) {
+          throw new Error('stale')
+        }
+
+        invalidate()
+        await client.beginSubscriptionHostMigration(next, connection.connectionRevision)
         await read(serial)
       }),
     cancel: () =>

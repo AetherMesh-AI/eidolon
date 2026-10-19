@@ -325,6 +325,7 @@ async function observeSubscriptionRpc(page: Page) {
       'createTeam',
       'setupSubscriptionStatus',
       'beginSetupSubscription',
+      'beginSetupSubscriptionHostMigration',
       'cancelSetupSubscription',
       'setupSubscriptionModels',
       'setupSubscriptionPolicy',
@@ -402,12 +403,13 @@ async function observeSubscriptionRpc(page: Page) {
     Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum
 
   const rpc: Row[] = []
-  const pending = new Map<string, { row: Row; organization?: string; source?: string; field: string }>()
+  const pending = new Map<string, { row: Row; organization?: string; source?: string; revision?: number; field: string }>()
   let dropped = 0
   let malformed = 0
   let closed = false
   type CompletionWaiter = {
     method: string
+    sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string }
     key?: string
     socket?: string
     completed: boolean
@@ -438,8 +440,31 @@ async function observeSubscriptionRpc(page: Page) {
 
   const complete = (key: string, row: Row) => {
     if (completionWaiter?.key === key && !completionWaiter.completed && !completionWaiter.cancelled) {
-      completionWaiter.completed = true
-      completionWaiter.resolve(structuredClone(row))
+      const waiter = completionWaiter
+
+      if (waiter.sequence) {
+        if (row.phase !== 'result') {
+          cancel(waiter, new Error('subscription_setup_rpc_refused'))
+
+          return
+        }
+
+        waiter.sequence.rows.push(structuredClone(row))
+
+        if (waiter.sequence.rows.length < waiter.sequence.methods.length) {
+          waiter.method = waiter.sequence.methods[waiter.sequence.rows.length]
+          waiter.key = undefined
+          clearTimeout(waiter.timer)
+          // Each next reply must arrive within the existing renderer read
+          // deadline, including the gap before its send. Never resend a request.
+          waiter.timer = setTimeout(() => cancel(waiter, new Error('subscription_operation_timeout')), 15_000)
+
+          return
+        }
+      }
+
+      waiter.completed = true
+      waiter.resolve(waiter.sequence ? { steps: structuredClone(waiter.sequence.rows) } : structuredClone(row))
     }
   }
 
@@ -502,12 +527,31 @@ async function observeSubscriptionRpc(page: Page) {
           row,
           organization: digest(params.expectedOrganizationId),
           source: digest(params.sourceRevision),
+          revision: Number.isSafeInteger(params.expectedRevision) && Number(params.expectedRevision) >= 0 ? Number(params.expectedRevision) : undefined,
           field: choice(params.field, ['jobs', 'goals'])
         })
 
-        if (completionWaiter?.method === frame.method && completionWaiter.key === undefined && !alreadyPending) {
+        if (
+          completionWaiter?.sequence &&
+          !completionWaiter.completed &&
+          (completionWaiter.method !== frame.method ||
+            completionWaiter.key !== undefined ||
+            alreadyPending ||
+            completionWaiter.sequence.seen.has(key) ||
+            (completionWaiter.socket !== undefined && completionWaiter.socket !== event.requestId))
+        ) {
+          rejectCorrelation()
+        }
+
+        if (
+          completionWaiter?.method === frame.method &&
+          completionWaiter.key === undefined &&
+          !alreadyPending &&
+          !completionWaiter.cancelled
+        ) {
           completionWaiter.key = key
           completionWaiter.socket = event.requestId
+          completionWaiter.sequence?.seen.add(key)
         }
 
         if (pending.size > 128) {
@@ -556,6 +600,20 @@ async function observeSubscriptionRpc(page: Page) {
       const allowance = object(result.generationAllowance)
       const remaining = object(allowance.remainingByOperation)
       const usage = object(allowance.setupUsage)
+      const readiness = object(result.readiness)
+      const operation = object(result.operation)
+      const sequence = completionWaiter?.key === key ? completionWaiter.sequence : undefined
+      const configuration = object(result.configuration)
+
+      if (sequence && expected.row.method === 'organization.teamSetup' && sequence.source === undefined) {
+        sequence.source = digest(result.sourceRevision)
+      }
+
+      if (sequence && expected.row.method === 'organization.setupSubscriptionPolicy') {
+        sequence.policyEpoch = digest(configuration.authorizationEpoch)
+        sequence.policyConnection = digest(configuration.connectionId)
+      }
+
       Object.assign(expected.row, {
         phase: 'result',
         shape: {
@@ -564,6 +622,8 @@ async function observeSubscriptionRpc(page: Page) {
           organizationMatches:
             expected.organization === undefined ? null : digest(result.organizationId) === expected.organization,
           sourceMatches: expected.source === undefined ? null : digest(result.sourceRevision) === expected.source,
+          sourceMatchesAction: sequence?.source === undefined ? null : digest(result.sourceRevision) === sequence.source,
+          connectionRevisionMatchesRequest: expected.revision === undefined ? null : result.connectionRevision === expected.revision,
           field: choice(result.field, ['jobs', 'goals']),
           fieldMatches: result.field === expected.field,
           suggestion: type(result.suggestion),
@@ -575,6 +635,55 @@ async function observeSubscriptionRpc(page: Page) {
             result.assumptions.every(value => validText(value, 300)),
           state: choice(result.state, ['available', 'blocked', 'configured', 'unconfigured', 'unsupported', 'created']),
           connectionState: choice(result.connectionState, ['absent', 'active', 'refreshing', 'disconnected']),
+          hostIdentityState: choice(result.hostIdentityState, [
+            'new',
+            'current',
+            'migration_required',
+            'recovery_required'
+          ]),
+          canMigrateHostIdentity:
+            typeof result.canMigrateHostIdentity === 'boolean' ? result.canMigrateHostIdentity : null,
+          cleanupPending: typeof result.cleanupPending === 'boolean' ? result.cleanupPending : null,
+          canCancel: typeof result.canCancel === 'boolean' ? result.canCancel : null,
+          connectionRevisionValid:
+            Number.isSafeInteger(result.connectionRevision) && Number(result.connectionRevision) >= 0,
+          operationState: choice(operation.state, [
+            'none',
+            'prepared',
+            'admitted',
+            'uncertain',
+            'completed',
+            'local_retired',
+            'recovery_required'
+          ]),
+          operationRevisionMatchesConnection:
+            Number.isSafeInteger(operation.revision) && operation.revision === result.connectionRevision,
+          readinessStatus: choice(readiness.status, ['unchecked', 'blocked']),
+          readinessBlockers: Array.isArray(readiness.blockers)
+            ? readiness.blockers
+                .slice(0, 16)
+                .map(value =>
+                  choice(value, [
+                    'source_conflict',
+                    'subscription_policy_required',
+                    'subscription_policy_unavailable',
+                    'setup_budget_exhausted_or_blocked',
+                    'subscription_models_required',
+                    'subscription_connection_required',
+                    'connection_binding_changed',
+                    'unavailable'
+                  ])
+                )
+            : null,
+          modelAvailability: choice(readiness.modelAvailability, ['unchecked', 'cached']),
+          catalogEpochMatchesPolicy:
+            expected.row.method === 'organization.setupSubscriptionModels' && sequence?.policyEpoch
+              ? digest(result.authorizationEpoch) === sequence.policyEpoch
+              : null,
+          catalogConnectionMatchesPolicy:
+            expected.row.method === 'organization.setupSubscriptionModels' && sequence?.policyConnection
+              ? digest(result.connectionId) === sequence.policyConnection
+              : null,
           allowance: type(result.generationAllowance),
           allowanceStatus: choice(allowance.status, ['available', 'exhausted', 'running', 'uncertain', 'blocked']),
           policyVersionThree: allowance.policyVersion === 3,
@@ -617,56 +726,90 @@ async function observeSubscriptionRpc(page: Page) {
   session.on('Network.webSocketFrameReceived', event => receive('received', event))
   await session.send('Network.enable')
 
+  const performObserved = async (method: string, action: () => Promise<unknown>, sequence?: string[]): Promise<Row> => {
+    if (
+      closed ||
+      completionWaiter ||
+      (sequence ? pending.size !== 0 : !['organization.improveTeamInput', 'organization.generateTeam'].includes(method))
+    ) {
+      throw new Error('subscription_operation_wait_unavailable')
+    }
+
+    let waiter!: CompletionWaiter
+    let rejectCancellation!: (error: Error) => void
+
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      rejectCancellation = reject
+    })
+
+    const completion = new Promise<Row>((resolve, reject) => {
+      waiter = {
+        method,
+        sequence: sequence ? { methods: sequence, rows: [], seen: new Set() } : undefined,
+        completed: false,
+        cancelled: false,
+        resolve,
+        reject,
+        cancel: rejectCancellation,
+        // Use readTeamScope's existing deadline: 15s for setup reads,
+        // 180s for inference including its preflight/accounting envelope.
+        timer: setTimeout(
+          () => cancel(waiter, new Error('subscription_operation_timeout')),
+          sequence ? 15_000 : 180_000
+        )
+      }
+      completionWaiter = waiter
+    })
+
+    // A timeout/cleanup may occur while the single click is still settling.
+    void completion.catch(() => undefined)
+    void cancellation.catch(() => undefined)
+
+    try {
+      const [, completed] = await Promise.race([Promise.all([action(), completion]), cancellation])
+
+      return completed
+    } finally {
+      cancel(waiter, new Error('subscription_operation_cancelled'))
+
+      if (completionWaiter === waiter) {
+        completionWaiter = undefined
+      }
+    }
+  }
+
   return {
-    performOperation: async (
+    performOperation: (
       method: 'organization.improveTeamInput' | 'organization.generateTeam',
       action: () => Promise<unknown>
-    ): Promise<Row> => {
-      if (
-        closed ||
-        completionWaiter ||
-        !['organization.improveTeamInput', 'organization.generateTeam'].includes(method)
-      ) {
-        throw new Error('subscription_operation_wait_unavailable')
+    ) => performObserved(method, action),
+    performSetupAction: (kind: 'models' | 'disconnect', action: () => Promise<unknown>) => {
+      // Only these two existing owner actions are observed. No synthetic read,
+      // authorization, retry, policy apply or inference is added by this barrier.
+      const paths = {
+        models: [
+          'teamSetup',
+          'setupSubscriptionStatus',
+          'setupSubscriptionPolicy',
+          'setupSubscriptionModels',
+          'teamSetup'
+        ],
+        disconnect: [
+          'prepareSetupSubscriptionOperation',
+          'executeSetupSubscriptionOperation',
+          'teamSetup',
+          'setupSubscriptionStatus',
+          'setupSubscriptionPolicy'
+        ]
       }
 
-      let waiter!: CompletionWaiter
-      let rejectCancellation!: (error: Error) => void
-
-      const cancellation = new Promise<never>((_resolve, reject) => {
-        rejectCancellation = reject
-      })
-
-      const completion = new Promise<Row>((resolve, reject) => {
-        waiter = {
-          method,
-          completed: false,
-          cancelled: false,
-          resolve,
-          reject,
-          cancel: rejectCancellation,
-          // Match readTeamScope's existing renderer deadline; the 120s policy is
-          // inside this RPC's preflight/accounting envelope. No request retry.
-          timer: setTimeout(() => cancel(waiter, new Error('subscription_operation_timeout')), 180_000)
-        }
-        completionWaiter = waiter
-      })
-
-      // A timeout/cleanup may occur while the single click is still settling.
-      void completion.catch(() => undefined)
-      void cancellation.catch(() => undefined)
-
-      try {
-        const [, completed] = await Promise.race([Promise.all([action(), completion]), cancellation])
-
-        return completed
-      } finally {
-        cancel(waiter, new Error('subscription_operation_cancelled'))
-
-        if (completionWaiter === waiter) {
-          completionWaiter = undefined
-        }
+      if (!Object.hasOwn(paths, kind)) {
+        return Promise.reject(new Error('subscription_operation_wait_unavailable'))
       }
+
+      const sequence = paths[kind].map(name => 'organization.' + name)
+
+      return performObserved(sequence[0], action, sequence)
     },
     read: () => ({
       enabled: true,
@@ -715,6 +858,7 @@ function python(code: string, home: string, args: string[] = []) {
 export async function setupNativeSubscription(
   options: {
     legacy?: boolean
+    hostMigration?: 'cancel_once'
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
     availabilityProbe?:
@@ -759,6 +903,36 @@ export async function setupNativeSubscription(
         sandbox.hermesHome
       )
     )
+
+  const migrationEvidence = () => {
+    if (options.hostMigration !== 'cancel_once') {
+      throw new Error('subscription_migration_evidence_unavailable')
+    }
+
+    const value: unknown = JSON.parse(
+      python(
+        'import json,sys; from tests.eidolon_cli.subscription_native_fixture import migration_evidence; print(json.dumps(migration_evidence(sys.argv[1])))',
+        sandbox.hermesHome
+      )
+    )
+
+    const fields = [
+      'legacySeeded', 'sameInstallation', 'sameBinding', 'sameOwner', 'sameAccount', 'sameClient',
+      'changedEpoch', 'provenanceCommitted', 'retainedGenerationRows', 'priorTicketEvidenceRetained',
+      'priorGrantLocallyRetired'
+    ] as const
+
+    const evidence = value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {}
+
+    if (
+      evidence.version !== 1 || Object.keys(evidence).length !== fields.length + 1 ||
+      fields.some(field => typeof evidence[field] !== 'boolean')
+    ) {
+      throw new Error('subscription_migration_evidence_invalid')
+    }
+
+    return { version: 1, ...Object.fromEntries(fields.map(field => [field, evidence[field]])) }
+  }
 
   const cleanupDiagnostic = () => ({
     version: 1,
@@ -817,7 +991,7 @@ export async function setupNativeSubscription(
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -876,6 +1050,8 @@ export async function setupNativeSubscription(
       cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
+      performSetupAction: (kind: 'models' | 'disconnect', action: () => Promise<unknown>) =>
+        rpcObserver!.performSetupAction(kind, action),
       diagnostic: () => {
         const rows = events()
         const windows = records('browser-windows')
@@ -938,6 +1114,7 @@ export async function setupNativeSubscription(
       },
       events,
       snapshot,
+      migrationEvidence,
       assertQuiet,
       installed: () =>
         readdirSync(evidence)

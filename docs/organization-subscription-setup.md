@@ -56,9 +56,21 @@ Setup's **Refresh authorization**, available only for active connections, uses a
 
 Reconnect through Home requires existing fresh-setup eligibility, explicit consent, an absent/disconnected store, and required cleanup; it is unavailable after Create or work begins. Returning consent must match the prior client/account. Its new authorization epoch requires model reload and reviewed policy rebinding. Refresh preserves the epoch while rotating token revision.
 
+## Provider host identity and legacy reconnect
+
+New installations persist a canonical `urn:uuid:<UUIDv4>` provider host identifier before authorization and reuse it unchanged across sign-ins, following OpenAI's [host-ID contract](https://developers.openai.com/siwc/token-sharing-open-source). The local installation UUID and existing profile, organization, owner, client/account bindings, history, and debt are not rewritten. This change does not rewrite or disconnect existing active legacy grants. A bare UUID and its URI are not assumed to be equivalent provider identities.
+
+For an eligible absent/disconnected legacy connection, explicitly acknowledge the identity-change disclosure and choose **Update identity and reconnect**. This changes the provider-visible identity for this profile's connection; other profiles are unchanged. Eidolon retains the validated issued client and requires fresh browser consent with `prompt=consent`, without account/login hints. OpenAI documents this [renewed-consent mechanism](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery#chatgpt-plan-use-isnt-enabled); ordinary [returning sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) can skip consent and is not the migration path. Callback, nonce, account/client and scope checks still apply.
+
+Unfinished authorization, publication, credential operations (including admitted/uncertain revocation) or cleanup block migration, even if local status is disconnected. Use the offered cancellation or recovery action first. Reconciliation reads exact saved evidence; it cannot confirm an unknown remote outcome or resend a request. Prior remote authorization may remain. Cancelling or restarting does not activate migration or silently resume consent, and a saved candidate host ID alone is not consent proof. Unverifiable host metadata blocks new consent while independently verified connection controls and records remain available.
+
+Successful migration creates a fresh authorization epoch and requires model reload and explicit policy review. Historical charges are not refilled, and retained running/uncertain inference still blocks policy changes and new sends. Migration does not expand the local-Mac, starter-team-only scope or establish live provider acceptance.
+
 ## Verification contract
 
 The [native UI journey](../apps/desktop/e2e/subscription-native-journey.spec.ts) must cover fresh/legacy-empty consent, policy, Improve apply/discard, Generate, Create, post-Create Settings disconnect, and uncertain-result blocking. Native recovery gates must exercise real SQLite pre-dispatch writer contention and macOS ACL-descriptor identity refusal, retained-context unsent Check and explicit Retry, exact authorization-publication recovery, and preserved history/debt. Backend/component gates must also cover renderer-restart Find→Check and delayed-worker fencing. The [gateway journey](../tests/tui_gateway/test_subscription_native_journey.py) covers integration and network-denial guards.
+
+Host-migration coverage must include explicit disclosure/confirmation, forced-consent request shape, cancellation and editor reopen, retained history/debt, and fresh policy review. Genuine macOS seed tests must cover both confirmed synthetic revocation permitting migration and unsupported revocation remaining blocked after reconciliation. Required native cases and teardown receipts must all pass; portable controls and test discovery alone are insufficient.
 
 Require real macOS Electron and production owner/auth/store/catalog/policy/admission/sender code, with synthetic consent, TLS provider edges, and vault primitive. Production filesystem/ACL checks remain; nonlocal network paths are denied. This does not prove real Keychain grants or billable inference.
 

@@ -28,6 +28,8 @@ async function harness() {
     delays = [],
     handlers = {},
     commands = []
+  const deadlines = new Map()
+  let now = 0
   let timerId = 0,
     detached = 0
   const observe = vm.runInNewContext(compiled, {
@@ -36,10 +38,14 @@ async function harness() {
     setTimeout: (callback, delay) => {
       const id = ++timerId
       timers.set(id, callback)
+      deadlines.set(id, now + delay)
       delays.push(delay)
       return id
     },
-    clearTimeout: id => timers.delete(id)
+    clearTimeout: id => {
+      timers.delete(id)
+      deadlines.delete(id)
+    }
   })
   const session = {
     on: (name, callback) => {
@@ -77,6 +83,12 @@ async function harness() {
         requestId: 'synthetic-socket',
         response: { opcode: 1, payloadData: 'not-json' }
       }),
+    advance: duration => {
+      now += duration
+      for (const [id, deadline] of deadlines) {
+        if (deadline <= now && timers.has(id)) timers.get(id)()
+      }
+    },
     expire: () => {
       assert.equal(timers.size, 1)
       ;[...timers.values()][0]()
@@ -447,4 +459,296 @@ test('boundary sanitizer rejects unknown labels and retains row/count bounds', (
     assert.equal(rows[0].line, null)
     assert.ok(!JSON.stringify(rows).includes(secret))
   }
+})
+
+const setupPaths = {
+  models: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy', 'setupSubscriptionModels', 'teamSetup'],
+  disconnect: [
+    'prepareSetupSubscriptionOperation',
+    'executeSetupSubscriptionOperation',
+    'teamSetup',
+    'setupSubscriptionStatus',
+    'setupSubscriptionPolicy'
+  ]
+}
+const setupReply = name =>
+  name === 'setupSubscriptionPolicy'
+    ? { result: { configuration: { authorizationEpoch: secret, connectionId: secret } } }
+    : name === 'setupSubscriptionModels'
+      ? { result: { authorizationEpoch: secret, connectionId: secret, sourceRevision: secret } }
+      : { result: {} }
+
+for (const kind of Object.keys(setupPaths)) {
+  test(`${kind} waits for its exact final read past 5s without retrying or extending a 15s read deadline`, async () => {
+    const h = await harness()
+    let actions = 0,
+      settled = false
+    const observed = h.observer.performSetupAction(kind, async () => {
+      actions++
+      setupPaths[kind].forEach((name, index) => {
+        h.send(index + 1, 'organization.' + name)
+        if (index < 4) h.receive(index + 1, setupReply(name))
+      })
+    })
+    observed.then(() => {
+      settled = true
+    })
+    h.advance(6000)
+    h.receive(99)
+    h.receive(5, undefined, 'wrong-socket')
+    await flush()
+    assert.equal(settled, false)
+    assert.equal(h.observer.read().pending, 1)
+    h.receive(5)
+    const result = await observed
+    assert.equal(actions, 1)
+    assert.equal(result.steps.length, 5)
+    assert.deepEqual(
+      Array.from(result.steps, row => row.method),
+      setupPaths[kind].map(name => 'organization.' + name)
+    )
+    assert.ok(result.steps.every(row => row.phase === 'result'))
+    assert.deepEqual(h.delays, [15000, 15000, 15000, 15000, 15000])
+    assert.equal(h.timers.size, 0)
+    assert.ok(!JSON.stringify(result).includes(secret))
+    if (kind === 'models') {
+      assert.equal(result.steps[3].shape.catalogEpochMatchesPolicy, true)
+      assert.equal(result.steps[3].shape.catalogConnectionMatchesPolicy, true)
+    }
+    await h.observer.close()
+  })
+
+  test(`${kind} never-settled terminal read refuses at the production deadline`, async () => {
+    const h = await harness()
+    let actions = 0
+    const observed = h.observer.performSetupAction(kind, async () => {
+      actions++
+      setupPaths[kind].forEach((name, index) => {
+        h.send(index + 1, 'organization.' + name)
+        if (index < 4) h.receive(index + 1, setupReply(name))
+      })
+    })
+    h.advance(14999)
+    assert.equal(h.timers.size, 1)
+    h.advance(1)
+    await assert.rejects(observed, /subscription_operation_timeout/)
+    h.receive(5)
+    assert.equal(actions, 1)
+    assert.equal(h.timers.size, 0)
+    await h.observer.close()
+  })
+}
+
+for (const failure of [
+  'wrong-first',
+  'out-of-order',
+  'duplicate',
+  'same-method-new-id',
+  'reused-completed-id',
+  'cross-socket-next-step',
+  'rpc-error',
+  'malformed',
+  'close'
+]) {
+  test(`setup sequence refuses ${failure} without a second action or exported private data`, async () => {
+    const h = await harness()
+    let actions = 0
+    const observed = h.observer.performSetupAction('models', async () => {
+      actions++
+      h.send(1, failure === 'wrong-first' ? 'organization.setupSubscriptionStatus' : 'organization.teamSetup')
+      if (failure === 'out-of-order') {
+        h.receive(1)
+        h.send(2, 'organization.setupSubscriptionPolicy')
+      }
+      if (failure === 'duplicate') h.send(1, 'organization.teamSetup')
+      if (failure === 'same-method-new-id') h.send(2, 'organization.teamSetup')
+      if (failure === 'reused-completed-id') {
+        h.receive(1)
+        h.send(1, 'organization.setupSubscriptionStatus')
+        h.receive(1)
+      }
+      if (failure === 'cross-socket-next-step') {
+        h.receive(1)
+        h.send(2, 'organization.setupSubscriptionStatus', 'different-socket')
+        h.receive(2, undefined, 'different-socket')
+      }
+      if (failure === 'rpc-error')
+        h.receive(1, { error: { code: 5076, message: secret, data: { reason: 'unavailable', secret } } })
+      if (failure === 'malformed') h.malformed()
+    })
+    if (failure === 'close') await h.observer.close()
+    await assert.rejects(observed, /subscription_(operation_correlation_lost|setup_rpc_refused|operation_cancelled)/)
+    assert.equal(actions, 1)
+    assert.equal(h.timers.size, 0)
+    assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+    if (failure !== 'close') await h.observer.close()
+  })
+}
+
+test('setup action allowlist, old-pending and shared inference guard reject before invoking action', async () => {
+  const h = await harness()
+  let actions = 0
+  await assert.rejects(
+    h.observer.performSetupAction('begin', async () => {
+      actions++
+    }),
+    /wait_unavailable/
+  )
+  h.send(1, 'organization.teamSetup')
+  await assert.rejects(
+    h.observer.performSetupAction('models', async () => {
+      actions++
+    }),
+    /wait_unavailable/
+  )
+  h.receive(1)
+  const inference = h.observer.performOperation(method, async () => {
+    h.send(2)
+  })
+  await assert.rejects(
+    h.observer.performSetupAction('models', async () => {
+      actions++
+    }),
+    /wait_unavailable/
+  )
+  h.receive(2)
+  await inference
+  assert.equal(actions, 0)
+  await h.observer.close()
+})
+
+test('status/readiness evidence keeps refusals and equality results while redacting raw IDs and unknown labels', async () => {
+  const h = await harness()
+  let result
+  const observed = h.observer.performSetupAction('models', async () => {
+    for (const [index, name] of setupPaths.models.entries()) {
+      h.send(index + 1, 'organization.' + name)
+      if (name === 'setupSubscriptionStatus') {
+        h.receive(index + 1, {
+          result: {
+            hostIdentityState: 'migration_required',
+            canMigrateHostIdentity: false,
+            cleanupPending: true,
+            canCancel: true,
+            connectionRevision: 3,
+            operation: { state: 'uncertain', revision: 3, ticket: secret },
+            attemptId: secret,
+            authorizationEpoch: secret
+          }
+        })
+      } else if (name === 'setupSubscriptionModels') {
+        h.receive(index + 1, {
+          result: { authorizationEpoch: 'different-private-epoch', connectionId: 'different-private-binding' }
+        })
+      } else if (index === 4) {
+        h.receive(index + 1, {
+          result: {
+            readiness: {
+              status: 'blocked',
+              blockers: ['subscription_connection_required', secret],
+              modelAvailability: secret
+            }
+          }
+        })
+      } else h.receive(index + 1, setupReply(name))
+    }
+  })
+  result = await observed
+  assert.equal(result.steps[1].shape.canMigrateHostIdentity, false)
+  assert.equal(result.steps[1].shape.operationState, 'uncertain')
+  assert.equal(result.steps[1].shape.operationRevisionMatchesConnection, true)
+  assert.equal(result.steps[3].shape.catalogEpochMatchesPolicy, false)
+  assert.equal(result.steps[3].shape.catalogConnectionMatchesPolicy, false)
+  assert.equal(result.steps[4].shape.readinessStatus, 'blocked')
+  assert.deepEqual(Array.from(result.steps[4].shape.readinessBlockers), ['subscription_connection_required', 'other'])
+  assert.equal(result.steps[4].shape.modelAvailability, 'other')
+  for (const privateValue of [secret, 'different-private-epoch', 'different-private-binding']) {
+    assert.ok(!JSON.stringify(result).includes(privateValue))
+    assert.ok(!JSON.stringify(h.observer.read()).includes(privateValue))
+  }
+  h.send(10, 'organization.setupSubscriptionStatus')
+  h.receive(10, {
+    result: {
+      hostIdentityState: secret,
+      canMigrateHostIdentity: secret,
+      cleanupPending: secret,
+      operation: { state: secret },
+      readiness: { blockers: Array(40).fill(secret) }
+    }
+  })
+  const shape = h.observer.read().rpc.at(-1).shape
+  assert.equal(shape.hostIdentityState, 'other')
+  assert.equal(shape.canMigrateHostIdentity, null)
+  assert.equal(shape.cleanupPending, null)
+  assert.equal(shape.operationState, 'other')
+  assert.equal(shape.readinessBlockers.length, 16)
+  assert.ok(shape.readinessBlockers.every(value => value === 'other'))
+  assert.ok(!JSON.stringify(h.observer.read()).includes(secret))
+  await h.observer.close()
+})
+
+// Exercise the actual journey barrier's post-response assertions as well as
+// the transport waiter. A terminal response alone never proves readiness.
+const journey = readFileSync(path.join(__dirname, 'subscription-native-journey.spec.ts'), 'utf8')
+const journeyParsed = ts.createSourceFile('journey.ts', journey, ts.ScriptTarget.Latest, true)
+const modelHelpers = journeyParsed.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'completeModelLoad')
+assert.equal(modelHelpers.length, 1)
+const modelHelper = ts.transpileModule(`(${modelHelpers[0].getText(journeyParsed)})`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS }
+}).outputText
+const matchSubset = (value, subset) => {
+  for (const [key, expected] of Object.entries(subset)) {
+    if (expected && typeof expected === 'object' && !Array.isArray(expected)) matchSubset(value[key], expected)
+    else assert.equal(JSON.stringify(value[key]), JSON.stringify(expected))
+  }
+}
+for (const scenario of ['ready', 'stale-policy-review', 'epoch-mismatch', 'binding-mismatch', 'readiness-refused', 'source-mismatch', 'source-changed', 'revision-mismatch', 'rpc-error']) {
+  test(`journey model barrier retains ${scenario} readiness/refusal semantics`, async () => {
+    const rows = Array.from({ length: 5 }, () => ({ phase: 'result', shape: {} }))
+    rows[1].shape = { connectionState: 'active', cleanupPending: false }
+    rows[3].shape = { sourceMatches: true, connectionRevisionMatchesRequest: true, catalogEpochMatchesPolicy: true, catalogConnectionMatchesPolicy: true }
+    rows[4].shape = { state: 'available', organizationMatches: true, sourceMatchesAction: true, readinessStatus: 'unchecked', readinessBlockers: [], modelAvailability: 'cached' }
+    if (scenario === 'epoch-mismatch' || scenario === 'stale-policy-review') rows[3].shape.catalogEpochMatchesPolicy = false
+    if (scenario === 'binding-mismatch') rows[3].shape.catalogConnectionMatchesPolicy = false
+    if (scenario === 'readiness-refused' || scenario === 'stale-policy-review') rows[4].shape.readinessStatus = 'blocked'
+    if (scenario === 'stale-policy-review') { rows[4].shape.policyVersionThree = true; rows[4].shape.readinessBlockers = ['subscription_models_required'] }
+    if (scenario === 'source-mismatch') rows[3].shape.sourceMatches = false
+    if (scenario === 'source-changed') rows[4].shape.sourceMatchesAction = false
+    if (scenario === 'revision-mismatch') rows[3].shape.connectionRevisionMatchesRequest = false
+    if (scenario === 'rpc-error') rows[2].phase = 'error'
+    let clicks = 0
+    const helper = vm.runInNewContext(modelHelper, {
+      fixture: { performSetupAction: async (kind, action) => {
+        assert.equal(kind, 'models'); await action(); return { steps: rows }
+      } },
+      expect: value => ({
+        toHaveLength: count => assert.equal(value.length, count),
+        toBe: expected => assert.equal(value, expected),
+        toMatchObject: subset => matchSubset(value, subset)
+      })
+    })
+    const action = helper({ getByRole: () => ({ click: async () => { clicks++ } }) }, scenario === 'stale-policy-review' ? 'stale-policy' : 'ready')
+    if (['ready', 'stale-policy-review'].includes(scenario)) await action
+    else await assert.rejects(action)
+    assert.equal(clicks, 1)
+  })
+}
+
+test('model sequence reports source drift without exporting either source', async () => {
+  const h = await harness()
+  const observed = h.observer.performSetupAction('models', async () => {
+    setupPaths.models.forEach((name, index) => {
+      h.send(index + 1, 'organization.' + name)
+      if (index === 0) h.receive(index + 1, { result: { sourceRevision: secret } })
+      else if (index === 4) h.receive(index + 1, { result: { sourceRevision: 'different-private-source' } })
+      else h.receive(index + 1, setupReply(name))
+    })
+  })
+  const result = await observed
+  assert.equal(result.steps[0].shape.sourceMatchesAction, true)
+  assert.equal(result.steps[3].shape.sourceMatchesAction, true)
+  assert.equal(result.steps[4].shape.sourceMatchesAction, false)
+  assert.ok(!JSON.stringify(result).includes(secret))
+  assert.ok(!JSON.stringify(result).includes('different-private-source'))
+  await h.observer.close()
 })

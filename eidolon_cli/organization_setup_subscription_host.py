@@ -31,7 +31,8 @@ _ACTIVE = threading.local()
 _REASONS = frozenset({'invalid_authority', 'invalid_attempt', 'attempt_pending',
     'stale_attempt', 'attempt_expired', 'exchange_already_admitted',
     'recovery_required', 'unsafe_filesystem', 'backend_unavailable',
-    'filesystem_protection_unavailable', 'operation_failed', 'recursive_use'})
+    'filesystem_protection_unavailable', 'operation_failed', 'recursive_use',
+    'host_identity_migration_required'})
 
 
 class HostError(RuntimeError):
@@ -61,6 +62,18 @@ def _uuid(value):
 def _identity(path):
     info = path.lstat()
     return info.st_dev, info.st_ino
+
+
+def _host_uri(value):
+    if type(value) is not str or not value.startswith('urn:uuid:'):
+        raise HostError('recovery_required')
+    try:
+        parsed = uuid.UUID(value[9:])
+    except ValueError:
+        raise HostError('recovery_required') from None
+    if parsed.version != 4 or parsed.urn != value:
+        raise HostError('recovery_required')
+    return value
 
 
 @dataclass(frozen=True, repr=False)
@@ -101,6 +114,9 @@ class PendingAttempt:
     expires_at: int
     stage: str = 'pending'
     publication_binding_digest: str | None = None
+    authorization_host_id: str | None = None
+    host_identity_migration: bool = False
+    authorization_binding_digest: str | None = None
 
     def __post_init__(self):
         for value in (self.attempt_id, self.organization_id, self.owner_id):
@@ -117,6 +133,15 @@ class PendingAttempt:
                 or self.stage not in {'publishing', 'published', 'locally_retired'}):
             raise HostError('invalid_attempt')
         if self.stage == 'locally_retired' and digest is None:
+            raise HostError('invalid_attempt')
+        if type(self.host_identity_migration) is not bool:
+            raise HostError('invalid_attempt')
+        if self.authorization_host_id is not None:
+            _host_uri(self.authorization_host_id)
+        elif self.host_identity_migration or self.authorization_binding_digest is not None:
+            raise HostError('invalid_attempt')
+        digest = self.authorization_binding_digest
+        if digest is not None and (type(digest) is not str or re.fullmatch('[0-9a-f]{64}', digest) is None):
             raise HostError('invalid_attempt')
 
 
@@ -261,7 +286,109 @@ class PendingAttempts:
         self._io._write('initialized', b'1')
         value = str(uuid.uuid4())
         self._io._write('identity.json', _json({'installation_id': value}))
+        self._provider_host(value, create_origin='fresh')
         return value
+
+    def _provider_host(self, installation, *, create_origin=None):
+        """A candidate wire identity is never proof that a binding consented.
+
+        Keep the local installation UUID and all existing binding digests intact.
+        The URI is a different provider-visible identifier, not an asserted alias.
+        """
+        name = 'oauth-host.json'
+        if not os.path.lexists(self._io.directory / name):
+            if create_origin is None:
+                return None
+            value = {'version': 1, 'installation_id': installation,
+                     'host_id': _host_uri(uuid.UUID(installation).urn), 'origin': create_origin}
+            self._io._write(name, _json(value))
+        value = self._read_protocol_json(name)
+        if (type(value) is not dict or set(value) != {'version', 'installation_id', 'host_id', 'origin'}
+                or type(value['version']) is not int or value['version'] != 1
+                or value['installation_id'] != installation or type(value['origin']) is not str
+                or value['origin'] not in {'fresh', 'legacy'}
+                or _host_uri(value['host_id']) != uuid.UUID(installation).urn):
+            raise HostError('recovery_required')
+        return value
+
+    def _read_protocol_json(self, name):
+        try:
+            return self._io._read_json(name)
+        except (ValueError, UnicodeError):
+            raise HostError('recovery_required') from None
+        except StoreError as error:
+            if error.reason == 'corrupt_store':
+                raise HostError('recovery_required') from None
+            raise
+
+    def _consent_name(self, binding_digest):
+        if type(binding_digest) is not str or re.fullmatch('[0-9a-f]{64}', binding_digest) is None:
+            raise HostError('invalid_attempt')
+        return 'oauth-consent-' + self._name[:-5] + '-' + binding_digest + '.json'
+
+    def _host_consent(self, binding_digest, candidate):
+        name = self._consent_name(binding_digest)
+        if not os.path.lexists(self._io.directory / name):
+            return None
+        value = self._read_protocol_json(name)
+        if (candidate is None or type(value) is not dict
+                or set(value) != {'version', 'profile_identity', 'installation_id', 'binding_digest', 'attempt'}
+                or type(value['version']) is not int or value['version'] != 1
+                or value['profile_identity'] != self._name[:-5]
+                or value['installation_id'] != candidate['installation_id']
+                or value['binding_digest'] != binding_digest
+                or type(value['attempt']) is not dict
+                or set(value['attempt']) != set(PendingAttempt.__dataclass_fields__)):
+            raise HostError('recovery_required')
+        try:
+            record = PendingAttempt(**value['attempt'])
+        except (HostError, TypeError, ValueError):
+            raise HostError('recovery_required') from None
+        if (record.stage not in {'publishing', 'published'}
+                or record.publication_binding_digest != binding_digest
+                or record.authorization_host_id != candidate['host_id']
+                or record.authorization_binding_digest not in (None, binding_digest)):
+            raise HostError('recovery_required')
+        return value
+
+    def _host_identity_state(self, installation, binding_digest):
+        candidate = self._provider_host(installation)
+        if binding_digest is not None:
+            proof = self._host_consent(binding_digest, candidate)
+            # Fresh installations used this canonical URI from their first request.
+            # Their grant/publication authority still comes only from the store.
+            return ('current' if proof is not None or candidate is not None and candidate['origin'] == 'fresh'
+                    else 'migration_required')
+        return 'new' if candidate is not None and candidate['origin'] == 'fresh' else 'migration_required'
+
+    @_guard
+    def host_identity_state(self, binding_digest=None):
+        """Passive metadata only; never create candidate identity or consent proof."""
+        with self._locked() as exists:
+            if not exists:
+                if binding_digest is not None:
+                    raise HostError('recovery_required')
+                return 'new'
+            return self._host_identity_state(self._installation(), binding_digest)
+
+    def _publish_host_consent(self, record):
+        # Old pending-attempt schemas cannot establish new protocol provenance.
+        if record.authorization_host_id is None or record.publication_binding_digest is None:
+            return
+        installation = self._installation()
+        candidate = self._provider_host(installation)
+        if candidate is None or candidate['host_id'] != record.authorization_host_id:
+            raise HostError('recovery_required')
+        digest = record.publication_binding_digest
+        if record.authorization_binding_digest not in (None, digest):
+            raise HostError('stale_attempt')
+        if self._host_consent(digest, candidate) is None:
+            value = {'version': 1, 'profile_identity': self._name[:-5],
+                     'installation_id': installation, 'binding_digest': digest,
+                     'attempt': asdict(record)}
+            self._io._write(self._consent_name(digest), _json(value))
+        # Repair a lost directory-fsync acknowledgment without rewriting proof.
+        self._io._sync_directory()
 
     def _read_attempt(self):
         if not os.path.lexists(self._io.directory / self._name):
@@ -270,7 +397,8 @@ class PendingAttempts:
             return None
         value = self._io._read_json(self._name)
         fields = set(PendingAttempt.__dataclass_fields__)
-        if type(value) is not dict or set(value) not in (fields, fields - {'publication_binding_digest'}):
+        legacy = fields - {'authorization_host_id', 'host_identity_migration', 'authorization_binding_digest'}
+        if type(value) is not dict or set(value) not in (fields, legacy, legacy - {'publication_binding_digest'}):
             raise HostError('recovery_required')
         return PendingAttempt(**value)
 
@@ -318,24 +446,55 @@ class PendingAttempts:
         if self._io._archive_read(name, len(data)) != data:
             raise HostError('recovery_required')
 
+    def _archive_migration_predecessor(self, record):
+        # A cancelled legacy exchange can have a remote-unknown outcome even
+        # without a store publication. Preserve its exact bytes before replacing
+        # the pending slot; this archive never establishes consent or authority.
+        name = self._name + '.' + record.attempt_id + '.host-migration'
+        data = _json({'version': 1, 'remoteOutcome': 'unknown',
+                      'recordJson': self._io._read(self._name).decode('utf-8')})
+        self._io._archive_directory(create=True)
+        self._io._sync_directory()
+        self._io._archive_put(name, data)
+        if self._io._archive_read(name, len(data)) != data:
+            raise HostError('recovery_required')
+
     @_guard
     def begin(self, *, attempt_id, organization_id, owner_id,
-              expected_store_revision, source_digest, expires_at):
+              expected_store_revision, source_digest, expires_at,
+              binding_digest=None, confirm_host_identity_change=False):
         """Explicit owner Begin only. Never call from passive status or startup."""
         record = PendingAttempt(attempt_id, organization_id, owner_id,
                                 expected_store_revision, source_digest, expires_at)
         with self._locked(create=True):
+            if type(confirm_host_identity_change) is not bool:
+                raise HostError('invalid_attempt')
             now = self._now()
             if not now < expires_at <= now + _MAX_TTL:
                 raise HostError('invalid_attempt')
-            self._installation(create=True)
+            installation = self._installation(create=True)
+            identity_state = self._host_identity_state(installation, binding_digest)
+            migration = identity_state == 'migration_required'
+            if migration and not confirm_host_identity_change:
+                raise HostError('host_identity_migration_required')
+            if confirm_host_identity_change and not migration:
+                raise HostError('stale_attempt')
             previous = self._read_attempt()
             if previous is not None:
                 if previous.attempt_id == attempt_id:
                     raise HostError('stale_attempt')
                 if previous.expires_at > now and previous.stage not in {'published', 'cancelled', 'locally_retired'}:
                     raise HostError('attempt_pending')
+                if migration and previous.stage not in {'published', 'cancelled', 'locally_retired'}:
+                    raise HostError('attempt_pending')
                 self._archive_local_retirement(previous)
+                if migration:
+                    self._archive_migration_predecessor(previous)
+            candidate = self._provider_host(installation, create_origin='legacy' if migration else None)
+            if candidate is None:
+                raise HostError('recovery_required')
+            record = replace(record, authorization_host_id=candidate['host_id'],
+                             host_identity_migration=migration, authorization_binding_digest=binding_digest)
             if previous is None:
                 self._io._write(self._name + '.seen', b'1')
             self._save(record)
@@ -390,6 +549,7 @@ class PendingAttempts:
             yield publication
             if not publication._committed:
                 raise HostError('recovery_required')
+            self._publish_host_consent(record)
             self._save(replace(record, stage='published'))
 
 
@@ -424,6 +584,8 @@ class PendingAttempts:
             yield publication
             if not publication._committed:
                 raise HostError('recovery_required')
+            if publication._stage == 'published':
+                self._publish_host_consent(record)
             self._save(replace(record, stage=publication._stage))
 
 

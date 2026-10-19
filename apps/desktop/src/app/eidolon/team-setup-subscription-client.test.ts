@@ -12,7 +12,8 @@ import {
   subscriptionPolicy,
   subscriptionPolicyState,
   subscriptionPreview,
-  subscriptionSetup
+  subscriptionSetup,
+  subscriptionStatus
 } from './team-setup-subscription-fixtures'
 
 it('keeps connection consent, discovery, review and apply as separate exact owner actions', async () => {
@@ -300,4 +301,76 @@ it('fences rejected subscription responses when their authenticated scope is no 
   await expect(pending).rejects.toThrow('stale')
   expect(request).toHaveBeenCalledTimes(1)
   client.dispose()
+})
+
+it('uses a distinct revision-bound migration action and fails closed on malformed identity eligibility', async () => {
+  const request = vi.fn(async () => subscriptionStatus)
+  const client = createSetupSubscriptionClient(request as never)
+  await client.beginSubscriptionHostMigration(subscriptionSetup, 7)
+  expect(request.mock.calls).toEqual([
+    [
+      'organization.beginSetupSubscriptionHostMigration',
+      {
+        expectedOrganizationId: subscriptionSetup.organizationId,
+        sourceRevision: subscriptionSetup.sourceRevision,
+        expectedRevision: 7,
+        confirmed: true,
+        consentVersion: 2
+      }
+    ]
+  ])
+
+  for (const change of [
+    { hostIdentityState: undefined },
+    { canMigrateHostIdentity: undefined },
+    { hostIdentityState: 'unknown' },
+    { canMigrateHostIdentity: 1 },
+    { canMigrateHostIdentity: true },
+    { hostIdentityState: 'migration_required', canMigrateHostIdentity: true, connectionState: 'active' },
+    { hostIdentityState: 'migration_required', canMigrateHostIdentity: true, cleanupPending: true },
+    { hostIdentityState: 'migration_required', canMigrateHostIdentity: true, stage: 'publication_uncertain' },
+    { hostIdentityState: 'migration_required', canMigrateHostIdentity: true, stage: 'pending' }
+  ]) {
+    request.mockResolvedValue({ ...subscriptionStatus, ...change } as never)
+    await expect(client.subscriptionStatus(subscriptionSetup)).rejects.toThrow('invalid_setup_subscription')
+  }
+
+  const migration = {
+    ...subscriptionStatus,
+    hostIdentityState: 'migration_required',
+    canMigrateHostIdentity: true
+  }
+
+  for (const change of [
+    ...['allocating', 'prepared', 'admitted', 'uncertain', 'recovery_required'].map(state => ({
+      operation: { ...subscriptionStatus.operation, state }
+    })),
+    { operation: undefined },
+    { operation: { ...subscriptionStatus.operation, revision: 1 } },
+    { operation: { ...subscriptionStatus.operation, verification: 'verified_current' } },
+    { canCancel: true },
+    { stage: 'expired' },
+    { stage: 'reauthorization_required' },
+    { stage: 'stale_source', canCancel: true }
+  ]) {
+    request.mockResolvedValue({ ...migration, ...change } as never)
+    await expect(client.subscriptionStatus(subscriptionSetup)).rejects.toThrow('invalid_setup_subscription')
+  }
+
+  for (const state of ['none', 'completed', 'local_retired']) {
+    const settled = {
+      ...migration,
+      stage: 'stale_source',
+      canCancel: false,
+      operation: { ...subscriptionStatus.operation, state }
+    }
+
+    request.mockResolvedValue(settled as never)
+    await expect(client.subscriptionStatus(subscriptionSetup)).resolves.toEqual(settled)
+  }
+
+  // Paired absence supports older-runtime status/disconnect, never authorization.
+  const legacy = { ...subscriptionStatus, hostIdentityState: undefined, canMigrateHostIdentity: undefined }
+  request.mockResolvedValue(legacy)
+  await expect(client.subscriptionStatus(subscriptionSetup)).resolves.toEqual(legacy)
 })
