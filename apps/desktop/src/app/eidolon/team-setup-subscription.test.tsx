@@ -7,6 +7,7 @@ import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscripti
 
 import { createTeamOnboardingClient } from './team-onboarding-client'
 import { TeamSetupSubscription } from './team-setup-subscription'
+import type { SubscriptionStatus } from './team-setup-subscription-client'
 import {
   subscriptionCatalog,
   subscriptionPolicy,
@@ -18,9 +19,9 @@ import {
 
 const copy = setupSubscriptionCopy.en
 
-function rig() {
+function rig(initialStatus: Partial<SubscriptionStatus> = {}) {
   let setup = structuredClone(subscriptionSetup),
-    connection = structuredClone(subscriptionStatus),
+    connection = { ...structuredClone(subscriptionStatus), ...initialStatus },
     policy = structuredClone(subscriptionPolicyState)
 
   let nextStage: 'active' | 'pending' = 'active'
@@ -38,12 +39,14 @@ function rig() {
       return structuredClone(policy)
     }
 
-    if (method === 'organization.beginSetupSubscription') {
+    if (['organization.beginSetupSubscription', 'organization.beginSetupSubscriptionHostMigration'].includes(method)) {
       connection = {
         ...connection,
         connectionState: nextStage === 'active' ? 'active' : 'absent',
-        connectionRevision: nextStage === 'active' ? 1 : 0,
+        connectionRevision: nextStage === 'active' ? connection.connectionRevision + 1 : connection.connectionRevision,
         stage: nextStage === 'active' ? 'connected' : 'pending',
+        hostIdentityState: nextStage === 'active' ? 'current' : connection.hostIdentityState,
+        canMigrateHostIdentity: false,
         attemptId: 'synthetic-attempt'
       }
 
@@ -51,7 +54,11 @@ function rig() {
     }
 
     if (method === 'organization.cancelSetupSubscription') {
-      connection = { ...connection, stage: 'cancelled' }
+      connection = {
+        ...connection,
+        stage: 'cancelled',
+        canMigrateHostIdentity: connection.hostIdentityState === 'migration_required'
+      }
 
       return { stage: 'cancelled' }
     }
@@ -147,13 +154,13 @@ function rig() {
   const invalidated = vi.fn(),
     refreshed = vi.fn()
 
-  function Harness() {
+  function Harness({ ownerClient = client }: { ownerClient?: typeof client }) {
     const [currentSetup, setSetup] = useState(setup)
 
     return (
       <I18nProvider>
         <TeamSetupSubscription
-          client={client}
+          client={ownerClient}
           disabled={false}
           onBusyChange={() => {}}
           onInvalidate={invalidated}
@@ -173,6 +180,12 @@ function rig() {
     Harness,
     invalidated,
     refreshed,
+    setSourceRevision: (sourceRevision: string) => {
+      setup = { ...setup, sourceRevision }
+    },
+    setConnection: (change: Partial<SubscriptionStatus>) => {
+      connection = { ...connection, ...change }
+    },
     setPending: () => {
       nextStage = 'pending'
     },
@@ -595,3 +608,205 @@ it.each(['publication_uncertain', 'reconciliation_required'])(
     ).toBe(false)
   }
 )
+
+const legacyIdentity: Partial<SubscriptionStatus> = {
+  hostIdentityState: 'migration_required',
+  canMigrateHostIdentity: true,
+  connectionRevision: 7,
+  connectionState: 'disconnected',
+  operation: { state: 'none', ticket: null, revision: 7, verification: 'metadata_only' }
+}
+
+async function inspectMigration() {
+  fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+  await screen.findByLabelText(copy.hostMigrationCheck)
+}
+
+it('requires scoped explicit host-change consent and never reuses normal consent or activates a policy', async () => {
+  const test = rig(legacyIdentity)
+  render(<test.Harness />)
+  expect(test.request).not.toHaveBeenCalled()
+  await inspectMigration()
+  expect(screen.getByText(copy.hostMigrationConsent)).toBeTruthy()
+  expect(screen.getByText(copy.consent)).toBeTruthy()
+  expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.continue })).toBeNull()
+  const migrate = screen.getByRole('button', { name: copy.hostMigrationContinue })
+  expect(migrate).toHaveProperty('disabled', true)
+  fireEvent.click(migrate)
+  expect(test.request.mock.calls.map(([method]) => method)).toEqual([
+    'organization.teamSetup',
+    'organization.setupSubscriptionStatus',
+    'organization.setupSubscriptionPolicy'
+  ])
+  fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+  fireEvent.click(migrate)
+  fireEvent.click(migrate)
+  await screen.findByRole('button', { name: copy.loadModels })
+  const auth = test.request.mock.calls.filter(([method]) => method.startsWith('organization.begin'))
+  expect(auth).toEqual([
+    [
+      'organization.beginSetupSubscriptionHostMigration',
+      {
+        expectedOrganizationId: subscriptionSetup.organizationId,
+        sourceRevision: subscriptionSetup.sourceRevision,
+        expectedRevision: 7,
+        confirmed: true,
+        consentVersion: 2
+      }
+    ]
+  ])
+  expect(
+    test.request.mock.calls.every(
+      ([method]) =>
+        ![
+          'organization.setupSubscriptionModels',
+          'organization.applySetupSubscriptionPolicy',
+          'organization.generateTeam',
+          'organization.improveTeamInput'
+        ].includes(method)
+    )
+  ).toBe(true)
+  expect(screen.queryByLabelText(copy.hostMigrationCheck)).toBeNull()
+  expect(screen.getByText(copy.unknown)).toBeTruthy()
+})
+
+it.each([
+  { connectionState: 'active' },
+  { connectionState: 'refreshing' },
+  { stage: 'pending', attemptId: 'unfinished' },
+  { stage: 'exchanging', attemptId: 'unfinished' },
+  { stage: 'publication_uncertain', cleanupPending: true },
+  { stage: 'reconciliation_required', cleanupPending: true },
+  { cleanupPending: true },
+  { stage: 'expired', attemptId: 'unfinished', canCancel: true },
+  { stage: 'idle' }
+] satisfies Partial<SubscriptionStatus>[])(
+  'does not offer migration or ordinary consent when server eligibility is false: %j',
+  async change => {
+    const test = rig({ ...legacyIdentity, ...change, canMigrateHostIdentity: false })
+    render(<test.Harness />)
+    fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+    await waitFor(() => expect(test.refreshed).toHaveBeenCalled())
+    expect(screen.queryByLabelText(copy.hostMigrationCheck)).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.hostMigrationContinue })).toBeNull()
+    expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+    expect(test.request.mock.calls.some(([method]) => method.startsWith('organization.begin'))).toBe(false)
+
+    if ('canCancel' in change && change.canCancel) {
+      expect(screen.getByRole('button', { name: copy.cancelConsent })).toHaveProperty('disabled', false)
+    }
+  }
+)
+
+it('requires renewed migration consent after cancellation, inspection and editor restart', async () => {
+  const test = rig(legacyIdentity)
+  test.setPending()
+  const view = render(<test.Harness />)
+  await inspectMigration()
+  fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+  fireEvent.click(screen.getByRole('button', { name: copy.check }))
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.check })).toHaveProperty('disabled', false))
+  expect(screen.getByLabelText(copy.hostMigrationCheck)).toHaveProperty('checked', false)
+  fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+  fireEvent.click(screen.getByRole('button', { name: copy.hostMigrationContinue }))
+  await screen.findByText(copy.pending)
+  expect(screen.queryByLabelText(copy.hostMigrationCheck)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: copy.cancelConsent }))
+  await screen.findByLabelText(copy.hostMigrationCheck)
+  expect(screen.getByLabelText(copy.hostMigrationCheck)).toHaveProperty('checked', false)
+  fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+  view.unmount()
+  render(<test.Harness />)
+  await inspectMigration()
+  expect(screen.getByLabelText(copy.hostMigrationCheck)).toHaveProperty('checked', false)
+  expect(test.request.mock.calls.filter(([method]) => method.startsWith('organization.begin'))).toHaveLength(1)
+})
+
+it.each(['source', 'revision', 'eligibility', 'owner', 'failure'] as const)(
+  'does not replay migration after %s changes and clears the prior confirmation',
+  async change => {
+    const test = rig(legacyIdentity)
+    render(<test.Harness />)
+    await inspectMigration()
+    fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+
+    if (change === 'source') {
+      test.setSourceRevision('f'.repeat(64))
+    } else if (change === 'revision') {
+      test.setConnection({ connectionRevision: 8 })
+    } else if (change === 'eligibility') {
+      test.setConnection({ canMigrateHostIdentity: false })
+    } else if (change === 'owner') {
+      test.client.dispose()
+    } else {
+      const original = test.request.getMockImplementation()!
+      test.request.mockImplementation(async (method, params) => {
+        if (method === 'organization.beginSetupSubscriptionHostMigration') {
+          throw new Error('reply lost')
+        }
+
+        return original(method, params)
+      })
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: copy.hostMigrationContinue }))
+
+    if (change !== 'owner') {
+      await waitFor(() => expect(screen.getByRole('button', { name: copy.check })).toHaveProperty('disabled', false))
+      const checkbox = screen.queryByLabelText(copy.hostMigrationCheck)
+
+      if (checkbox) {
+        expect(checkbox).toHaveProperty('checked', false)
+      }
+    }
+
+    expect(test.request.mock.calls.filter(([method]) => method.startsWith('organization.begin'))).toHaveLength(
+      change === 'failure' ? 1 : 0
+    )
+  }
+)
+
+it('preserves older-runtime status and disconnect while withholding unverifiable authorization', async () => {
+  const test = rig({ hostIdentityState: undefined, canMigrateHostIdentity: undefined })
+  render(<test.Harness />)
+  fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+  await screen.findByText(copy.identityUnavailable)
+  expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+  expect(screen.queryByLabelText(copy.hostMigrationCheck)).toBeNull()
+  test.setConnection({ connectionState: 'active' })
+  fireEvent.click(screen.getByRole('button', { name: copy.check }))
+  await screen.findByRole('button', { name: copy.disconnect })
+  expect(test.request.mock.calls.some(([method]) => method.startsWith('organization.begin'))).toBe(false)
+})
+
+it.each(['absent', 'active'] as const)(
+  'keeps %s lifecycle visible when only host identity metadata needs recovery',
+  async connectionState => {
+    const test = rig({ hostIdentityState: 'recovery_required', canMigrateHostIdentity: false, connectionState })
+    render(<test.Harness />)
+    fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+    await screen.findByText(copy.identityRecoveryRequired)
+    expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+    expect(screen.queryByLabelText(copy.hostMigrationCheck)).toBeNull()
+
+    if (connectionState === 'active') {
+      expect(screen.getByRole('button', { name: copy.disconnect })).toHaveProperty('disabled', false)
+    }
+
+    expect(test.request.mock.calls.some(([method]) => method.startsWith('organization.begin'))).toBe(false)
+  }
+)
+
+it('does not carry host migration confirmation into a replacement owner client', async () => {
+  const test = rig(legacyIdentity)
+  const replacement = rig(legacyIdentity)
+  const view = render(<test.Harness />)
+  await inspectMigration()
+  fireEvent.click(screen.getByLabelText(copy.hostMigrationCheck))
+  expect(screen.getByLabelText(copy.hostMigrationCheck)).toHaveProperty('checked', true)
+  view.rerender(<test.Harness ownerClient={replacement.client} />)
+  expect(screen.getByLabelText(copy.hostMigrationCheck)).toHaveProperty('checked', false)
+  expect(screen.getByRole('button', { name: copy.hostMigrationContinue })).toHaveProperty('disabled', true)
+  expect(replacement.request).not.toHaveBeenCalled()
+})

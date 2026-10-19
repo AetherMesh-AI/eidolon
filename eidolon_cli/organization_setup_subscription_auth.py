@@ -29,6 +29,7 @@ import webbrowser
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from eidolon_cli.organization_setup_subscription_store import TrustedBinding, StoreError
+from eidolon_cli.organization_setup_subscription_host import HostError
 
 AUTHORIZE = 'https://auth.openai.com/api/accounts/authorize'
 TOKEN = 'https://auth.openai.com/api/accounts/oauth/token'
@@ -47,7 +48,7 @@ _REASONS = frozenset({'invalid_request', 'invalid_callback', 'access_denied',
     'connection_unavailable', 'grant_expired', 'revision_conflict', 'lease_cancelled',
     'owner_generation_changed', 'auth_attempt_mismatch', 'invalid_grant',
     'ticket_conflict', 'ticket_retired', 'transition_pending', 'storage_recovery_required',
-    'ticket_sequence_exhausted', 'operation_mismatch'})
+    'ticket_sequence_exhausted', 'operation_mismatch', 'host_identity_migration_required'})
 _SERVICES = weakref.WeakSet()
 _SERVICES_LOCK = threading.Lock()
 _CONNECT_SLOTS = threading.BoundedSemaphore(4)
@@ -66,7 +67,7 @@ def _safe(method):
         try:
             return method(*args, **kwargs)
         except Exception as error:
-            reason = error.reason if type(error) in {AuthError, StoreError} else 'operation_failed'
+            reason = error.reason if type(error) in {AuthError, StoreError, HostError} else 'operation_failed'
             raise AuthError(reason) from None
     return call
 
@@ -433,6 +434,8 @@ class _Attempt:
     nonce: str
     verifier: str
     returning_binding: object
+    authorization_host_id: str | None = None
+    host_identity_migration: bool = False
     listener: object = None
     stage: str = 'pending'
     cancel: threading.Event = field(default_factory=threading.Event)
@@ -510,10 +513,31 @@ class SubscriptionAuthService:
                 or binding.issued_client_id == 'dynamic_agent_client'):
             raise AuthError('invalid_request')
 
+    def _host_identity_state(self, binding, *, passive=False):
+        if binding is not None:
+            self._binding(binding)
+        digest = self._store._binding_digest(binding) if binding is not None else None
+        try:
+            return self._host.host_identity_state(digest)
+        except HostError as error:
+            if passive and error.reason == 'recovery_required':
+                return 'recovery_required'
+            raise
+
+    @staticmethod
+    def _migration_ready(state, history, operation, record):
+        return (state['state'] in {'absent', 'disconnected'} and not _cleanup_pending(state)
+                and history['state'] == 'available'
+                and operation['state'] in {'none', 'completed', 'local_retired'}
+                and operation['revision'] == state['revision']
+                and (record is None or record.stage in {'published', 'cancelled', 'locally_retired'}))
+
     @_safe
-    def begin(self, expected_revision, returning_binding=None):
+    def begin(self, expected_revision, returning_binding=None, *, confirm_host_identity_change=False):
         with self._lock, self._authority():
             self._guard()
+            if type(confirm_host_identity_change) is not bool:
+                raise AuthError('invalid_request')
             if self._setup_guard() is not True:
                 raise AuthError('setup_unavailable')
             if self._attempt and self._attempt.stage in {'pending', 'exchanging'} and self._clock() < self._attempt.expires_at:
@@ -532,25 +556,46 @@ class SubscriptionAuthService:
                 returning_binding = self._store.returning_binding()
             if returning_binding is not None:
                 self._binding(returning_binding)
+            if confirm_host_identity_change:
+                record = self._host.inspect()
+                if record is not None:
+                    self._record_scope(record, require_source=False)
+                    if record.stage not in {'published', 'cancelled', 'locally_retired'}:
+                        raise AuthError('attempt_pending')
+                operation = _operation_view(self._store.ticket_status(), passive=True)
+                if not self._migration_ready(state, history, operation, record):
+                    raise AuthError('storage_recovery_required')
+                if self._host_identity_state(returning_binding) != 'migration_required':
+                    raise AuthError('stale_attempt')
             if self._attempt and self._attempt.listener is not None:
                 self._attempt.listener.close()
             attempt = _Attempt(str(uuid.uuid4()), int(self._clock()) + TTL, expected_revision,
                                secrets.token_urlsafe(32), secrets.token_urlsafe(32),
                                secrets.token_urlsafe(48), returning_binding)
-            self._host.begin(attempt_id=attempt.attempt_id, organization_id=self._owner.organization_id,
+            record = self._host.begin(attempt_id=attempt.attempt_id, organization_id=self._owner.organization_id,
                              owner_id=self._owner.owner_id, expected_store_revision=expected_revision,
-                             source_digest=self._owner.source_digest, expires_at=attempt.expires_at)
+                             source_digest=self._owner.source_digest, expires_at=attempt.expires_at,
+                             binding_digest=self._store._binding_digest(returning_binding) if returning_binding else None,
+                             confirm_host_identity_change=confirm_host_identity_change)
+            attempt.authorization_host_id = record.authorization_host_id
+            attempt.host_identity_migration = record.host_identity_migration
             self._attempt = attempt
             try:
                 attempt.listener = LoopbackListener(lambda fields: self._callback(attempt, fields), attempt.expires_at, self._clock)
                 params = {'client_id': returning_binding.issued_client_id if returning_binding else 'dynamic_agent_client',
-                          'ext_agent_host_id': self._host.installation_id(), 'response_type': 'code',
+                          'ext_agent_host_id': attempt.authorization_host_id, 'response_type': 'code',
                           'redirect_uri': attempt.listener.redirect_uri, 'scope': SCOPES,
                           'resource': RESOURCE, 'state': attempt.state, 'nonce': attempt.nonce,
                           'code_challenge_method': 'S256', 'code_challenge': base64.urlsafe_b64encode(
                               hashlib.sha256(attempt.verifier.encode('ascii')).digest()).rstrip(b'=').decode('ascii')}
                 if returning_binding is None:
                     params['agent_name_hint'] = 'Eidolon'
+                if attempt.host_identity_migration:
+                    # Explicit owner-confirmed identity change. The URI is not
+                    # an alias for a previously consented bare UUID. Keep the
+                    # selected client/account and require a fresh consent screen.
+                    # https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery
+                    params['prompt'] = 'consent'
                 self._guard(attempt)
                 attempt.listener.start()
                 url = AUTHORIZE + '?' + urlencode(params)
@@ -669,8 +714,17 @@ class SubscriptionAuthService:
             result['connectionState'] = state['state']
             result['cleanupPending'] = _cleanup_pending(state)
             result['operation'] = _operation_view(self._store.ticket_status(), passive=True)
+            binding = self._store.returning_binding()
+            result['hostIdentityState'] = self._host_identity_state(binding, passive=True)
+            record = self._host.inspect()
+            if record is not None:
+                self._record_scope(record, require_source=False)
+                result['canCancel'] = record.stage in {'pending', 'exchange_admitted'}
+            result['canMigrateHostIdentity'] = (result['hostIdentityState'] == 'migration_required'
+                and self._setup_guard() is True
+                and self._migration_ready(state, _operation_history(self._store.history_status()),
+                                          result['operation'], record))
             if self._attempt is None:
-                record = self._host.inspect()
                 if record is not None:
                     self._record_scope(record, require_source=False)
                     if record.source_digest != self._owner.source_digest:

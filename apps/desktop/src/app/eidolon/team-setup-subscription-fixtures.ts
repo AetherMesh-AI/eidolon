@@ -31,7 +31,10 @@ export const subscriptionStatus: SubscriptionStatus = {
   expiresAt: null,
   connectionRevision: 0,
   connectionState: 'absent',
-  cleanupPending: false
+  cleanupPending: false,
+  hostIdentityState: 'new',
+  canMigrateHostIdentity: false,
+  operation: { state: 'none', ticket: null, revision: 0, verification: 'metadata_only' }
 }
 export const subscriptionCatalog: SubscriptionCatalog = {
   version: 1,

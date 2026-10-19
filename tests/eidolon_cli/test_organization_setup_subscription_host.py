@@ -45,6 +45,8 @@ def test_stable_installation_and_duplicate_begin(host):
     _, authority, manager = host
     attempt = begin(manager)
     identity = manager.installation_id()
+    assert uuid.UUID(identity).version == 4
+    assert attempt.authorization_host_id == uuid.UUID(identity).urn
     other = PendingAttempts(authority, synthetic=True, clock=lambda: 100)
     assert other.installation_id() == identity
     assert other.inspect() == attempt
@@ -52,6 +54,100 @@ def test_stable_installation_and_duplicate_begin(host):
         begin(other, attempt_id=attempt.attempt_id)
     with pytest.raises(HostError, match='attempt_pending'):
         begin(other)
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('stage', [None, 'cancelled', 'pending', 'exchange_admitted', 'publishing', 'published'])
+def test_legacy_provider_identity_requires_exact_profile_consent(host, stage):
+    from dataclasses import asdict
+    from eidolon_cli.organization_setup_subscription_host import PendingAttempt
+    from eidolon_cli.organization_setup_subscription_store import _json
+
+    root, authority, manager = host
+    identity = uid()
+    with manager._locked(create=True):
+        manager._io._write('initialized', b'1')
+        manager._io._write('identity.json', _json({'installation_id': identity}))
+        if stage is not None:
+            old = PendingAttempt(uid(), uid(), uid(), 4, 'a' * 64, 99, stage,
+                                 'c' * 64 if stage in {'publishing', 'published'} else None)
+            legacy = asdict(old)
+            for key in ('authorization_host_id', 'host_identity_migration', 'authorization_binding_digest'):
+                legacy.pop(key)
+            manager._io._write(manager._name, _json(legacy))
+    original = {p.name: p.read_bytes() for p in (root / INSTALLATION_NAME).iterdir() if p.is_file()}
+    assert manager.installation_id() == identity
+    assert manager.host_identity_state('c' * 64) == 'migration_required'
+    with pytest.raises(HostError, match='host_identity_migration_required'):
+        begin(manager, binding_digest='c' * 64)
+    assert original == {p.name: p.read_bytes() for p in (root / INSTALLATION_NAME).iterdir() if p.is_file()}
+    if stage in {'pending', 'exchange_admitted', 'publishing'}:
+        with pytest.raises(HostError, match='attempt_pending'):
+            begin(manager, binding_digest='c' * 64, confirm_host_identity_change=True)
+        assert original == {p.name: p.read_bytes() for p in (root / INSTALLATION_NAME).iterdir() if p.is_file()}
+        if stage == 'publishing':
+            return
+        manager.cancel(old.attempt_id)
+
+    predecessor = (root / INSTALLATION_NAME / manager._name).read_bytes() if stage is not None else None
+    attempt = begin(manager, binding_digest='c' * 64, confirm_host_identity_change=True)
+    if predecessor is not None:
+        archive = root / INSTALLATION_NAME / 'ticket-archive' / (manager._name + '.' + old.attempt_id + '.host-migration')
+        assert json.loads(archive.read_bytes()) == {'version': 1, 'remoteOutcome': 'unknown',
+                                                  'recordJson': predecessor.decode('utf-8')}
+    assert attempt.authorization_host_id == uuid.UUID(identity).urn
+    assert attempt.host_identity_migration is True
+    manager.cancel(attempt.attempt_id)
+    restarted = PendingAttempts(authority, synthetic=True, clock=lambda: 100)
+    assert restarted.host_identity_state('c' * 64) == 'migration_required'
+    assert restarted.host_identity_state() == 'migration_required'
+    with pytest.raises(HostError, match='host_identity_migration_required'):
+        begin(restarted, binding_digest='c' * 64)
+    profiles = root / 'profiles'
+    profiles.mkdir(mode=0o700)
+    profile = profiles / 'other'
+    profile.mkdir(mode=0o700)
+    other = PendingAttempts(authority, profile, synthetic=True, clock=lambda: 100)
+    assert other.host_identity_state('c' * 64) == 'migration_required'
+    assert other.host_identity_state() == 'migration_required'
+
+    attempt = begin(restarted, binding_digest='c' * 64, confirm_host_identity_change=True)
+    restarted.admit_exchange(attempt.attempt_id)
+    with restarted.publication_guard(attempt.attempt_id, binding_digest='c' * 64) as publication:
+        publication.commit(5)
+    assert restarted.host_identity_state('c' * 64) == 'current'
+    assert other.host_identity_state('c' * 64) == 'migration_required'
+    proof = next((root / INSTALLATION_NAME).glob('oauth-consent-*')).read_bytes()
+    returning = begin(restarted, binding_digest='c' * 64)
+    assert returning.authorization_host_id == attempt.authorization_host_id
+    assert returning.host_identity_migration is False
+    restarted.admit_exchange(returning.attempt_id)
+    with restarted.publication_guard(returning.attempt_id, binding_digest='c' * 64) as publication:
+        publication.commit(5)
+    assert next((root / INSTALLATION_NAME).glob('oauth-consent-*')).read_bytes() == proof
+    assert (root / INSTALLATION_NAME / 'identity.json').read_bytes() == original['identity.json']
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('host_id', [
+    'not-a-host', str(uuid.uuid4()), uuid.uuid1().urn,
+    uuid.uuid4().urn.upper(), 'urn:uuid:' + uuid.uuid4().hex, uuid.uuid4().urn,
+])
+def test_invalid_provider_identity_never_rewrites_or_begins(host, host_id):
+    root, _, manager = host
+    attempt = begin(manager)
+    manager.cancel(attempt.attempt_id)
+    path = root / INSTALLATION_NAME / 'oauth-host.json'
+    value = json.loads(path.read_text())
+    value['host_id'] = host_id
+    path.write_text(json.dumps(value))
+    original = path.read_bytes()
+    with pytest.raises(HostError, match='recovery_required'):
+        manager.host_identity_state()
+    with pytest.raises(HostError, match='recovery_required'):
+        begin(manager, confirm_host_identity_change=True)
+    assert path.read_bytes() == original
+    assert manager.inspect().attempt_id == attempt.attempt_id
 
 
 @POSIX_ONLY
@@ -204,7 +300,8 @@ def test_metadata_allowlist_and_fixed_errors(host):
     data = json.loads((root / INSTALLATION_NAME / (authority.profile_hash + '.json')).read_text())
     assert set(data) == {'attempt_id', 'organization_id', 'owner_id',
                          'expected_store_revision', 'source_digest', 'expires_at', 'stage',
-                         'publication_binding_digest'}
+                         'publication_binding_digest', 'authorization_host_id',
+                         'host_identity_migration', 'authorization_binding_digest'}
     with pytest.raises(HostError) as error:
         manager.admit_exchange('secret-code-verifier')
     assert 'secret-code-verifier' not in str(error.value)
@@ -419,3 +516,39 @@ def test_published_rename_fsync_failure_can_reconcile_exactly(host, monkeypatch)
     assert manager.inspect().stage == 'published'
     with pytest.raises(HostError, match='exchange_already_admitted'):
         manager.admit_exchange(attempt.attempt_id)
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('failure', ['lost_ack', 'collision'])
+def test_migration_predecessor_archive_failure_cannot_replace_pending_slot(host, monkeypatch, failure):
+    from eidolon_cli.organization_setup_subscription_store import _json
+    root, _, manager = host
+    with manager._locked(create=True):
+        manager._io._write('initialized', b'1')
+        manager._io._write('identity.json', _json({'installation_id': uid()}))
+    attempt = begin(manager, binding_digest='c' * 64, confirm_host_identity_change=True)
+    manager.cancel(attempt.attempt_id)
+    path = root / INSTALLATION_NAME / manager._name
+    original = path.read_bytes()
+    name = manager._name + '.' + attempt.attempt_id + '.host-migration'
+    if failure == 'collision':
+        manager._io._archive_directory(create=True)
+        (root / INSTALLATION_NAME / 'ticket-archive' / name).write_bytes(b'conflicting evidence')
+        (root / INSTALLATION_NAME / 'ticket-archive' / name).chmod(0o600)
+    else:
+        sync = manager._io._archive_sync
+        def lose_ack():
+            sync()
+            raise RuntimeError('synthetic lost acknowledgment')
+        monkeypatch.setattr(manager._io, '_archive_sync', lose_ack)
+    with pytest.raises(HostError):
+        begin(manager, binding_digest='c' * 64, confirm_host_identity_change=True)
+    assert path.read_bytes() == original
+    assert manager.host_identity_state('c' * 64) == 'migration_required'
+    assert not list((root / INSTALLATION_NAME).glob('oauth-consent-*'))
+    if failure == 'lost_ack':
+        archived = (root / INSTALLATION_NAME / 'ticket-archive' / name).read_bytes()
+        assert json.loads(archived)['recordJson'].encode() == original
+        monkeypatch.setattr(manager._io, '_archive_sync', sync)
+        begin(manager, binding_digest='c' * 64, confirm_host_identity_change=True)
+        assert (root / INSTALLATION_NAME / 'ticket-archive' / name).read_bytes() == archived

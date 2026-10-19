@@ -18,6 +18,7 @@ _COMMON = {'expectedOrganizationId', 'sourceRevision'}
 _FIELDS = {
     'status': _COMMON,
     'begin': _COMMON | {'expectedRevision', 'confirmed', 'consentVersion'},
+    'beginMigration': _COMMON | {'expectedRevision', 'confirmed', 'consentVersion'},
     'cancel': _COMMON | {'attemptId'},
     'prepareOperation': _COMMON | {'kind', 'expectedRevision', 'confirmed'},
     'executeOperation': _COMMON | {'ticket'},
@@ -44,11 +45,13 @@ def _parameters(operation, params):
     if (type(params['sourceRevision']) is not str
             or not 1 <= len(params['sourceRevision']) <= 256):
         raise BoundaryError()
-    if operation in {'begin', 'prepareOperation'}:
+    if operation in {'begin', 'beginMigration', 'prepareOperation'}:
         if (params['confirmed'] is not True or type(params['expectedRevision']) is not int
                 or not 0 <= params['expectedRevision'] < 2**63):
             raise BoundaryError()
-    if operation == 'begin' and (type(params['consentVersion']) is not int or params['consentVersion'] != 1):
+    consent_versions = {'begin': 1, 'beginMigration': 2}
+    if operation in consent_versions and (type(params['consentVersion']) is not int
+            or params['consentVersion'] != consent_versions[operation]):
         raise BoundaryError()
     if operation == 'cancel' and (type(params['attemptId']) is not str or not 1 <= len(params['attemptId']) <= 128):
         raise BoundaryError()
@@ -364,7 +367,7 @@ def _after_operation(service, context, result):
 def dispatch(operation, params, transport, authority):
     """Closed owner-authorized operations; no inference or policy activation."""
     _parameters(operation, params)
-    fresh = operation in {'begin', 'models'} or (
+    fresh = operation in {'begin', 'beginMigration', 'models'} or (
         operation == 'prepareOperation' and params['kind'] == 'refresh') or (
         operation == 'executeOperation' and params['ticket']['kind'] == 'refresh')
     context = _context(transport, params, authority, require_fresh=fresh)
@@ -375,6 +378,8 @@ def dispatch(operation, params, transport, authority):
         return service.cancel(params['attemptId'])
     if operation == 'begin':
         return service.begin(params['expectedRevision'])
+    if operation == 'beginMigration':
+        return service.begin(params['expectedRevision'], confirm_host_identity_change=True)
     if operation == 'models':
         return _load_catalog(service, context, params['expectedRevision'])
     _catalog(service, context).invalidate()
@@ -409,6 +414,7 @@ def _method(name, operation):
 
 _method('setupSubscriptionStatus', 'status')
 _method('beginSetupSubscription', 'begin')
+_method('beginSetupSubscriptionHostMigration', 'beginMigration')
 _method('cancelSetupSubscription', 'cancel')
 _method('prepareSetupSubscriptionOperation', 'prepareOperation')
 _method('executeSetupSubscriptionOperation', 'executeOperation')

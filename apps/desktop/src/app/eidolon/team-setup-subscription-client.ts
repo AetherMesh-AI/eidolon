@@ -90,6 +90,12 @@ export interface SubscriptionStatus {
   connectionState: 'absent' | 'active' | 'refreshing' | 'disconnected'
   cleanupPending: boolean
   canCancel?: boolean
+  hostIdentityState?: 'new' | 'current' | 'migration_required' | 'recovery_required'
+  canMigrateHostIdentity?: boolean
+  operation?: Pick<SubscriptionOperation, 'state' | 'ticket'> & {
+    revision: number
+    verification: 'metadata_only'
+  }
 }
 export interface SubscriptionCatalog {
   version: 1
@@ -344,9 +350,49 @@ function validateStatus(value: unknown): asserts value is SubscriptionStatus {
     !(status.expiresAt === null || (typeof status.expiresAt === 'number' && Number.isFinite(status.expiresAt))) ||
     !integer(status.connectionRevision) ||
     !['absent', 'active', 'refreshing', 'disconnected'].includes(String(status.connectionState)) ||
-    typeof status.cleanupPending !== 'boolean'
+    typeof status.cleanupPending !== 'boolean' ||
+    (status.canCancel !== undefined && typeof status.canCancel !== 'boolean')
   ) {
     invalid()
+  }
+
+  // Older runtimes can still report status and disconnect. Missing identity
+  // capability is never evidence that a new authorization is safe.
+  if (status.hostIdentityState === undefined && status.canMigrateHostIdentity === undefined) {
+    return
+  }
+
+  if (
+    !['new', 'current', 'migration_required', 'recovery_required'].includes(String(status.hostIdentityState)) ||
+    typeof status.canMigrateHostIdentity !== 'boolean'
+  ) {
+    invalid()
+  }
+
+  if (status.canMigrateHostIdentity) {
+    const operation = object(status.operation)
+
+    if (
+      status.hostIdentityState !== 'migration_required' ||
+      !['absent', 'disconnected'].includes(String(status.connectionState)) ||
+      status.cleanupPending ||
+      status.canCancel === true ||
+      [
+        'pending',
+        'exchanging',
+        'exchange_admitted',
+        'publishing',
+        'expired',
+        'reauthorization_required',
+        'publication_uncertain',
+        'reconciliation_required'
+      ].includes(String(status.stage)) ||
+      !['none', 'completed', 'local_retired'].includes(String(operation.state)) ||
+      operation.verification !== 'metadata_only' ||
+      operation.revision !== status.connectionRevision
+    ) {
+      invalid()
+    }
   }
 }
 
@@ -481,6 +527,13 @@ export function createSetupSubscriptionClient(
         expectedRevision: revision,
         confirmed: true,
         consentVersion: 1
+      }),
+    beginSubscriptionHostMigration: (setup: TeamSetup, revision: number) =>
+      request<unknown>('organization.beginSetupSubscriptionHostMigration', {
+        ...context(setup),
+        expectedRevision: revision,
+        confirmed: true,
+        consentVersion: 2
       }),
     cancelSubscription: (setup: TeamSetup, attemptId: string) =>
       request<unknown>('organization.cancelSetupSubscription', { ...context(setup), attemptId }),

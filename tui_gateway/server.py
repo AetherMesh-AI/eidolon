@@ -185,6 +185,7 @@ _LONG_HANDLERS = frozenset({
     "organization.setupSubscriptionPolicy", "organization.previewSetupSubscriptionPolicy",
     "organization.applySetupSubscriptionPolicy", "organization.setupSubscriptionStatus",
     "organization.beginSetupSubscription", "organization.cancelSetupSubscription",
+    "organization.beginSetupSubscriptionHostMigration",
     "organization.prepareSetupSubscriptionOperation", "organization.executeSetupSubscriptionOperation",
     "organization.reconcileSetupSubscriptionOperation", "organization.cancelSetupSubscriptionOperation",
     "organization.recoverSetupSubscriptionOperation", "organization.setupSubscriptionModels",

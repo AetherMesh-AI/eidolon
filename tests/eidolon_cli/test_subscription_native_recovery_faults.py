@@ -931,3 +931,82 @@ def test_open_recheck_fault_sites_are_exact_before_first_native_acl_read():
     assert 'Path(path).lstat()' in source[78] and '_file_identity(baseline)' in source[78]
     assert "raise StoreError('unsafe_filesystem')" in source[79]
     assert '_read_darwin_acl(' in source[80]
+
+
+def test_host_migration_checkpoint_accepts_only_closed_boolean_evidence(home):
+    value = {'version': 1, **dict.fromkeys(fixture._HOST_MIGRATION_EVIDENCE, True)}
+    path = home / '.synthetic-host-migration-evidence.json'
+    path.write_text(json.dumps(value))
+    assert fixture.migration_evidence(home) == value
+    for changed in ({**value, 'token': 'must-not-export'}, {**value, 'changedEpoch': 'true'},
+                    {**value, 'version': True}, {key: val for key, val in value.items() if key != 'sameOwner'}):
+        path.write_text(json.dumps(changed))
+        with pytest.raises(ValueError):
+            fixture.migration_evidence(home)
+
+
+@pytest.mark.parametrize('mutation', [None, 'host', 'prompt', 'client', 'id_token_hint', 'login_hint', 'nonce'])
+def test_host_migration_request_requires_fresh_forced_consent_and_defers_only_once(home, mutation):
+    from types import SimpleNamespace
+    import uuid
+    edges = SyntheticEdges(home, host_migration='cancel_once')
+    archive = home / 'ticket-archive'
+    archive.mkdir()
+    (archive / 'receipt').write_bytes(b'synthetic immutable retired receipt')
+    installation = str(uuid.uuid4())
+    edges._host_seed = {'binding': SimpleNamespace(host_id=installation),
+        'store': SimpleNamespace(directory=home, status=lambda: {'state': 'disconnected'})}
+    query = {'ext_agent_host_id': uuid.UUID(installation).urn, 'prompt': 'consent',
+             'client_id': fixture.CLIENT, 'nonce': 'synthetic-fresh-nonce'}
+    if mutation == 'host':
+        query['ext_agent_host_id'] = installation
+    elif mutation == 'prompt':
+        query.pop('prompt')
+    elif mutation == 'client':
+        query['client_id'] = 'dynamic_agent_client'
+    elif mutation in {'id_token_hint', 'login_hint'}:
+        query[mutation] = 'must-not-forward'
+    elif mutation == 'nonce':
+        edges._migration_nonces.add(query['nonce'])
+    if mutation is not None:
+        with pytest.raises(AssertionError):
+            edges._migration_request(query)
+        assert edges._migration_ticket_archive is None
+        return
+    first = edges._migration_request(query)
+    assert first and all(type(value) is bool and value for value in first.values())
+    second = edges._migration_request({**query, 'nonce': 'synthetic-other-nonce'})
+    assert second == {**first, 'callbackDeferred': False}
+    assert edges._migration_ticket_archive == {'receipt': b'synthetic immutable retired receipt'}
+    assert (archive / 'receipt').read_bytes() == b'synthetic immutable retired receipt'
+    assert not edges.codes and not edges.events
+
+
+@pytest.mark.macos_only
+def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path, monkeypatch):
+    from eidolon_cli.organization_setup_subscription_auth import SubscriptionAuthService, OwnerContext
+    from eidolon_cli.organization_setup_subscription_host import INSTALLATION_NAME
+    root = (tmp_path / 'legacy-migration-profile').resolve()
+    root.mkdir(mode=0o700)
+    (root / 'config.yaml').write_text('{}')
+    monkeypatch.setenv('HERMES_HOME', str(root))
+    identity = fixture.seed_profile(root, legacy=True)
+    before = fixture.snapshot(root)
+    edges = SyntheticEdges(root, host_migration='cancel_once').install()
+    try:
+        seed = edges._host_seed
+        context = OwnerContext(str(root), identity['organizationId'], identity['owner']['ownerId'],
+            'a' * 64, object(), object(), lambda: True, setup_guard=lambda: True)
+        service = SubscriptionAuthService(seed['store'], seed['host'], context)
+        status = service.status()
+        assert status['connectionState'] == 'active' and status['hostIdentityState'] == 'migration_required'
+        assert status['canMigrateHostIdentity'] is False
+        assert not (root / INSTALLATION_NAME / 'oauth-host.json').exists()
+        assert not list((root / INSTALLATION_NAME).glob('oauth-consent-*'))
+        evidence = fixture.migration_evidence(root)
+        assert evidence['legacySeeded'] and evidence['sameBinding'] and evidence['sameInstallation']
+        assert not evidence['changedEpoch'] and not evidence['provenanceCommitted']
+        assert fixture.snapshot(root) == before
+        assert not any(event['kind'] in {'consent', 'oauth-exchange', 'responses'} for event in edges.events)
+    finally:
+        edges.close()

@@ -25,6 +25,7 @@ import { expect } from './test'
 const root = process.env.EIDOLON_TEST_PACKAGED_APP === '1'
   ? packagedSources().product.root
   : path.resolve(import.meta.dirname, '../../..')
+
 const switchPython = path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 export const subscriptionModel = 'synthetic-subscription-model'
 export const suggestedJobs = 'Prepare clear studio drafts for owner review.'
@@ -329,6 +330,7 @@ async function observeSubscriptionRpc(page: Page) {
       'createTeam',
       'setupSubscriptionStatus',
       'beginSetupSubscription',
+      'beginSetupSubscriptionHostMigration',
       'cancelSetupSubscription',
       'setupSubscriptionModels',
       'setupSubscriptionPolicy',
@@ -720,6 +722,7 @@ export async function setupNativeSubscription(
   options: {
     packaged?: boolean
     legacy?: boolean
+    hostMigration?: 'cancel_once'
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
     availabilityProbe?:
@@ -765,6 +768,36 @@ export async function setupNativeSubscription(
         sandbox.hermesHome
       )
     )
+
+  const migrationEvidence = () => {
+    if (options.hostMigration !== 'cancel_once') {
+      throw new Error('subscription_migration_evidence_unavailable')
+    }
+
+    const value: unknown = JSON.parse(
+      python(
+        'import json,sys; from tests.eidolon_cli.subscription_native_fixture import migration_evidence; print(json.dumps(migration_evidence(sys.argv[1])))',
+        sandbox.hermesHome
+      )
+    )
+
+    const fields = [
+      'legacySeeded', 'sameInstallation', 'sameBinding', 'sameOwner', 'sameAccount', 'sameClient',
+      'changedEpoch', 'provenanceCommitted', 'retainedGenerationRows', 'priorTicketEvidenceRetained',
+      'priorGrantLocallyRetired'
+    ] as const
+
+    const evidence = value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
+
+    if (
+      evidence.version !== 1 || Object.keys(evidence).length !== fields.length + 1 ||
+      fields.some(field => typeof evidence[field] !== 'boolean')
+    ) {
+      throw new Error('subscription_migration_evidence_invalid')
+    }
+
+    return { version: 1, ...Object.fromEntries(fields.map(field => [field, evidence[field]])) }
+  }
 
   const cleanupDiagnostic = () => ({
     version: 1,
@@ -823,7 +856,7 @@ export async function setupNativeSubscription(
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -836,6 +869,7 @@ export async function setupNativeSubscription(
 
     delete env.EIDOLON_HOME
     launchAttempted = true
+
     // The packaged lane explicitly uses the product checkout's guarded Python runtime.
     // It never exercises first-install bootstrap or an installed user profile.
     if (options.packaged) {
@@ -953,6 +987,7 @@ export async function setupNativeSubscription(
       },
       events,
       snapshot,
+      migrationEvidence,
       assertQuiet,
       installed: () =>
         readdirSync(evidence)

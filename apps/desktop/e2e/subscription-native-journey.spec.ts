@@ -149,6 +149,32 @@ async function activate(dialog: Locator, legacy: boolean) {
   return before
 }
 
+// Used only by the migration scenario. Existing native journeys stay unchanged.
+async function reviewMigrationPolicy(connection: Locator) {
+  const before = fixture!.snapshot()
+  await connection.getByRole('button', { name: 'Load account models', exact: true }).click()
+  await connection.getByLabel('Setup model', { exact: true }).selectOption(subscriptionModel)
+  await connection.getByLabel('Improve calls', { exact: true }).fill('4')
+  await connection.getByLabel('Generate / Regenerate calls', { exact: true }).fill('3')
+  await connection.getByLabel('Total setup calls', { exact: true }).fill('7')
+  await connection.getByLabel('Local timeout (seconds)', { exact: true }).fill('120')
+  await connection.getByRole('button', { name: 'Review setup policy', exact: true }).click()
+  const review = connection.getByRole('region', { name: 'Review setup policy', exact: true })
+  await expect(review.getByText(/^Previous calls retained: 1, including 1 legacy calls\./)).toBeVisible()
+  const acknowledgement = connection.getByRole('checkbox', { name: subscriptionAck, exact: true })
+  await expect(acknowledgement).not.toBeChecked()
+  const apply = connection.getByRole('button', { name: 'Apply reviewed policy', exact: true })
+  await expect(apply).toBeDisabled()
+  expect(fixture!.snapshot()).toEqual(before)
+  fixture!.assertQuiet(0)
+  await acknowledgement.check()
+  await apply.click()
+  await expect(
+    connection.getByText('Policy saved. Load account models again before Generate or Improve.', { exact: true })
+  ).toBeVisible()
+  fixture!.assertQuiet(0)
+}
+
 test.describe('host-native subscription setup', () => {
   test.skip(process.platform !== 'darwin', 'Production protected subscription storage is currently macOS-only')
 
@@ -775,6 +801,184 @@ test.describe('host-native subscription setup', () => {
     await test.info().attach('subscription-uncertain-proof', {
       contentType: 'application/json',
       body: JSON.stringify({ events: fixture.events(), after })
+    })
+  })
+
+  test('legacy host identity requires explicit migration, cancel and editor reopen, with retained debt and fresh policy', async () => {
+    fixture = await setupNativeSubscription({
+      legacy: true,
+      hostMigration: 'cancel_once',
+      packaged: process.env.EIDOLON_TEST_PACKAGED_APP === '1'
+    })
+
+    if (process.env.EIDOLON_TEST_PACKAGED_APP === '1') {
+      await test.info().attach('packaged-macos-proof', {
+        contentType: 'application/json',
+        body: JSON.stringify(await packagedMacosProof(fixture.app, fixture.page, fixture.sandbox))
+      })
+    }
+
+    let dialog = await openSetup(true)
+    let connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
+    const history = fixture.snapshot()
+    expect(history.generations).toHaveLength(1)
+    expect(history.generations[0]).toMatchObject({ idempotency_key: 'synthetic-legacy', dispatched: 1 })
+    expect(history.subscriptionPolicy).toEqual([])
+    fixture.assertQuiet(0)
+    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    await expect(connection.getByRole('button', { name: 'Load account models', exact: true })).toBeEnabled()
+    await expect(connection.getByRole('button', { name: 'Update identity and reconnect', exact: true })).toHaveCount(0)
+    expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
+    const legacyGrant = fixture.migrationEvidence()
+    expect(legacyGrant).toMatchObject({ legacySeeded: true, provenanceCommitted: false, changedEpoch: false })
+
+    // Establish the old policy through the same owner UI. No fabricated policy
+    // receipt or automatic provider authorization is used to create this state.
+    await reviewMigrationPolicy(connection)
+    const oldPolicy = fixture.snapshot()
+    expect(oldPolicy.subscriptionPolicy).toHaveLength(1)
+    expect(oldPolicy.generations).toEqual(history.generations)
+    await connection.getByRole('button', { name: 'Load account models', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
+    await connection.locator('details > summary').click()
+    await connection.getByRole('button', { name: 'Disconnect ChatGPT', exact: true }).click()
+
+    const migrationLabel = 'Allow this host identity change and a new locally stored connection'
+
+    const disclosure =
+      'Updating this profile changes the host identity shared with ChatGPT and requires fresh consent in your system browser. Local history, usage and outstanding obligations stay in place; other profiles are unchanged. Prior remote authorization may remain unless separately revoked.'
+
+    let consent = connection.getByRole('checkbox', { name: migrationLabel, exact: true })
+    let begin = connection.getByRole('button', { name: 'Update identity and reconnect', exact: true })
+    await expect(connection.getByText(disclosure, { exact: true })).toBeVisible()
+    await expect(consent).not.toBeChecked()
+    await expect(begin).toBeDisabled()
+    await expect(connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })).toHaveCount(0)
+    expect(fixture.snapshot()).toEqual(oldPolicy)
+    expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
+    fixture.assertQuiet(0)
+    await consent.check()
+    expect(fixture.events().filter(row => row.kind === 'consent')).toEqual([])
+    await begin.click()
+    await expect(connection.getByRole('button', { name: 'Cancel sign-in', exact: true })).toBeEnabled()
+    const firstConsent = fixture.events().filter(row => row.kind === 'consent')
+    expect(firstConsent).toHaveLength(1)
+    expect(firstConsent[0]).toMatchObject({
+      dynamicRegistration: false,
+      hostMatchesInstallationUrn: true,
+      promptConsent: true,
+      noIdTokenHint: true,
+      noLoginHint: true,
+      savedClient: true,
+      freshNonce: true,
+      callbackDeferred: true
+    })
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toEqual([])
+    expect(fixture.diagnostic().rpc.rpc).toContainEqual(expect.objectContaining({
+      method: 'organization.beginSetupSubscriptionHostMigration', phase: 'result'
+    }))
+    expect(fixture.diagnostic().rpc.rpc.some(row => row.method === 'organization.beginSetupSubscription')).toBe(false)
+    await connection.getByRole('button', { name: 'Cancel sign-in', exact: true }).click()
+    await expect(consent).not.toBeChecked()
+    await expect(begin).toBeDisabled()
+    expect(fixture.snapshot()).toEqual(oldPolicy)
+    expect(fixture.migrationEvidence()).toMatchObject({ provenanceCommitted: false, changedEpoch: false })
+    fixture.assertQuiet(0)
+
+    // This boundary is an editor/dialog reopen, not an application or backend
+    // restart: the synthetic vault is intentionally process-local.
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    dialog = await openSetup(true)
+    connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
+    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+    consent = connection.getByRole('checkbox', { name: migrationLabel, exact: true })
+    begin = connection.getByRole('button', { name: 'Update identity and reconnect', exact: true })
+    await expect(connection.getByText(disclosure, { exact: true })).toBeVisible()
+    await expect(consent).not.toBeChecked()
+    await expect(begin).toBeDisabled()
+    expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toEqual([])
+    await consent.check()
+    await begin.click()
+    await expect(connection.getByRole('button', { name: 'Load account models', exact: true })).toBeEnabled({ timeout: 30_000 })
+    const consents = fixture.events().filter(row => row.kind === 'consent')
+    expect(consents).toHaveLength(2)
+    expect(consents[1]).toMatchObject({
+      dynamicRegistration: false,
+      hostMatchesInstallationUrn: true,
+      promptConsent: true,
+      noIdTokenHint: true,
+      noLoginHint: true,
+      savedClient: true,
+      freshNonce: true,
+      callbackDeferred: false
+    })
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(1)
+    const migrated = fixture.migrationEvidence()
+    expect(migrated).toMatchObject({
+      legacySeeded: true,
+      sameInstallation: true,
+      sameBinding: true,
+      sameOwner: true,
+      sameAccount: true,
+      sameClient: true,
+      changedEpoch: true,
+      provenanceCommitted: true,
+      priorTicketEvidenceRetained: true,
+      priorGrantLocallyRetired: true,
+      retainedGenerationRows: true
+    })
+    expect(fixture.snapshot()).toEqual(oldPolicy)
+    await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    fixture.assertQuiet(0)
+
+    // The previous epoch's policy is not authorization for this grant. The
+    // retained legacy call remains charged in the new explicit policy review.
+    await reviewMigrationPolicy(connection)
+    const after = fixture.snapshot()
+    expect(after.subscriptionPolicy).toHaveLength(2)
+    expect(after.subscriptionPolicy).toContainEqual(oldPolicy.subscriptionPolicy[0])
+    const priorReceipt = JSON.parse(String(oldPolicy.subscriptionPolicy[0].receipt_json))
+
+    const nextReceipt = JSON.parse(String(after.subscriptionPolicy.find(row =>
+      row.idempotency_key !== oldPolicy.subscriptionPolicy[0].idempotency_key
+    )!.receipt_json))
+
+    expect(nextReceipt.candidate.authorizationEpoch).not.toBe(priorReceipt.candidate.authorizationEpoch)
+    expect(nextReceipt.retainedCallCounts).toEqual(priorReceipt.retainedCallCounts)
+    expect(nextReceipt.retainedCallCounts).toMatchObject({ total: 1, legacy: 1 })
+    expect(after.generations).toEqual(oldPolicy.generations)
+    expect(after.attempts).toEqual(oldPolicy.attempts)
+    expect(after.dispatches).toEqual(oldPolicy.dispatches)
+    expect(after.outcomes).toEqual(oldPolicy.outcomes)
+    expect(after.model).toEqual(oldPolicy.model)
+    expect(after.executionPolicy.map(row => ({ settings: row.settings, fingerprint: row.fingerprint }))).toEqual(
+      oldPolicy.executionPolicy.map(row => ({ settings: row.settings, fingerprint: row.fingerprint }))
+    )
+    expect(after.executionPolicy[0].generation).toBe(Number(oldPolicy.executionPolicy[0].generation) + 1)
+    expect(after.teams).toEqual([])
+    expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
+    await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
+    await connection.getByRole('button', { name: 'Load account models', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    fixture.assertQuiet(0)
+    await test.info().attach('subscription-host-migration-reviewed', {
+      contentType: 'image/png', body: await dialog.screenshot()
+    })
+    await test.info().attach('subscription-host-migration-proof', {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        legacyGrant, migrated,
+        consentChecks: consents.map(row => Object.fromEntries([
+          'hostMatchesInstallationUrn', 'promptConsent', 'noIdTokenHint', 'noLoginHint',
+          'savedClient', 'freshNonce', 'callbackDeferred'
+        ].map(field => [field, row[field] === true]))),
+        history, oldPolicy, after
+      })
     })
   })
 })

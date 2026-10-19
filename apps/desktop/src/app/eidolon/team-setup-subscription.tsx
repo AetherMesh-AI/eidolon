@@ -88,6 +88,8 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
   const disabled = props.disabled || state.pending
   const connected = state.status?.connectionState === 'active'
   const absent = ['absent', 'disconnected'].includes(state.status?.connectionState ?? '')
+  const migrationRequired = state.status?.hostIdentityState === 'migration_required'
+  const canBegin = ['new', 'current'].includes(state.status?.hostIdentityState ?? '')
   const activePolicy = state.policy?.policyVersion === 3 ? (state.policy.configuration as SubscriptionPolicy) : null
   const currentPreview = state.preview
   const limits = state.policy?.setupBudget.limits
@@ -137,7 +139,42 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
               </Button>
             </>
           )}
-          {absent && !state.connectionPending && !state.authorizationRecoveryRequired && (
+          {absent && state.status?.hostIdentityState === undefined && <p role="status">{copy.identityUnavailable}</p>}
+          {state.status?.hostIdentityState === 'recovery_required' && (
+            <p role="status">{copy.identityRecoveryRequired}</p>
+          )}
+          {absent && migrationRequired && !state.connectionPending && !state.authorizationRecoveryRequired && (
+            <>
+              <p className="eid-team-note" id={`${id}-migration-consent`}>
+                {copy.hostMigrationConsent}
+              </p>
+              {state.status?.canMigrateHostIdentity && !state.status.cleanupPending ? (
+                <>
+                  <p className="eid-team-note">{copy.consent}</p>
+                  <label>
+                    <input
+                      aria-describedby={`${id}-migration-consent`}
+                      checked={state.hostMigrationConsent}
+                      disabled={disabled}
+                      onChange={event => state.setHostMigrationConsent(event.target.checked)}
+                      type="checkbox"
+                    />
+                    {copy.hostMigrationCheck}
+                  </label>
+                  <Button
+                    disabled={disabled || !state.hostMigrationConsent}
+                    onClick={state.beginHostMigration}
+                    size="sm"
+                  >
+                    {copy.hostMigrationContinue}
+                  </Button>
+                </>
+              ) : (
+                <p role="status">{copy.hostMigrationBlocked}</p>
+              )}
+            </>
+          )}
+          {absent && canBegin && !state.connectionPending && !state.authorizationRecoveryRequired && (
             <>
               <p className="eid-team-note" id={`${id}-consent`}>
                 {copy.consent}
