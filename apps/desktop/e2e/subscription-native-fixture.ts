@@ -17,6 +17,7 @@ import {
 import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer } from './mock-server'
 import { switchPython } from './organization-switch-fixture'
+import { cleanupSubscriptionFixture, createSubscriptionLifecycle } from './subscription-native-lifecycle'
 import { createSubscriptionSandbox } from './subscription-native-sandbox'
 import { expect } from './test'
 
@@ -735,6 +736,9 @@ export async function setupNativeSubscription(
   mkdirSync(evidence)
   let launch: Awaited<ReturnType<typeof launchDesktop>> | undefined
   let rpcObserver: Awaited<ReturnType<typeof observeSubscriptionRpc>> | undefined
+  let lifecycle: ReturnType<typeof createSubscriptionLifecycle> | undefined
+  let launchAttempted = false
+  let cleanupError: 'none' | 'ENOTEMPTY' | 'EACCES' | 'EPERM' | 'ENOENT' | 'other' = 'none'
 
   const records = (prefix: string): Row[] =>
     readdirSync(evidence)
@@ -756,19 +760,37 @@ export async function setupNativeSubscription(
       )
     )
 
+  const cleanupDiagnostic = () => ({
+    version: 1,
+    lifecycle: lifecycle?.diagnostic() ?? { phase: launchAttempted ? 'capture_missing' : 'not_launched' },
+    cleanupError,
+    remaining: sandbox.diagnostic()
+  })
+
   const cleanup = async () => {
     try {
-      try {
-        await rpcObserver?.close()
-      } finally {
-        await launch?.app.close()
-      }
-    } finally {
-      try {
-        await mock.close()
-      } finally {
-        sandbox.cleanup()
-      }
+      await cleanupSubscriptionFixture({
+        capture: async () => {
+          if (lifecycle) {
+            await lifecycle.capture()
+          } else if (launchAttempted) {
+            throw new Error('subscription_fixture_lifecycle_capture_missing')
+          }
+        },
+        observer: async () => rpcObserver?.close(),
+        app: async () => launch?.app.close(),
+        wait: async () => {
+          if (lifecycle) {
+            await lifecycle.wait()
+          }
+        },
+        mock: () => mock.close(),
+        remove: () => sandbox.cleanup()
+      })
+    } catch (error) {
+      const code = error instanceof Error ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined
+      cleanupError = ['ENOTEMPTY', 'EACCES', 'EPERM', 'ENOENT'].includes(code) ? code : 'other'
+      throw error
     }
   }
 
@@ -807,7 +829,14 @@ export async function setupNativeSubscription(
     })
 
     delete env.EIDOLON_HOME
+    launchAttempted = true
     launch = await launchDesktop(env, 'subscription-native-network.cjs')
+    lifecycle = createSubscriptionLifecycle(launch.app.process(), {
+      python: switchPython,
+      script: path.join(import.meta.dirname, 'subscription-native-lifecycle.py'),
+      cwd: root
+    })
+    await lifecycle.bind()
     rpcObserver = await observeSubscriptionRpc(launch.page)
 
     const fixture: MockBackendFixture = {
@@ -844,6 +873,7 @@ export async function setupNativeSubscription(
     return {
       ...fixture,
       evidence,
+      cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
       diagnostic: () => {
@@ -916,7 +946,12 @@ export async function setupNativeSubscription(
       hasPrivateStore: () => existsSync(path.join(sandbox.hermesHome, '.setup-subscription-private'))
     }
   } catch (error) {
-    await cleanup()
+    try {
+      await cleanup()
+    } catch {
+      /* Preserve the setup failure; cleanup remains fail-closed. */
+    }
+
     throw error
   }
 }

@@ -75,7 +75,7 @@ jobs:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: |
           git rev-parse HEAD HEAD^{tree}
-          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/eidolon_cli/test_managed_install_shapes.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/tui_gateway/test_subscription_native_journey.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py tests/agent/test_bounded_context.py -j 4
+          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/eidolon_cli/test_managed_install_shapes.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/eidolon_cli/test_subscription_native_lifecycle.py tests/tui_gateway/test_subscription_native_journey.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py tests/agent/test_bounded_context.py -j 4
           .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization*.py
           .venv/bin/python scripts/check_compat_pointers.py
       - name: Verify profile export and consistent recovery backups
@@ -163,6 +163,7 @@ jobs:
             tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py
             tests/eidolon_cli/test_subscription_native_diagnostics.py
             tests/eidolon_cli/test_subscription_native_recovery_faults.py
+            tests/eidolon_cli/test_subscription_native_lifecycle.py
             tests/tui_gateway/test_subscription_native_journey.py
             tests/eidolon_cli/test_organization_store.py
             tests/eidolon_cli/test_organization_schema_initialization.py
@@ -179,6 +180,7 @@ jobs:
             tests/eidolon_cli/test_organization_route_benchmarks.py
             tests/eidolon_cli/test_organization_owner_policy.py
             tests/eidolon_cli/test_organization_ledger_writer.py
+            tests/eidolon_cli/test_organization_subscription_send_coordination.py
             tests/eidolon_cli/test_organization_team_setup.py
             tests/eidolon_cli/test_organization_team_admission.py
             tests/eidolon_cli/test_organization_team_generation.py
@@ -423,7 +425,7 @@ jobs:
       - name: Verify synthetic subscription, policy, admission and API regressions
         run: |
           set -euo pipefail
-          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_http.py tests/eidolon_cli/test_organization_setup_subscription_catalog.py tests/eidolon_cli/test_organization_setup_subscription_refresh.py tests/eidolon_cli/test_organization_setup_subscription_filesystem.py tests/eidolon_cli/test_organization_setup_subscription_recovery.py tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py tests/eidolon_cli/test_organization_setup_subscription_revocation.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py tests/eidolon_cli/test_organization_setup_subscription_transport.py tests/eidolon_cli/test_organization_setup_subscription_usage.py tests/eidolon_cli/test_organization_setup_subscription_admission.py tests/eidolon_cli/test_organization_team_subscription_generation.py tests/eidolon_cli/test_organization_team_admission.py tests/eidolon_cli/test_organization_team_budget.py tests/eidolon_cli/test_organization_team_generation.py tests/eidolon_cli/test_organization_team_setup.py tests/eidolon_cli/test_organization_owner_policy.py tests/eidolon_cli/test_organization_ledger_writer.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_setup_subscription_flow.py tests/tui_gateway/test_organization_setup_subscription_preflight.py tests/eidolon_cli/test_organization_setup_subscription_catalog_passive.py tests/tui_gateway/test_organization_setup_subscription_readiness.py tests/eidolon_cli/test_organization_subscription_races.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py -- -vv -o faulthandler_timeout=30 2>&1 | tee subscription-native-proof/backend.log
+          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_http.py tests/eidolon_cli/test_organization_setup_subscription_catalog.py tests/eidolon_cli/test_organization_setup_subscription_refresh.py tests/eidolon_cli/test_organization_setup_subscription_filesystem.py tests/eidolon_cli/test_organization_setup_subscription_recovery.py tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py tests/eidolon_cli/test_organization_setup_subscription_revocation.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py tests/eidolon_cli/test_organization_setup_subscription_transport.py tests/eidolon_cli/test_organization_setup_subscription_usage.py tests/eidolon_cli/test_organization_setup_subscription_admission.py tests/eidolon_cli/test_organization_team_subscription_generation.py tests/eidolon_cli/test_organization_team_admission.py tests/eidolon_cli/test_organization_team_budget.py tests/eidolon_cli/test_organization_team_generation.py tests/eidolon_cli/test_organization_team_setup.py tests/eidolon_cli/test_organization_owner_policy.py tests/eidolon_cli/test_organization_ledger_writer.py tests/eidolon_cli/test_organization_subscription_send_coordination.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_setup_subscription_flow.py tests/tui_gateway/test_organization_setup_subscription_preflight.py tests/eidolon_cli/test_organization_setup_subscription_catalog_passive.py tests/tui_gateway/test_organization_setup_subscription_readiness.py tests/eidolon_cli/test_organization_subscription_races.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/eidolon_cli/test_subscription_native_lifecycle.py -- -vv -o faulthandler_timeout=30 2>&1 | tee subscription-native-proof/backend.log
       - name: Verify protected store, native host and export boundaries
         run: |
           set -euo pipefail
@@ -479,6 +481,8 @@ jobs:
         run: |
           set -euo pipefail
           node --test e2e/subscription-native-observer.test.cjs 2>&1 | tee ../../subscription-native-proof/observer-tests.log
+          node --test e2e/subscription-native-sandbox.test.cjs 2>&1 | tee ../../subscription-native-proof/sandbox-tests.log
+          node --test e2e/subscription-native-lifecycle.test.cjs 2>&1 | tee ../../subscription-native-proof/lifecycle-tests.log
           npx vitest run src/app/eidolon/organization-setup-connection-client.test.ts src/app/eidolon/organization-setup-connection.test.tsx src/app/eidolon/team-setup-subscription.test.tsx src/app/eidolon/team-setup-subscription-client.test.ts src/app/eidolon/team-onboarding-subscription.test.tsx src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-onboarding-entry.test.tsx src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-editor.test.tsx src/app/eidolon/team-setup-budget-client.test.ts 2>&1 | tee ../../subscription-native-proof/components.log
       - name: Verify desktop types
         working-directory: source/apps/desktop
@@ -572,8 +576,58 @@ jobs:
             ['subscription-native-journey.spec.ts', 'known unsent inference recovers through one explicit retry without losing debt'],
             ['subscription-native-journey.spec.ts', 'initial publication refusal recovers locally before explicit new consent'],
             ['subscription-native-journey.spec.ts', 'stranded unsent inference reconciles locally before one explicit retry'],
+            ['subscription-native-journey.spec.ts', 'second open-window refusal recovers locally before explicit new consent'],
             ['organization-fresh-team-setup.spec.ts', 'two fresh isolated organizations configure their own models and explicitly review and create synthetic teams'],
           ]
+          function exactKeys(value, keys, label) {
+            assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value), `${label}: expected an object`)
+            assert.deepEqual(Object.keys(value).sort(), [...keys].sort(), `${label}: unexpected keys`)
+          }
+          function requireTeardown(result, title) {
+            const receipts = (result.attachments ?? []).filter(attachment => attachment.name === 'subscription-teardown-diagnostic')
+            assert.equal(receipts.length, 1, `Missing or duplicated teardown receipt: ${title}`)
+            const attachment = receipts[0]
+            assert.equal(attachment.contentType, 'application/json', `Wrong teardown receipt content type: ${title}`)
+            assert.ok(typeof attachment.body === 'string' && attachment.body.length > 0 && attachment.body.length <= 5464, `Missing or oversized teardown receipt body: ${title}`)
+            assert.match(attachment.body, /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/, `Malformed teardown receipt base64: ${title}`)
+            const bytes = Buffer.from(attachment.body, 'base64')
+            assert.ok(bytes.length > 0 && bytes.length <= 4096, `Oversized decoded teardown receipt: ${title}`)
+            assert.equal(bytes.toString('base64'), attachment.body, `Noncanonical teardown receipt base64: ${title}`)
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+            const receipt = JSON.parse(text)
+            // JSON.parse alone silently accepts repeated keys, including escaped aliases.
+            const tokens = text.match(/"(?:\\.|[^"\\])*"|[{}\[\]:,]/g) ?? []
+            const stack = []
+            for (let index = 0; index < tokens.length; index++) {
+              const token = tokens[index]
+              if (token === '{') stack.push(new Set())
+              else if (token === '[') stack.push(null)
+              else if (token === '}' || token === ']') stack.pop()
+              else if (token.startsWith('"') && tokens[index + 1] === ':') {
+                const key = JSON.parse(token)
+                assert.ok(stack.at(-1) instanceof Set && !stack.at(-1).has(key), `Duplicated teardown receipt key: ${title}`)
+                stack.at(-1).add(key)
+              }
+            }
+            exactKeys(receipt, ['version', 'lifecycle', 'cleanupError', 'remaining'], `Teardown receipt ${title}`)
+            assert.equal(receipt.version, 1, `Unsupported teardown receipt version: ${title}`)
+            assert.equal(receipt.cleanupError, 'none', `Teardown cleanup failed: ${title}`)
+            const lifecycle = receipt.lifecycle
+            exactKeys(lifecycle, ['phase', 'reason', 'capturedCount', 'initialLive', 'remainingLive', 'rootExited'], `Teardown lifecycle ${title}`)
+            assert.equal(lifecycle.phase, 'settled', `Teardown did not settle: ${title}`)
+            assert.equal(lifecycle.reason, 'none', `Teardown lifecycle refused: ${title}`)
+            assert.ok(Number.isInteger(lifecycle.capturedCount) && lifecycle.capturedCount >= 1 && lifecycle.capturedCount <= 65, `Invalid captured process count: ${title}`)
+            assert.ok(Number.isInteger(lifecycle.initialLive) && lifecycle.initialLive >= 0 && lifecycle.initialLive <= lifecycle.capturedCount, `Invalid initially live process count: ${title}`)
+            assert.equal(lifecycle.remainingLive, 0, `Teardown left live processes: ${title}`)
+            assert.equal(lifecycle.rootExited, true, `Teardown root exit is unverified: ${title}`)
+            const remaining = receipt.remaining
+            exactKeys(remaining, ['state', 'truncated', 'counts'], `Teardown remaining entries ${title}`)
+            assert.equal(remaining.state, 'removed', `Teardown sandbox was not removed: ${title}`)
+            assert.equal(remaining.truncated, false, `Teardown remaining entries were truncated: ${title}`)
+            const categories = ['home', 'userData', 'userHome', 'evidence', 'observer', 'other']
+            exactKeys(remaining.counts, categories, `Teardown remaining counts ${title}`)
+            for (const category of categories) assert.equal(remaining.counts[category], 0, `Teardown left ${category} entries: ${title}`)
+          }
           for (const [file, title] of required) {
             const matches = specs.filter(spec => spec.file?.replaceAll('\\', '/').endsWith(file) && spec.title === title)
             assert.equal(matches.length, 1, `Missing or duplicated native case: ${title}`)
@@ -584,6 +638,7 @@ jobs:
             assert.equal(test.results?.length, 1, `Native case did not run exactly once: ${title}`)
             assert.equal(test.results[0].status, 'passed', `Native case skipped or failed: ${title}`)
             assert.equal(test.results[0].retry, 0, `Native case retried: ${title}`)
+            if (file === 'subscription-native-journey.spec.ts') requireTeardown(test.results[0], title)
             console.log(`${file}: ${title}: passed once`)
           }
           JS

@@ -1,5 +1,5 @@
 /** Persistent-profile-shaped native fixture; never relaxes protected-store checks. */
-import { chmodSync, lstatSync, mkdirSync, realpathSync, rmSync, type Stats } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, opendirSync, realpathSync, rmSync, type Stats } from 'node:fs'
 import path from 'node:path'
 
 import { createSandbox, type Sandbox } from './fixtures'
@@ -30,7 +30,16 @@ function directory(location: string, uid: number, privateMode = false): number[]
   return identity(value)
 }
 
-export function createSubscriptionSandbox(workspace: string): Sandbox {
+interface RemainingEntries {
+  state: 'observed' | 'removed' | 'identity_unverified' | 'inspection_failed'
+  truncated: boolean
+  counts: { home: number; userData: number; userHome: number; evidence: number; observer: number; other: number }
+}
+export interface SubscriptionSandbox extends Sandbox {
+  diagnostic: () => RemainingEntries
+}
+
+export function createSubscriptionSandbox(workspace: string): SubscriptionSandbox {
   if (typeof process.getuid !== 'function' || !path.isAbsolute(workspace) || path.resolve(workspace) !== workspace) {
     throw new Error('subscription_sandbox_unsupported_workspace')
   }
@@ -89,6 +98,62 @@ export function createSubscriptionSandbox(workspace: string): Sandbox {
 
   return {
     ...sandbox,
+    diagnostic: () => {
+      const result: RemainingEntries = {
+        state: closed ? 'removed' : 'observed',
+        truncated: false,
+        counts: { home: 0, userData: 0, userHome: 0, evidence: 0, observer: 0, other: 0 }
+      }
+
+      if (closed) {
+        return result
+      }
+
+      try {
+        verify()
+      } catch {
+        result.state = 'identity_unverified'
+
+        return result
+      }
+
+      try {
+        const directory = opendirSync(ownedRoot)
+
+        const categories: Record<string, keyof RemainingEntries['counts']> = {
+          'hermes-home': 'home',
+          'electron-user-data': 'userData',
+          'user-home': 'userHome',
+          evidence: 'evidence',
+          'python-observer': 'observer'
+        }
+
+        try {
+          for (let count = 0; count <= 64; count++) {
+            const entry = directory.readSync()
+
+            if (!entry) {
+              break
+            }
+
+            if (count === 64) {
+              result.truncated = true
+
+              break
+            }
+
+            const category = Object.hasOwn(categories, entry.name) ? categories[entry.name] : 'other'
+            result.counts[category]++
+          }
+        } finally {
+          directory.closeSync()
+        }
+      } catch {
+        result.state = 'inspection_failed'
+      }
+
+      return result
+    },
     cleanup: () => {
       if (closed) {
         return

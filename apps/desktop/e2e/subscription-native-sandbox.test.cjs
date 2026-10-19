@@ -296,3 +296,65 @@ for (const stage of ['layout-write', 'root-validation']) {
     assert.equal(fs.readdirSync(container(root)).length, 1)
   })
 }
+
+test('remaining-entry receipt is bounded, closed-category and contains no names', posix, t => {
+  const root = workspace(t)
+  const sandbox = harness().createSubscriptionSandbox(root)
+  fs.mkdirSync(path.join(sandbox.root, 'user-home'))
+  fs.mkdirSync(path.join(sandbox.root, 'evidence'))
+  fs.mkdirSync(path.join(sandbox.root, 'python-observer'))
+  for (let i = 0; i < 70; i++) fs.writeFileSync(path.join(sandbox.root, `private-unknown-${i}`), '')
+  const receipt = JSON.parse(JSON.stringify(sandbox.diagnostic()))
+  assert.equal(receipt.state, 'observed')
+  assert.equal(receipt.truncated, true)
+  assert.equal(
+    Object.values(receipt.counts).reduce((a, b) => a + b, 0),
+    64
+  )
+  assert.deepEqual(Object.keys(receipt.counts).sort(), [
+    'evidence',
+    'home',
+    'observer',
+    'other',
+    'userData',
+    'userHome'
+  ])
+  assert.equal(JSON.stringify(receipt).includes('private-unknown'), false)
+  assert.equal(JSON.stringify(receipt).includes(root), false)
+  sandbox.cleanup()
+  assert.equal(sandbox.diagnostic().state, 'removed')
+})
+
+test('remaining-entry receipt refuses changed root before enumeration', posix, t => {
+  const root = workspace(t)
+  let enumerated = false
+  const sandbox = harness({
+    opendirSync: () => {
+      enumerated = true
+      assert.fail('Do not enumerate replacement')
+    }
+  }).createSubscriptionSandbox(root)
+  fs.renameSync(sandbox.root, `${sandbox.root}-original`)
+  fs.mkdirSync(sandbox.root, { mode: 0o700 })
+  assert.equal(sandbox.diagnostic().state, 'identity_unverified')
+  assert.equal(enumerated, false)
+  assert.throws(sandbox.cleanup, /identity_changed/)
+})
+
+test('one ENOTEMPTY refusal is retained with safe surviving categories and no retry', posix, t => {
+  const root = workspace(t)
+  let attempts = 0
+  const error = Object.assign(new Error('synthetic'), { code: 'ENOTEMPTY' })
+  const sandbox = harness({
+    rmSync: () => {
+      attempts++
+      throw error
+    }
+  }).createSubscriptionSandbox(root)
+  assert.throws(sandbox.cleanup, value => value === error)
+  assert.equal(attempts, 1)
+  const receipt = JSON.parse(JSON.stringify(sandbox.diagnostic()))
+  assert.equal(receipt.state, 'observed')
+  assert.equal(receipt.counts.home, 1)
+  assert.equal(receipt.counts.userData, 1)
+})

@@ -11,6 +11,7 @@ import {
   suggestedGoals,
   suggestedJobs
 } from './subscription-native-fixture'
+import { cleanupAndReport } from './subscription-native-lifecycle'
 import { allowErrorBanners, expect, test } from './test'
 
 let fixture: Awaited<ReturnType<typeof setupNativeSubscription>> | undefined
@@ -28,7 +29,16 @@ test.afterEach(async () => {
     }
   } finally {
     try {
-      await fixture?.cleanup()
+      const closing = fixture
+
+      if (closing) {
+        await cleanupAndReport(closing.cleanup, async () => {
+          await test.info().attach('subscription-teardown-diagnostic', {
+            contentType: 'application/json',
+            body: JSON.stringify(closing.cleanupDiagnostic(), null, 2)
+          })
+        })
+      }
     } finally {
       fixture = undefined
     }
