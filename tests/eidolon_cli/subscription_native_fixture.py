@@ -95,6 +95,21 @@ def seed_profile(home, *, legacy=False):
     return identity
 
 
+_HOST_MIGRATION_EVIDENCE = frozenset({'legacySeeded', 'sameInstallation', 'sameBinding',
+    'sameOwner', 'sameAccount', 'sameClient', 'changedEpoch', 'provenanceCommitted',
+    'retainedGenerationRows', 'priorTicketEvidenceRetained', 'priorGrantLocallyRetired'})
+
+
+def migration_evidence(home):
+    """Read only a fixture checkpoint of closed comparisons, never credentials."""
+    value = json.loads((Path(home) / '.synthetic-host-migration-evidence.json').read_text())
+    if (type(value) is not dict or set(value) != _HOST_MIGRATION_EVIDENCE | {'version'}
+            or type(value['version']) is not int or value['version'] != 1
+            or any(type(value[key]) is not bool for key in _HOST_MIGRATION_EVIDENCE)):
+        raise ValueError('Invalid synthetic host migration evidence')
+    return value
+
+
 class Vault:
     """The only replaced storage layer is the native key-value primitive."""
     def __init__(self):
@@ -1071,10 +1086,17 @@ class AvailabilityProbe:
 
 
 class SyntheticEdges:
-    def __init__(self, home, *, evidence=None, mode='complete', recovery_fault=None, availability_probe=None):
+    def __init__(self, home, *, evidence=None, mode='complete', recovery_fault=None, availability_probe=None,
+                 host_migration=None):
         self.home = Path(home).resolve(strict=True)
         self.evidence = Path(evidence) if evidence else None
         self.mode = mode
+        if host_migration not in (None, 'cancel_once'):
+            raise ValueError('Invalid synthetic host migration mode')
+        self.host_migration = host_migration
+        self._host_seed = None
+        self._migration_nonces = set()
+        self._migration_ticket_archive = None
         self.vault = Vault()
         self.events = []
         self.codes = {}
@@ -1223,8 +1245,87 @@ class SyntheticEdges:
                 self.patch(reconciliation, 'reconcile_unsent_request', reconcile)
         if self.boundary_diagnostics is not None:
             self.boundary_diagnostics.install()
+        if self.host_migration is not None:
+            self._seed_host_migration()
         self.record('installed', nativeStoreMode='production', platform=__import__('sys').platform)
         return self
+
+    def _seed_host_migration(self):
+        from eidolon_cli.organization_metadata import read_descriptor
+        from eidolon_cli.organization_setup_subscription_auth import ISSUER, SCOPES
+        from eidolon_cli.organization_setup_subscription_host import HostAuthority, PendingAttempts
+        from eidolon_cli.organization_setup_subscription_store import SubscriptionStore, TrustedBinding, _json
+        identity = read_descriptor(self.home / 'organization' / 'state.db')['metadata']
+        assert identity is not None and self._host_seed is None
+        host = PendingAttempts(HostAuthority.capture(lambda: self.home, lambda: self.home))
+        # Do not call current Begin: this is an actual pre-URI installation shape.
+        installation = str(uuid.uuid4())
+        with host._locked(create=True):
+            assert not any(p.name != 'lock' for p in host._io.directory.iterdir())
+            host._io._write('initialized', b'1')
+            host._io._write('identity.json', _json({'installation_id': installation}))
+        store = SubscriptionStore(self.home)
+        binding = TrustedBinding(installation, str(self.home), identity['organizationId'],
+            identity['owner']['ownerId'], str(uuid.uuid4()), CLIENT, 'synthetic-account')
+        now = int(time.time())
+        token = jwt.encode({'iss': ISSUER, 'aud': CLIENT, 'sub': binding.account_id,
+            'iat': now, 'exp': now + 3600, 'nonce': 'synthetic-legacy-consent'}, self.key,
+            algorithm='RS256', headers={'kid': 'synthetic-key'})
+        store.connect_grant(binding, access_token=ACCESS, refresh_token='synthetic-refresh-never-real',
+            id_token=token, expires_at=now + 3600, granted_scopes=SCOPES.split(),
+            auth_attempt_id=str(uuid.uuid4()), expected_revision=0,
+            identity_evidence={'subject': binding.account_id, 'audience': CLIENT,
+                'nonce': 'synthetic-legacy-consent', 'authTime': None, 'authorizedParty': None})
+        self._host_seed = {'host': host, 'store': store, 'binding': binding,
+            'identity': (host._io.directory / 'identity.json').read_bytes(),
+            'epoch': store.grant_descriptor(binding, 1)['authorizationEpoch'],
+            'generations': snapshot(self.home)['generations']}
+        assert host.host_identity_state(store._binding_digest(binding)) == 'migration_required'
+        assert not (host._io.directory / 'oauth-host.json').exists()
+        self._report_host_migration()
+
+    def _migration_request(self, query):
+        seed = self._host_seed
+        assert seed is not None
+        first = not self._migration_nonces
+        detail = {'hostMatchesInstallationUrn': query.get('ext_agent_host_id') == uuid.UUID(seed['binding'].host_id).urn,
+            'promptConsent': query.get('prompt') == 'consent', 'noIdTokenHint': 'id_token_hint' not in query,
+            'noLoginHint': 'login_hint' not in query, 'savedClient': query.get('client_id') == CLIENT,
+            'freshNonce': bool(query.get('nonce')) and query['nonce'] not in self._migration_nonces,
+            'callbackDeferred': first}
+        assert all(value for key, value in detail.items() if key != 'callbackDeferred')
+        self._migration_nonces.add(query['nonce'])
+        if self._migration_ticket_archive is None:
+            directory = seed['store'].directory / 'ticket-archive'
+            self._migration_ticket_archive = {p.name: p.read_bytes() for p in directory.iterdir()}
+            assert self._migration_ticket_archive and seed['store'].status()['state'] == 'disconnected'
+        return detail
+
+    def _report_host_migration(self):
+        seed = self._host_seed
+        store, host, expected = seed['store'], seed['host'], seed['binding']
+        binding = store.returning_binding()
+        state = store.status()
+        active = state['state'] == 'active'
+        epoch = store.grant_descriptor(binding, state['revision'])['authorizationEpoch'] if active else seed['epoch']
+        archive = self._migration_ticket_archive
+        result = {'version': 1, 'legacySeeded': True,
+            'sameInstallation': (host._io.directory / 'identity.json').read_bytes() == seed['identity'],
+            'sameBinding': binding == expected, 'sameOwner': binding.owner_id == expected.owner_id,
+            'sameAccount': binding.account_id == expected.account_id,
+            'sameClient': binding.issued_client_id == expected.issued_client_id,
+            'changedEpoch': epoch != seed['epoch'],
+            'provenanceCommitted': host.host_identity_state(store._binding_digest(binding)) == 'current',
+            'retainedGenerationRows': snapshot(self.home)['generations'] == seed['generations'],
+            'priorTicketEvidenceRetained': archive is not None and bool(archive) and all(
+                (store.directory / 'ticket-archive' / name).read_bytes() == data for name, data in archive.items()),
+            'priorGrantLocallyRetired': archive is not None}
+        assert set(result) == _HOST_MIGRATION_EVIDENCE | {'version'}
+        target = self.home / '.synthetic-host-migration-evidence.json'
+        temporary = target.with_suffix('.tmp')
+        temporary.write_text(json.dumps(result, sort_keys=True) + '\n')
+        temporary.replace(target)
+        self.record('host-migration-checkpoint', **result)
 
     def install_network_guards(self):
         # Also installed in registered-RPC pytest, where no desktop bootstrap runs.
@@ -1313,13 +1414,18 @@ class SyntheticEdges:
         assert query['client_id'] in {'dynamic_agent_client', CLIENT}
         callback = urlsplit(query['redirect_uri'])
         assert callback.hostname == '127.0.0.1' and callback.path == '/auth/callback'
+        migration = self._migration_request(query) if self.host_migration is not None else {}
         code = 'synthetic-code-' + str(uuid.uuid4())
         self.codes[code] = query
         from tui_gateway import server
         authority = server._subscription_installation_authority()
         assert authority is not None and authority.root == self.home and authority.profile == self.home
         self.record('consent', dynamicRegistration=query['client_id'] == 'dynamic_agent_client',
-                    capturedHostRoot=str(authority.root), capturedProfile=str(authority.profile))
+                    capturedHostRoot=str(authority.root), capturedProfile=str(authority.profile), **migration)
+        if migration.get('callbackDeferred'):
+            self.codes.pop(code)
+            self._report_host_migration()
+            return True
         connection = http.client.HTTPConnection('127.0.0.1', callback.port, timeout=10)
         try:
             connection.request('GET', callback.path + '?' + urlencode({
@@ -1330,10 +1436,24 @@ class SyntheticEdges:
             connection.close()
         self.report_recovery_fault()
         self.report_availability_probe()
+        if self.host_migration is not None:
+            self._report_host_migration()
         return True
 
     def oauth(self, path, body):
         from eidolon_cli.organization_setup_subscription_auth import ISSUER, SCOPES
+        if path == '/api/accounts/oauth/revoke':
+            # The nominal migration case settles the owner's explicit revoke.
+            # Other fixture modes keep their existing unknown-revocation path.
+            assert self.host_migration == 'cancel_once' and self._host_seed is not None
+            seed = self._host_seed
+            assert seed['binding'].issued_client_id == CLIENT
+            assert seed['store'].status()['state'] == 'disconnected'
+            form = parse_qs(body.decode('ascii'), strict_parsing=True, keep_blank_values=True)
+            assert form == {'token': ['synthetic-refresh-never-real'],
+                'token_type_hint': ['refresh_token'], 'client_id': [CLIENT]}
+            self.record('oauth-revoke')
+            return None
         if path == '/.well-known/jwks.json':
             assert body == b''
             self.record('jwks')
@@ -1424,7 +1544,8 @@ class SyntheticSocket:
         content_type = 'application/json'
         if self.host == 'auth.openai.com':
             assert method == ('GET' if path == '/.well-known/jwks.json' else 'POST')
-            data = json.dumps(self.edges.oauth(path, body)).encode()
+            value = self.edges.oauth(path, body)
+            data = b'' if path == '/api/accounts/oauth/revoke' and value is None else json.dumps(value).encode()
         else:
             assert headers['authorization'] == 'bearer ' + ACCESS
             if path == '/v1/models':

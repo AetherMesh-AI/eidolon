@@ -577,6 +577,7 @@ jobs:
             ['subscription-native-journey.spec.ts', 'initial publication refusal recovers locally before explicit new consent'],
             ['subscription-native-journey.spec.ts', 'stranded unsent inference reconciles locally before one explicit retry'],
             ['subscription-native-journey.spec.ts', 'second open-window refusal recovers locally before explicit new consent'],
+            ['subscription-native-journey.spec.ts', 'legacy host identity requires explicit migration, cancel and editor reopen, with retained debt and fresh policy'],
             ['organization-fresh-team-setup.spec.ts', 'two fresh isolated organizations configure their own models and explicitly review and create synthetic teams'],
           ]
           function exactKeys(value, keys, label) {

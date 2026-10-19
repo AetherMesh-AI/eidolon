@@ -808,7 +808,11 @@ def test_host_record_accepts_exact_legacy_shape_and_rejects_ambiguous_recovery_f
     rig.service.begin(0)
     record = rig.host.inspect()
     value = asdict(record)
-    value.pop('publication_binding_digest')
+    for field in ('publication_binding_digest', 'authorization_host_id',
+                  'host_identity_migration', 'authorization_binding_digest'):
+        value.pop(field)
+    record = replace(record, authorization_host_id=None, host_identity_migration=False,
+                     authorization_binding_digest=None)
     rig.host._io._write(rig.host._name, json.dumps(value).encode(), replace=True)
     assert rig.host.inspect() == record
     for changes in ({'publication_binding_digest': 'a' * 64}, {'unexpected': 'field'},

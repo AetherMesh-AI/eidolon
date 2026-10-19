@@ -1,5 +1,5 @@
 """Portable local fault mechanics; whole native recovery stays host-gated."""
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 import json
 import os
@@ -931,3 +931,216 @@ def test_open_recheck_fault_sites_are_exact_before_first_native_acl_read():
     assert 'Path(path).lstat()' in source[78] and '_file_identity(baseline)' in source[78]
     assert "raise StoreError('unsafe_filesystem')" in source[79]
     assert '_read_darwin_acl(' in source[80]
+
+
+def test_host_migration_checkpoint_accepts_only_closed_boolean_evidence(home):
+    value = {'version': 1, **dict.fromkeys(fixture._HOST_MIGRATION_EVIDENCE, True)}
+    path = home / '.synthetic-host-migration-evidence.json'
+    path.write_text(json.dumps(value))
+    assert fixture.migration_evidence(home) == value
+    for changed in ({**value, 'token': 'must-not-export'}, {**value, 'changedEpoch': 'true'},
+                    {**value, 'version': True}, {key: val for key, val in value.items() if key != 'sameOwner'}):
+        path.write_text(json.dumps(changed))
+        with pytest.raises(ValueError):
+            fixture.migration_evidence(home)
+
+
+@pytest.mark.parametrize('mutation', [None, 'host', 'prompt', 'client', 'id_token_hint', 'login_hint', 'nonce'])
+def test_host_migration_request_requires_fresh_forced_consent_and_defers_only_once(home, mutation):
+    from types import SimpleNamespace
+    import uuid
+    edges = SyntheticEdges(home, host_migration='cancel_once')
+    archive = home / 'ticket-archive'
+    archive.mkdir()
+    (archive / 'receipt').write_bytes(b'synthetic immutable retired receipt')
+    installation = str(uuid.uuid4())
+    edges._host_seed = {'binding': SimpleNamespace(host_id=installation),
+        'store': SimpleNamespace(directory=home, status=lambda: {'state': 'disconnected'})}
+    query = {'ext_agent_host_id': uuid.UUID(installation).urn, 'prompt': 'consent',
+             'client_id': fixture.CLIENT, 'nonce': 'synthetic-fresh-nonce'}
+    if mutation == 'host':
+        query['ext_agent_host_id'] = installation
+    elif mutation == 'prompt':
+        query.pop('prompt')
+    elif mutation == 'client':
+        query['client_id'] = 'dynamic_agent_client'
+    elif mutation in {'id_token_hint', 'login_hint'}:
+        query[mutation] = 'must-not-forward'
+    elif mutation == 'nonce':
+        edges._migration_nonces.add(query['nonce'])
+    if mutation is not None:
+        with pytest.raises(AssertionError):
+            edges._migration_request(query)
+        assert edges._migration_ticket_archive is None
+        return
+    first = edges._migration_request(query)
+    assert first and all(type(value) is bool and value for value in first.values())
+    second = edges._migration_request({**query, 'nonce': 'synthetic-other-nonce'})
+    assert second == {**first, 'callbackDeferred': False}
+    assert edges._migration_ticket_archive == {'receipt': b'synthetic immutable retired receipt'}
+    assert (archive / 'receipt').read_bytes() == b'synthetic immutable retired receipt'
+    assert not edges.codes and not edges.events
+
+
+@pytest.mark.parametrize('mutation', [None, 'mode', 'unseeded', 'active', 'client', 'token', 'hint',
+    'extra', 'duplicate', 'missing', 'blank', 'unknown_path'])
+def test_host_migration_revoke_requires_exact_seeded_request_and_empty_response(home, monkeypatch, mutation):
+    import http.client
+    from types import SimpleNamespace
+    from urllib.parse import urlencode
+    from eidolon_cli import organization_setup_subscription_http as subscription_http
+    edges = SyntheticEdges(home, host_migration='cancel_once')
+    edges._host_seed = {'binding': SimpleNamespace(issued_client_id=fixture.CLIENT),
+        'store': SimpleNamespace(status=lambda: {'state': 'disconnected'})}
+    form = {'token': 'synthetic-refresh-never-real', 'token_type_hint': 'refresh_token',
+        'client_id': fixture.CLIENT}
+    path = '/api/accounts/oauth/revoke'
+    if mutation == 'mode':
+        edges.host_migration = None
+    elif mutation == 'unseeded':
+        edges._host_seed = None
+    elif mutation == 'active':
+        edges._host_seed['store'] = SimpleNamespace(status=lambda: {'state': 'active'})
+    elif mutation in {'client', 'token', 'hint'}:
+        form[{'client': 'client_id', 'token': 'token', 'hint': 'token_type_hint'}[mutation]] = 'wrong'
+    elif mutation == 'extra':
+        form['extra'] = 'forbidden'
+    elif mutation == 'missing':
+        del form['token']
+    elif mutation == 'blank':
+        form['token'] = ''
+    elif mutation == 'unknown_path':
+        path += '/unknown'
+    body = urlencode(form).encode('ascii')
+    if mutation == 'duplicate':
+        body += b'&client_id=' + fixture.CLIENT.encode('ascii')
+    sock = fixture.SyntheticSocket(edges, 'auth.openai.com')
+    sock.sendall(b'POST ' + path.encode('ascii') + b' HTTP/1.1\r\nHost: auth.openai.com\r\n'
+        + b'Content-Length: ' + str(len(body)).encode('ascii') + b'\r\n\r\n' + body)
+    if mutation is not None:
+        with pytest.raises(AssertionError):
+            http.client.HTTPResponse(sock)
+        assert not edges.events and not edges.codes
+        return
+    response = http.client.HTTPResponse(sock)
+    response.begin()
+    assert response.status == 200 and response.getheader('Content-Length') == '0'
+    assert response.read() == b''
+    response.close()
+    assert edges.events == [{'kind': 'oauth-revoke', 'physicalNetworkSend': False}]
+    edges.events.clear()
+
+    def connect(connection):
+        assert connection.host == 'auth.openai.com'
+        connection.sock = fixture.SyntheticSocket(edges, connection.host)
+    monkeypatch.setattr(http.client.HTTPSConnection, 'connect', connect)
+    # The production HTTP parser accepts only an empty 200 response for revoke.
+    assert subscription_http.request(subscription_http.REVOKE, form) is True
+    assert edges.events == [{'kind': 'oauth-revoke', 'physicalNetworkSend': False}]
+    assert not edges.codes and edges.vault.put_count == edges.vault.delete_count == 0
+
+
+@contextmanager
+def registered_migration_owner(root, organization_id, authority):
+    """Use the gateway's actual durable scope and transport publication fences."""
+    from tui_gateway import organization_credential_transport as owners
+    from tui_gateway import methods_organization_setup_subscription as gateway
+    class LocalTransport:
+        closed = False
+    local_transport = LocalTransport()
+    owners.register_owner(local_transport, root)
+    try:
+        _, _, revision = gateway._durable_scope(root, organization_id, True)
+        yield gateway._context(local_transport, {'expectedOrganizationId': organization_id,
+            'sourceRevision': revision}, authority, require_fresh=True)
+    finally:
+        owners.retire_owner(local_transport)
+
+
+def test_native_migration_owner_context_uses_real_authority_and_rejects_incomplete_or_retired(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from eidolon_cli.organization_setup_subscription_auth import AuthError, SubscriptionAuthService
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority
+    from tui_gateway import organization_credential_transport as owners
+    root = (tmp_path / 'migration-context-profile').resolve()
+    root.mkdir(mode=0o700)
+    (root / 'config.yaml').write_text('{}')
+    monkeypatch.setenv('HERMES_HOME', str(root))
+    identity = fixture.seed_profile(root, legacy=True)
+    before = fixture.snapshot(root)
+    authority = HostAuthority.capture(lambda: root, lambda: root)
+    with registered_migration_owner(root, identity['organizationId'], authority) as context:
+        # Constructor-only proof uses no native storage, HTTP, listener or browser.
+        # All context guards are the real gateway functions, not constant lambdas.
+        service = SubscriptionAuthService(object(), object(), context)
+        assert context.owner_guard() and context.setup_guard() and context.lease_generation_guard()
+        assert owners.owner_generation(context.transport) is context.owner_generation
+        with context.publication_authority():
+            service._guard()
+        for field in ('publication_authority', 'setup_guard', 'lease_generation_guard'):
+            with pytest.raises(AuthError, match='invalid_request'):
+                SubscriptionAuthService(object(), object(), replace(context, **{field: None}))
+        # Matches the originally incomplete native test context and remains refused.
+        with pytest.raises(AuthError, match='invalid_request'):
+            SubscriptionAuthService(object(), object(), replace(context,
+                publication_authority=None, lease_generation_guard=None))
+        owners.register_owner(context.transport, root)
+        assert not context.owner_guard() and not context.lease_generation_guard()
+        assert not service._lease_guard()
+        with pytest.raises(AuthError, match='stale_owner'):
+            service._guard()
+        with pytest.raises(RuntimeError, match='retired'):
+            with context.publication_authority():
+                pytest.fail('Retired generation acquired publication authority')
+    assert owners.owner_generation(context.transport) is None
+    assert fixture.snapshot(root) == before
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('revoke_supported', [True, False])
+def test_native_host_migration_seed_is_legacy_without_provider_consent(tmp_path, monkeypatch, revoke_supported):
+    from eidolon_cli.organization_setup_subscription_auth import SubscriptionAuthService
+    from eidolon_cli.organization_setup_subscription_host import INSTALLATION_NAME
+    root = (tmp_path / 'legacy-migration-profile').resolve()
+    root.mkdir(mode=0o700)
+    (root / 'config.yaml').write_text('{}')
+    monkeypatch.setenv('HERMES_HOME', str(root))
+    identity = fixture.seed_profile(root, legacy=True)
+    before = fixture.snapshot(root)
+    edges = SyntheticEdges(root, host_migration='cancel_once').install()
+    try:
+        seed = edges._host_seed
+        with registered_migration_owner(root, identity['organizationId'], seed['host'].authority) as context:
+            service = SubscriptionAuthService(seed['store'], seed['host'], context)
+            status = service.status()
+        assert status['connectionState'] == 'active' and status['hostIdentityState'] == 'migration_required'
+        assert status['canMigrateHostIdentity'] is False
+        assert not (root / INSTALLATION_NAME / 'oauth-host.json').exists()
+        assert not list((root / INSTALLATION_NAME).glob('oauth-consent-*'))
+        evidence = fixture.migration_evidence(root)
+        assert evidence['legacySeeded'] and evidence['sameBinding'] and evidence['sameInstallation']
+        assert not evidence['changedEpoch'] and not evidence['provenanceCommitted']
+        assert fixture.snapshot(root) == before
+        assert not any(event['kind'] in {'consent', 'oauth-exchange', 'responses'} for event in edges.events)
+        if not revoke_supported:
+            edges.host_migration = None
+        with registered_migration_owner(root, identity['organizationId'], seed['host'].authority) as context:
+            service = SubscriptionAuthService(seed['store'], seed['host'], context)
+            ticket = service.prepare_operation('revoke', status['connectionRevision'])['ticket']
+            result = service.execute_operation(ticket)
+            assert result['state'] == ('completed' if revoke_supported else 'admitted')
+            assert result['receipt']['localRetired'] is True
+            assert result['receipt']['remoteRevocation'] == ('confirmed' if revoke_supported else 'unconfirmed')
+            retired = service.status()
+            assert retired['connectionState'] == 'disconnected' and retired['cleanupPending'] is False
+            assert retired['hostIdentityState'] == 'migration_required'
+            assert retired['canMigrateHostIdentity'] is revoke_supported
+            if not revoke_supported:
+                # Reconciliation reads evidence; it cannot invent remote success.
+                assert service.reconcile_operation(ticket)['state'] == 'admitted'
+                assert service.status()['canMigrateHostIdentity'] is False
+        assert fixture.snapshot(root) == before
+        assert len([event for event in edges.events if event['kind'] == 'oauth-revoke']) == int(revoke_supported)
+        assert not any(event['kind'] in {'consent', 'oauth-exchange', 'responses'} for event in edges.events)
+    finally:
+        edges.close()

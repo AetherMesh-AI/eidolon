@@ -43,11 +43,18 @@ class FakeHost:
         self.locked = False
     def installation_id(self):
         return HOST
+    def host_identity_state(self, binding_digest=None):
+        return 'current' if binding_digest is not None else 'new'
     def inspect(self):
         return self.record
     def begin(self, **kwargs):
+        kwargs.pop('binding_digest', None)
+        kwargs.pop('confirm_host_identity_change', False)
         self.record = SimpleNamespace(**kwargs, stage='pending')
+        self.record.authorization_host_id = uuid.UUID(HOST).urn
+        self.record.host_identity_migration = False
         self.events.append('begin')
+        return self.record
     def admit_exchange(self, attempt_id):
         assert attempt_id == self.record.attempt_id and self.record.stage == 'pending'
         self.record.stage = 'exchange_admitted'
@@ -222,7 +229,7 @@ def test_first_authorization_is_backend_only_pkce_and_fixed_resource(rig):
     query = parse_qs(url.query)
     assert query['client_id'] == ['dynamic_agent_client']
     assert query['agent_name_hint'] == ['Eidolon']
-    assert query['ext_agent_host_id'] == [HOST]
+    assert query['ext_agent_host_id'] == [uuid.UUID(HOST).urn]
     assert query['resource'] == [module.RESOURCE]
     assert query['code_challenge_method'] == ['S256']
     expected = base64.urlsafe_b64encode(hashlib.sha256(attempt.verifier.encode()).digest()).rstrip(b'=').decode()
@@ -298,6 +305,8 @@ def test_returning_exact_client_and_account(rig):
     next_attempt, _ = begin(rig)
     query = parse_qs(urlsplit(rig.opened[-1]).query)
     assert query['client_id'] == [binding.issued_client_id]
+    assert query['ext_agent_host_id'] == [uuid.UUID(HOST).urn]
+    assert 'prompt' not in query
     assert 'agent_name_hint' not in query and 'id_token_hint' not in query
     assert next_attempt.listener.callback({'state': next_attempt.state, 'code': 'synthetic-code'})
     assert rig.store.binding == binding
@@ -603,6 +612,300 @@ def synthetic_vault():
             self.values.pop(reference, None)
 
     return SyntheticVault()
+
+
+@pytest.fixture
+def legacy_host_auth(tmp_path, monkeypatch, signing_key, synthetic_vault):
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority, PendingAttempts
+    from eidolon_cli.organization_setup_subscription_store import SubscriptionStore, _json
+
+    root = tmp_path / 'legacy-profile'
+    root.mkdir(mode=0o700)
+    authority = HostAuthority.capture(lambda: root, lambda: root)
+    host = PendingAttempts(authority, synthetic=True)
+    identity = str(uuid.uuid4())
+    with host._locked(create=True):
+        host._io._write('initialized', b'1')
+        host._io._write('identity.json', _json({'installation_id': identity}))
+    store = SubscriptionStore(root, backend=synthetic_vault)
+    binding = TrustedBinding(identity, str(root), ORG, OWNER, str(uuid.uuid4()),
+                             'oaiapp_synthetic', 'synthetic-account')
+    evidence = {'subject': binding.account_id, 'audience': binding.issued_client_id,
+                'nonce': 'legacy-nonce', 'authTime': None, 'authorizedParty': None}
+    store.connect_grant(binding, access_token='legacy-access', refresh_token='legacy-refresh',
+        id_token='legacy-id', expires_at=int(time.time()) + 3600, granted_scopes=module.SCOPES.split(),
+        auth_attempt_id=str(uuid.uuid4()), expected_revision=0, identity_evidence=evidence)
+    owner_live = [True]
+    context = module.OwnerContext(str(root), ORG, OWNER, 'a' * 64, object(), object(),
+                                  lambda: owner_live[0], setup_guard=lambda: True)
+    opened, calls = [], []
+    entry = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(signing_key.public_key()))
+    entry.update(kid='synthetic-key', alg='RS256', use='sig')
+    claims, scopes = {}, [module.SCOPES]
+    monkeypatch.setattr(module, 'LoopbackListener', FakeListener)
+    def http(url, form=None):
+        if url == module.JWKS:
+            return {'keys': [entry]}
+        calls.append((url, form))
+        if url == module.REVOKE:
+            return {}
+        assert url == module.TOKEN
+        nonce = (parse_qs(urlsplit(opened[-1]).query)['nonce'][0]
+                 if form['grant_type'] == 'authorization_code' else 'legacy-nonce')
+        return {'access_token': 'fresh-access', 'refresh_token': 'fresh-refresh',
+                'id_token': signed(signing_key, nonce=nonce, **claims), 'token_type': 'Bearer',
+                'expires_in': 3600, 'scope': scopes[0]}
+    def service():
+        return module.SubscriptionAuthService(store, PendingAttempts(authority, synthetic=True), context,
+            synthetic=True, browser_open=lambda url: opened.append(url) or True, http=http)
+    return SimpleNamespace(root=root, host=host, store=store, binding=binding, context=context,
+        service=service(), restart=service, opened=opened, calls=calls, claims=claims,
+        scopes=scopes, owner_live=owner_live, vault=synthetic_vault)
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('interruption', ['none', 'cancel_restart', 'before_marker', 'after_marker'])
+def test_legacy_host_migration_preserves_binding_and_requires_fresh_consent(legacy_host_auth, monkeypatch, interruption):
+    from eidolon_cli.organization_setup_subscription_host import HostError, INSTALLATION_NAME
+    from eidolon_cli.organization_setup_subscription_store import StoreError
+
+    rig = legacy_host_auth
+    original_binding = rig.binding
+    digest = rig.store._binding_digest(original_binding)
+    original_epoch = rig.store.grant_descriptor(original_binding, 1)['authorizationEpoch']
+    identity_path = rig.root / INSTALLATION_NAME / 'identity.json'
+    identity = identity_path.read_bytes()
+    status = rig.service.status()
+    assert status['hostIdentityState'] == 'migration_required'
+    assert status['canMigrateHostIdentity'] is False
+    with pytest.raises(module.AuthError, match='disconnect_required'):
+        rig.service.begin(1, confirm_host_identity_change=True)
+    rig.store.local_disconnect(original_binding, expected_revision=1,
+        owner_guard=lambda: True, cancel=threading.Event())
+    revision = rig.store.status()['revision']
+    history = rig.store.history_status()
+    archive = {p.name: p.read_bytes() for p in (rig.store.directory / 'ticket-archive').iterdir()}
+    assert rig.service.status()['canMigrateHostIdentity'] is True
+    with pytest.raises(module.AuthError, match='host_identity_migration_required'):
+        rig.service.begin(revision)
+    assert not rig.opened and not rig.calls
+    rig.service.begin(revision, confirm_host_identity_change=True)
+    attempt = rig.service._attempt
+    query = parse_qs(urlsplit(rig.opened[-1]).query)
+    assert query['ext_agent_host_id'] == [uuid.UUID(original_binding.host_id).urn]
+    assert query['client_id'] == [original_binding.issued_client_id]
+    assert query['prompt'] == ['consent']
+    assert query['scope'] == [module.SCOPES]
+    assert not {'agent_name_hint', 'id_token_hint', 'login_hint'} & set(query)
+    assert rig.store.returning_binding() == original_binding
+    assert rig.host.host_identity_state(digest) == 'migration_required'
+
+    if interruption == 'cancel_restart':
+        old_state, old_nonce, old_verifier = attempt.state, attempt.nonce, attempt.verifier
+        rig.service.cancel(attempt.attempt_id)
+        attempt.listener.callback({'state': old_state, 'code': 'stale-code'})
+        assert not rig.calls
+        assert rig.store.status()['revision'] == revision
+        assert rig.host.inspect().stage == 'cancelled'
+        assert not list((rig.root / INSTALLATION_NAME).glob('oauth-consent-*'))
+        rig.service = rig.restart()
+        assert rig.service.status()['canMigrateHostIdentity'] is True
+        with pytest.raises(module.AuthError, match='host_identity_migration_required'):
+            rig.service.begin(revision)
+        rig.service.begin(revision, confirm_host_identity_change=True)
+        attempt = rig.service._attempt
+        assert attempt.state != old_state and attempt.nonce != old_nonce and attempt.verifier != old_verifier
+        assert parse_qs(urlsplit(rig.opened[-1]).query)['prompt'] == ['consent']
+        assert not rig.calls
+    if interruption == 'before_marker':
+        monkeypatch.setattr(rig.service._host, '_publish_host_consent',
+                            lambda record: (_ for _ in ()).throw(HostError('recovery_required')))
+    if interruption == 'after_marker':
+        save = rig.service._host._save
+        def interrupted_save(record):
+            if record.stage == 'published':
+                raise HostError('recovery_required')
+            save(record)
+        monkeypatch.setattr(rig.service._host, '_save', interrupted_save)
+    assert callback(attempt)
+    assert len(rig.calls) == 1
+    if interruption in {'before_marker', 'after_marker'}:
+        assert rig.service.status()['stage'] == 'publication_uncertain'
+        rig.service = rig.restart()
+        assert rig.service.status()['stage'] == 'reconciliation_required'
+        assert rig.service.status()['canMigrateHostIdentity'] is False
+        rig.service.recover_operation_current()
+        assert len(rig.calls) == 1
+    current, current_revision = rig.store.connection_descriptor()
+    assert current == original_binding and rig.store._binding_digest(current) == digest
+    descriptor = rig.store.grant_descriptor(current, current_revision)
+    assert descriptor['authorizationEpoch'] != original_epoch
+    assert descriptor['identityEvidence']['nonce'] == parse_qs(urlsplit(rig.opened[-1]).query)['nonce'][0]
+    assert rig.store.history_status() == history
+    for name, data in archive.items():
+        assert (rig.store.directory / 'ticket-archive' / name).read_bytes() == data
+    with pytest.raises(StoreError, match='stale_revision'):
+        rig.store.attest_subscription_binding_nonblocking(current, expected_revision=current_revision,
+            expected_epoch=original_epoch, expected_account_digest=digest, lease_generation_guard=lambda: True)
+    assert identity_path.read_bytes() == identity
+    assert rig.host.host_identity_state(digest) == 'current'
+    proof_path = next((rig.root / INSTALLATION_NAME).glob('oauth-consent-*'))
+    proof = proof_path.read_bytes()
+    rig.store.local_disconnect(current, expected_revision=current_revision,
+        owner_guard=lambda: True, cancel=threading.Event())
+    rig.service.begin(rig.store.status()['revision'])
+    returning = parse_qs(urlsplit(rig.opened[-1]).query)
+    assert returning['ext_agent_host_id'] == query['ext_agent_host_id']
+    assert returning['client_id'] == query['client_id'] and 'prompt' not in returning
+    assert callback(rig.service._attempt)
+    assert proof_path.read_bytes() == proof
+    assert rig.store.returning_binding() == original_binding
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('failure', ['account', 'client', 'scope', 'owner', 'denied', 'corrupt_candidate', 'corrupt_provenance', 'truncated_provenance', 'uncertain_operation', 'revision_race'])
+def test_legacy_host_migration_never_bypasses_identity_or_recovery(legacy_host_auth, monkeypatch, failure):
+    from eidolon_cli.organization_setup_subscription_host import INSTALLATION_NAME
+
+    rig = legacy_host_auth
+    digest = rig.store._binding_digest(rig.binding)
+    if failure in {'corrupt_candidate', 'corrupt_provenance', 'truncated_provenance'}:
+        path = (rig.root / INSTALLATION_NAME / ('oauth-host.json' if failure == 'corrupt_candidate'
+                else rig.host._consent_name(digest)))
+        path.write_text('' if failure == 'truncated_provenance' else '{malformed')
+        path.chmod(0o600)
+        status = rig.service.status()
+        assert status['hostIdentityState'] == 'recovery_required'
+        assert status['connectionState'] == 'active' and status['canMigrateHostIdentity'] is False
+        # Host protocol corruption does not change the independently bound grant.
+        ticket = rig.service.prepare_operation('revoke', 1)['ticket']
+        rig.service.execute_operation(ticket)
+        assert rig.store.status()['state'] == 'disconnected'
+        assert not rig.opened
+        assert rig.calls[0][0] == module.REVOKE
+        return
+    if failure == 'uncertain_operation':
+        ticket = rig.service.prepare_operation('revoke', 1)['ticket']
+        rig.store.disconnect_grant(rig.binding, expected_revision=1, ticket=ticket,
+            owner_guard=lambda: True, cancel=threading.Event())
+        assert rig.service.status()['canMigrateHostIdentity'] is False
+        with pytest.raises(module.AuthError, match='storage_recovery_required'):
+            rig.service.begin(rig.store.status()['revision'], confirm_host_identity_change=True)
+        assert not rig.opened and not rig.calls
+        return
+    rig.store.local_disconnect(rig.binding, expected_revision=1,
+        owner_guard=lambda: True, cancel=threading.Event())
+    revision = rig.store.status()['revision']
+    if failure == 'revision_race':
+        operation = rig.store.ticket_status()
+        monkeypatch.setattr(rig.store, 'ticket_status', lambda: {**operation, 'revision': revision + 1})
+        assert rig.service.status()['canMigrateHostIdentity'] is False
+        with pytest.raises(module.AuthError, match='storage_recovery_required'):
+            rig.service.begin(revision, confirm_host_identity_change=True)
+        assert not rig.opened and not rig.calls
+        return
+    rig.service.begin(revision, confirm_host_identity_change=True)
+    attempt = rig.service._attempt
+    if failure == 'account':
+        rig.claims['sub'] = 'another-account'
+    elif failure == 'scope':
+        rig.scopes[0] = 'openid profile email'
+    elif failure == 'owner':
+        rig.owner_live[0] = False
+    if failure == 'denied':
+        attempt.listener.callback({'state': attempt.state, 'error': 'access_denied'})
+        assert not rig.calls
+        with pytest.raises(module.AuthError, match='host_identity_migration_required'):
+            rig.restart().begin(revision)
+    else:
+        callback(attempt, **({'client_id': 'oaiapp_other'} if failure == 'client' else {}))
+    assert rig.store.status()['state'] == 'disconnected'
+    assert rig.store.status()['revision'] == revision
+    assert rig.store.returning_binding() == rig.binding
+    assert rig.host.host_identity_state(digest) == 'migration_required'
+    assert not list((rig.root / INSTALLATION_NAME).glob('oauth-consent-*'))
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('unsettled', ['running', 'uncertain'])
+def test_host_migration_retains_usage_debt_and_invalidates_prior_policy(legacy_host_auth, monkeypatch, unsettled):
+    from dataclasses import asdict
+    from eidolon_cli import organization_metadata as metadata
+    from eidolon_cli import organization_setup_subscription_policy as policy
+    from eidolon_cli import organization_team_budget as budget
+    from eidolon_cli.organization_config import OrganizationSettings
+    from eidolon_cli.organization_policy import _fingerprint
+    from eidolon_cli.organization_store import ORGANIZATION_SCHEMA
+    from eidolon_cli.organization_setup_subscription_store import StoreError
+    from eidolon_cli.organization_team_setup import _current
+    from tui_gateway import organization_credential_transport as transport
+
+    rig = legacy_host_auth
+    class LocalTransport:
+        closed = False
+    local_transport = LocalTransport()
+    monkeypatch.setenv('HERMES_HOME', str(rig.root))
+    monkeypatch.setenv('HOME', str(rig.root))
+    (rig.root / 'config.yaml').write_text('{}')
+    (rig.root / 'organization').mkdir()
+    conn = sqlite3.connect(rig.root / 'organization' / 'state.db', isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.executescript('BEGIN IMMEDIATE;\n' + ORGANIZATION_SCHEMA + '\nCOMMIT;')
+        ids = iter((uuid.UUID(ORG), uuid.UUID(OWNER)))
+        with monkeypatch.context() as seeded:
+            seeded.setattr(metadata, 'uuid', SimpleNamespace(UUID=uuid.UUID, uuid4=lambda: next(ids)))
+            metadata._save_in_transaction(conn, {'displayName': 'Retained usage', 'ownerDisplayName': 'Owner',
+                'expectedOrganizationId': None, 'expectedRevision': None}, 'metadata', 'initial')
+        settings = OrganizationSettings()
+        conn.execute('INSERT INTO organization_policy VALUES (1,1,?,?)',
+                     (_fingerprint(asdict(settings)), json.dumps(asdict(settings), sort_keys=True)))
+        for key, state, tokens, cost in [('settled', 'failed', 200, '0.25'), ('pending', unsettled, 300, '0.50')]:
+            conn.execute('INSERT INTO organization_team_generations '
+                '(idempotency_key,organization_id,input_hash,source_revision,status,dispatched,'
+                'reserved_tokens,reserved_cost,created) VALUES (?,?,?,?,?,?,?,?,0)',
+                (key, ORG, key + '-hash', 'legacy-source', state, 1, tokens, cost))
+        before = list(conn.iterdump())
+        usage = budget.budget_view(conn, settings)
+        assert usage['usage']['total'] == 2 and usage['remaining']['totalCalls'] == 1
+        assert usage['reservedTokens'] == 500 and usage['reservedCostUsd'] == '0.75'
+        assert usage['status'] == unsettled
+        digest = rig.store._binding_digest(rig.binding)
+        old_epoch = rig.store.grant_descriptor(rig.binding, 1)['authorizationEpoch']
+        old_evidence = policy.SubscriptionPreflight(rig.binding, rig.store, 1, old_epoch, digest,
+            'synthetic-model', {'expiresAt': time.time() + 3600}, rig.context.owner_generation,
+            lambda: True, None, lambda: None)
+        policy.fence_preflight(old_evidence)
+        rig.store.local_disconnect(rig.binding, expected_revision=1,
+            owner_guard=lambda: True, cancel=threading.Event())
+        rig.service.begin(rig.store.status()['revision'], confirm_host_identity_change=True)
+        assert callback(rig.service._attempt)
+        binding, revision = rig.store.connection_descriptor()
+        epoch = rig.store.grant_descriptor(binding, revision)['authorizationEpoch']
+        assert epoch != old_epoch
+        # Even a refreshed store revision cannot make the old policy epoch valid.
+        with pytest.raises(StoreError, match='stale_revision'):
+            policy.fence_preflight(replace(old_evidence, revision=revision))
+        evidence = replace(old_evidence, revision=revision, epoch=epoch)
+        policy.fence_preflight(evidence)
+        assert list(conn.iterdump()) == before
+        assert budget.budget_view(conn, settings) == usage
+        monkeypatch.setitem(transport._owners, local_transport,
+                            (rig.root.resolve(), rig.context.owner_generation))
+        source = _current(conn, rig.root, ORG)[3]
+        evidence = replace(evidence, catalog_evidence={'expiresAt': time.time() + 3600,
+            'state': 'ready', 'connectionId': digest, 'authorizationEpoch': epoch,
+            'connectionRevision': revision, 'sourceRevision': source,
+            'models': [{'slug': 'synthetic-model'}]})
+        # Both policy review and inference admission use this authoritative guard.
+        for policy_review in (False, True):
+            with pytest.raises(policy.SubscriptionPolicyError, match='attempt_running_or_uncertain'):
+                policy.build_authoritative_snapshot(conn, rig.root, local_transport,
+                    rig.context.owner_generation, evidence, policy_review=policy_review)
+        assert list(conn.iterdump()) == before
+        assert len(rig.calls) == 1
+    finally:
+        conn.close()
 
 
 @pytest.mark.skipif(os.name != 'posix', reason='Real synthetic store uses POSIX private-file checks')
@@ -990,7 +1293,8 @@ def real_ticket_service(tmp_path, synthetic_vault):
     owner = module.OwnerContext(str(root), binding.organization_id, binding.owner_id,
         'a' * 64, object(), object(), lambda: True, setup_guard=lambda: True,
         lease_generation_guard=lambda: True)
-    host = SimpleNamespace(installation_id=lambda: binding.host_id, inspect=lambda: None)
+    host = SimpleNamespace(installation_id=lambda: binding.host_id, inspect=lambda: None,
+                           host_identity_state=lambda digest: 'current')
     calls = []
     def forbidden_http(*args, **kwargs):
         calls.append(True)
