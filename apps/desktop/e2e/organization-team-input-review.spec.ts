@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Locator } from '@playwright/test'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { verifyKeyboardFocus } from './focus-visibility'
+import { expectKeyboardFocusVisible } from './focus-visibility'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -252,7 +252,11 @@ async function captures(
       }
 
       // Retain the round-trip checks too; Shift+Tab must preserve the same context.
-      const focus = await verifyKeyboardFocus(f.page, target, `${prefix}-${name}-${width}-${zoom}`)
+      await f.page.keyboard.press('Tab')
+      await f.page.keyboard.press('Shift+Tab')
+      // Team's return-focus reveal uses the same one-shot frame as the original Tab.
+      await f.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+      const focus = await expectKeyboardFocusVisible(target, `${prefix}-${name}-${width}-${zoom}`)
       const roundTripContext = await Promise.all(context.map(description => description.boundingBox()))
       const roundTripScrollport = await scrollportBounds()
       await test.info().attach(`${prefix}-${name}-${width}-${zoom}-round-trip`, {
