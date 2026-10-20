@@ -163,7 +163,8 @@ function validateGenerationAllowance(value: unknown) {
 /** One captured authenticated socket; stale results never authorize a later write. */
 export function createTeamOnboardingClient(
   readScope: () => MetadataScope,
-  subscribe: (changed: () => void) => () => void
+  subscribe: (changed: () => void) => () => void,
+  readSessionId: () => string | null = () => null
 ) {
   const origin = readScope()
   let invalid = !origin.eligible
@@ -333,19 +334,28 @@ export function createTeamOnboardingClient(
       setup: TeamSetup,
       input: { field: 'jobs' | 'goals'; jobs: string; goals: string; namingStyle: string; idempotencyKey: string }
     ): Promise<TeamInputSuggestion> => {
-      if (setup.inputImprovementVersion !== 1) {
-        throw new Error('unsupported')
-      }
-
       const organizationId = setup.organizationId
       const sourceRevision = setup.sourceRevision
       const field = input.field
+      const sessionId = readSessionId()
 
-      const value = await request<unknown>('organization.improveTeamInput', {
-        expectedOrganizationId: organizationId,
-        sourceRevision,
-        ...input
+      const response = await request<{ text?: unknown }>('llm.oneshot', {
+        template: 'improve_team_input',
+        session_id: sessionId ?? undefined,
+        variables: { field, jobs: input.jobs, goals: input.goals, namingStyle: input.namingStyle }
       })
+
+      if (readSessionId() !== sessionId) {
+        throw new Error('stale')
+      }
+
+      let value: unknown
+
+      try {
+        value = typeof response?.text === 'string' ? JSON.parse(response.text) : null
+      } catch {
+        throw new Error('invalid_suggestion')
+      }
 
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('invalid_suggestion')
@@ -360,10 +370,6 @@ export function createTeamOnboardingClient(
         !Array.from(text).some(char => char.charCodeAt(0) < 32 && !'\n\r\t'.includes(char))
 
       if (
-        result.capabilityVersion !== 1 ||
-        result.organizationId !== organizationId ||
-        result.sourceRevision !== sourceRevision ||
-        result.field !== field ||
         !validText(result.suggestion, 4000) ||
         !Array.isArray(result.assumptions) ||
         result.assumptions.length > 5 ||
@@ -372,13 +378,10 @@ export function createTeamOnboardingClient(
         throw new Error('invalid_suggestion')
       }
 
-      const allowance = result.generationAllowance
-
       return {
-        ...(allowance === undefined ? {} : { generationAllowance: allowance as TeamGenerationAllowance }),
         capabilityVersion: 1,
-        organizationId: result.organizationId as string,
-        sourceRevision: result.sourceRevision as string,
+        organizationId: organizationId ?? '',
+        sourceRevision: sourceRevision ?? '',
         field,
         suggestion: result.suggestion,
         assumptions: result.assumptions

@@ -294,21 +294,14 @@ function enterInputs() {
   })
 }
 
-it.each(['jobs', 'goals', 'generate', 'regenerate'] as const)(
+it.each(['generate', 'regenerate'] as const)(
   'keeps the %s failed key through checks and creates one new request only on explicit unsent retry',
   async kind => {
     const h = harness(readySubscription())
     enterInputs()
-    const method = kind === 'jobs' || kind === 'goals' ? vi.mocked(h.client.improve) : vi.mocked(h.client.generate)
+    const method = vi.mocked(h.client.generate)
 
-    const label =
-      kind === 'jobs'
-        ? teamCopy.improveJobs
-        : kind === 'goals'
-          ? teamCopy.improveGoals
-          : kind === 'regenerate'
-            ? teamCopy.regenerate
-            : teamCopy.generate
+    const label = kind === 'regenerate' ? teamCopy.regenerate : teamCopy.generate
 
     if (kind === 'regenerate') {
       fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
@@ -373,7 +366,7 @@ it.each([
 ])('never rotates a failed intent or offers recovery for %s evidence', async kind => {
   const h = harness(readySubscription())
   enterInputs()
-  vi.mocked(h.client.improve).mockImplementation(async (setup, input) => {
+  vi.mocked(h.client.generate).mockImplementation(async (setup, input) => {
     const failure = recoveryFailure(setup, input)
 
     if (kind === 'missing') {
@@ -389,7 +382,7 @@ it.each([
     }
 
     if (kind === 'wrong_operation') {
-      failure.data.recovery.operation = 'generate'
+      failure.data.recovery.operation = 'improve_jobs'
     }
 
     if (kind === 'unknown_disposition') {
@@ -406,22 +399,16 @@ it.each([
 
     throw failure
   })
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
   await screen.findByText(teamCopy.error)
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
-  )
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
   expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
-  )
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
-  await waitFor(() => expect(h.client.improve).toHaveBeenCalledTimes(2))
-  expect(vi.mocked(h.client.improve).mock.calls[1]![1]).toEqual(vi.mocked(h.client.improve).mock.calls[0]![1])
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
-  )
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+  await waitFor(() => expect(h.client.generate).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(h.client.generate).mock.calls[1]![1]).toEqual(vi.mocked(h.client.generate).mock.calls[0]![1])
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
   expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
 })
 
@@ -431,10 +418,10 @@ it.each(['input', 'source', 'organization', 'scope', 'running', 'uncertain', 'ex
     const initial = readySubscription()
     const h = harness(initial)
     enterInputs()
-    vi.mocked(h.client.improve).mockImplementationOnce(async (setup, input) => {
+    vi.mocked(h.client.generate).mockImplementationOnce(async (setup, input) => {
       throw recoveryFailure(setup, input)
     })
-    fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
 
     const priorButton = await screen.findByRole('button', {
       name: 'Retry unsent request'
@@ -469,7 +456,7 @@ it.each(['input', 'source', 'organization', 'scope', 'running', 'uncertain', 'ex
       }
 
       if (kind === 'bucket') {
-        next.generationAllowance!.remainingByOperation!.improveTeamInput = 0
+        next.generationAllowance!.remainingByOperation!.generateTeam = 0
       }
 
       h.updateSetup(next)
@@ -478,8 +465,8 @@ it.each(['input', 'source', 'organization', 'scope', 'running', 'uncertain', 'ex
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull())
     fireEvent.click(priorButton)
-    expect(h.client.improve).toHaveBeenCalledTimes(1)
-    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.generate).toHaveBeenCalledTimes(1)
+    expect(h.client.improve).not.toHaveBeenCalled()
   }
 )
 
@@ -489,14 +476,14 @@ it.each(['input', 'scope', 'close'])(
     const h = harness(readySubscription())
     enterInputs()
     let reject!: (value: unknown) => void
-    vi.mocked(h.client.improve).mockImplementationOnce(
+    vi.mocked(h.client.generate).mockImplementationOnce(
       () =>
         new Promise((_resolve, failure) => {
           reject = failure
         })
     )
-    fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
-    const [setup, input] = vi.mocked(h.client.improve).mock.calls[0]!
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+    const [setup, input] = vi.mocked(h.client.generate).mock.calls[0]!
 
     if (kind === 'input') {
       fireEvent.change(screen.getByLabelText(teamCopy.jobs), {
@@ -516,40 +503,36 @@ it.each(['input', 'scope', 'close'])(
       reject(recoveryFailure(setup, input))
     })
     expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
-    expect(h.client.improve).toHaveBeenCalledTimes(1)
-    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.generate).toHaveBeenCalledTimes(1)
+    expect(h.client.improve).not.toHaveBeenCalled()
   }
 )
 
 it('does not reuse an old recovery offer after a generic failure or recover it from a passive check', async () => {
   const h = harness(readySubscription())
   enterInputs()
-  const improve = vi.mocked(h.client.improve)
+  const improve = vi.mocked(h.client.generate)
   improve.mockImplementationOnce(async (setup, input) => {
     throw recoveryFailure(setup, input)
   })
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
   await screen.findByRole('button', { name: 'Retry unsent request' })
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
-  )
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
   const first = improve.mock.calls[0]![1]
   improve.mockRejectedValueOnce(new Error('lost response'))
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
   await waitFor(() => expect(improve).toHaveBeenCalledTimes(2))
   await waitFor(() =>
     expect(screen.getByRole('button', { name: teamCopy.checkConfiguration })).toHaveProperty('disabled', false)
   )
   fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
-  )
+  await waitFor(() => expect(screen.getByRole('button', { name: teamCopy.generate })).toHaveProperty('disabled', false))
   expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
   expect(improve.mock.calls[1]![1]).toEqual(first)
   improve.mockImplementationOnce(async (setup, input) => {
     throw recoveryFailure(setup, input)
   })
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
   const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
   await waitFor(() => expect(retry).toHaveProperty('disabled', false))
   expect(improve.mock.calls[2]![1]).toEqual(first)
@@ -607,13 +590,13 @@ it.each([
   expect(h.client.create).not.toHaveBeenCalled()
 })
 
-it.each(['jobs', 'goals', 'generate', 'regenerate'] as const)(
+it.each(['generate', 'regenerate'] as const)(
   'locally checks a retained %s request without sending, then retries only on a separate click',
   async kind => {
     const initial = readySubscription()
     const h = harness(initial)
     enterInputs()
-    const method = kind === 'jobs' || kind === 'goals' ? vi.mocked(h.client.improve) : vi.mocked(h.client.generate)
+    const method = vi.mocked(h.client.generate)
 
     if (kind === 'regenerate') {
       fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
@@ -625,20 +608,13 @@ it.each(['jobs', 'goals', 'generate', 'regenerate'] as const)(
     h.updateSetup({ ...initial, generationAllowance: { ...initial.generationAllowance!, status: 'running' } })
     fireEvent.click(
       screen.getByRole('button', {
-        name:
-          kind === 'jobs'
-            ? teamCopy.improveJobs
-            : kind === 'goals'
-              ? teamCopy.improveGoals
-              : kind === 'regenerate'
-                ? teamCopy.regenerate
-                : teamCopy.generate
+        name: kind === 'regenerate' ? teamCopy.regenerate : teamCopy.generate
       })
     )
     const check = await screen.findByRole('button', { name: 'Check unsent request' })
     await waitFor(() => expect(check).toHaveProperty('disabled', false))
     const [sentSetup, sentInput] = method.mock.calls[before]!
-    const operation = kind === 'jobs' || kind === 'goals' ? `improve_${kind}` : 'generate'
+    const operation = 'generate'
     const recovery = recoveryFailure(sentSetup, sentInput).data.recovery
     vi.mocked(h.client.reconcileSubscriptionRequest).mockRejectedValueOnce(new Error('storage unavailable'))
     fireEvent.click(check)
@@ -727,6 +703,15 @@ it.each(['improve_jobs', 'improve_goals', 'generate'] as const)(
     expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
     await waitFor(() => expect(check).toHaveProperty('disabled', false))
     fireEvent.click(check)
+
+    if (operation !== 'generate') {
+      await waitFor(() => expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(2))
+      expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+      expect(h.client.improve).not.toHaveBeenCalled()
+
+      return
+    }
+
     const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
     await waitFor(() => expect(retry).toHaveProperty('disabled', false))
     const checks = vi.mocked(h.client.reconcileSubscriptionRequest).mock.calls
@@ -786,7 +771,7 @@ it.each(['input', 'operation', 'scope', 'close'] as const)(
     expect(screen.queryByRole('button', { name: copy.checkUnsent })).toBeNull()
     expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
     expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
-    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.improve).not.toHaveBeenCalled()
     expect(h.client.improve).not.toHaveBeenCalled()
   }
 )
@@ -806,11 +791,11 @@ it.each([
   const initial = readySubscription()
   const h = harness(initial)
   enterInputs()
-  vi.mocked(h.client.improve).mockRejectedValueOnce(new Error('lost reply'))
-  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  vi.mocked(h.client.generate).mockRejectedValueOnce(new Error('lost reply'))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
   const check = await screen.findByRole('button', { name: copy.checkUnsent })
   await waitFor(() => expect(check).toHaveProperty('disabled', false))
-  const [setup, input] = vi.mocked(h.client.improve).mock.calls[0]!
+  const [setup, input] = vi.mocked(h.client.generate).mock.calls[0]!
   let finish!: (value: unknown) => void, reject!: (value: unknown) => void
   vi.mocked(h.client.reconcileSubscriptionRequest).mockImplementationOnce(
     () =>
@@ -843,7 +828,7 @@ it.each([
   }
 
   if (change === 'wrong_operation') {
-    result.operation = 'generate'
+    result.operation = 'improve_jobs'
   }
 
   if (change === 'running') {
@@ -867,8 +852,8 @@ it.each([
   })
   expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
   expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(1)
-  expect(h.client.improve).toHaveBeenCalledTimes(1)
-  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.generate).toHaveBeenCalledTimes(1)
+  expect(h.client.improve).not.toHaveBeenCalled()
 })
 
 it('retires a discovered key on source change and does not rediscover or reconcile from passive checks', async () => {

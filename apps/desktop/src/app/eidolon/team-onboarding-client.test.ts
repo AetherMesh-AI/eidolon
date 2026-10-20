@@ -131,33 +131,29 @@ function improvementClient(response: unknown) {
   return { client, request }
 }
 
-it('requests a review-only suggestion with exact entered context and requires runtime capability', async () => {
-  const { client, request } = improvementClient(suggestion)
+it('uses the ordinary one-shot helper with exact context independent of setup generation capability', async () => {
+  const { client, request } = improvementClient({ text: JSON.stringify(suggestion) })
   await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual(suggestion)
   expect(request.mock.calls).toEqual([
     [
-      'organization.improveTeamInput',
+      'llm.oneshot',
       {
-        expectedOrganizationId: 'organization',
-        sourceRevision: 'revision',
-        ...improvementInput
+        template: 'improve_team_input',
+        session_id: undefined,
+        variables: { field: 'jobs', jobs: 'Research', goals: 'A weekly report', namingStyle: 'Short names' }
       }
     ]
   ])
   expect(improvementInput.jobs).toBe('Research')
   await expect(
     client.improve({ ...improvementSetup, inputImprovementVersion: undefined }, improvementInput)
-  ).rejects.toThrow('unsupported')
-  expect(request).toHaveBeenCalledTimes(1)
+  ).resolves.toEqual(suggestion)
+  expect(request).toHaveBeenCalledTimes(2)
 })
 
 it.each([
   null,
   [],
-  { ...suggestion, capabilityVersion: 2 },
-  { ...suggestion, organizationId: 'other' },
-  { ...suggestion, sourceRevision: 'other' },
-  { ...suggestion, field: 'goals' },
   { ...suggestion, suggestion: ' ' },
   { ...suggestion, suggestion: 'x'.repeat(4001) },
   { ...suggestion, suggestion: 'Hidden\u0000text' },
@@ -166,7 +162,7 @@ it.each([
   { ...suggestion, assumptions: ['x'.repeat(301)] },
   { ...suggestion, assumptions: Array(6).fill('assumption') }
 ])('rejects malformed or mismatched input-improvement responses %#', async response => {
-  const { client } = improvementClient(response)
+  const { client } = improvementClient({ text: JSON.stringify(response) })
   await expect(client.improve(improvementSetup, improvementInput)).rejects.toThrow('invalid_suggestion')
 })
 
@@ -214,17 +210,13 @@ it.each([
   { status: 'available', remainingCalls: -1 }
 ])('rejects malformed authoritative generation allowance %#', async generationAllowance => {
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).rejects.toThrow('invalid_allowance')
   await expect(client.setup('organization')).rejects.toThrow('invalid_allowance')
 })
 
 it('retains authoritative shared allowance on suggestions without counting attempts locally', async () => {
   const generationAllowance = { status: 'exhausted', remainingCalls: 0 }
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({
-    ...suggestion,
-    generationAllowance
-  })
+  await expect(client.setup('organization')).resolves.toEqual({ ...suggestion, generationAllowance })
 })
 
 it('accepts explicitly versioned split allowance while preserving operation-specific counters', async () => {
@@ -236,10 +228,7 @@ it('accepts explicitly versioned split allowance while preserving operation-spec
   }
 
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({
-    ...suggestion,
-    generationAllowance
-  })
+  await expect(client.setup('organization')).resolves.toEqual({ ...suggestion, generationAllowance })
 })
 
 it.each([
@@ -271,7 +260,7 @@ it.each([
   { status: 'available', remainingCalls: 3, remainingByOperation: { improveTeamInput: 3, generateTeam: 3 } }
 ])('rejects malformed split allowance %#', async generationAllowance => {
   const { client } = improvementClient({ ...suggestion, generationAllowance })
-  await expect(client.improve(improvementSetup, improvementInput)).rejects.toThrow('invalid_allowance')
+  await expect(client.setup('organization')).rejects.toThrow('invalid_allowance')
 })
 
 const savedRequestSetup = { ...improvementSetup, sourceRevision: 'a'.repeat(64) }

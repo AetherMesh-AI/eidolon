@@ -177,17 +177,24 @@ it.each([
   const goals = screen.getByLabelText(teamOnboardingCopy.en.goals)
   expect(jobs).toHaveProperty('disabled', false)
   expect(goals).toHaveProperty('disabled', false)
-  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.jobs, description: teamOnboardingCopy.en.jobsHelp })).toBe(jobs)
-  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.goals, description: teamOnboardingCopy.en.goalsHelp })).toBe(goals)
   expect(
-    screen.getByRole('textbox', { name: teamOnboardingCopy.en.namingStyle, description: teamOnboardingCopy.en.namingHelp })
+    screen.getByRole('textbox', { name: teamOnboardingCopy.en.jobs, description: teamOnboardingCopy.en.jobsHelp })
+  ).toBe(jobs)
+  expect(
+    screen.getByRole('textbox', { name: teamOnboardingCopy.en.goals, description: teamOnboardingCopy.en.goalsHelp })
+  ).toBe(goals)
+  expect(
+    screen.getByRole('textbox', {
+      name: teamOnboardingCopy.en.namingStyle,
+      description: teamOnboardingCopy.en.namingHelp
+    })
   ).toBeTruthy()
   fireEvent.change(jobs, { target: { value: 'Research weekly product changes' } })
   expect(jobs).toHaveProperty('value', 'Research weekly product changes')
   expect(screen.getByRole('button', { name: /Generate team/ })).toHaveProperty('disabled', true)
-  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', false)
   expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs }).getAttribute('aria-describedby')).toBe(
-    screen.getByRole('status').id
+    screen.getByText(teamOnboardingCopy.en.improveHelp).id
   )
   expect(h.client.improve).not.toHaveBeenCalled()
   expect(h.client.generate).not.toHaveBeenCalled()
@@ -246,7 +253,7 @@ it('reviews full-context improvements without replacing originals until Apply, a
   expect(h.client.create).not.toHaveBeenCalled()
 })
 
-it('reconciles Improve retries and suppresses responses after changed text, owner or dismissal', async () => {
+it('retries Improve explicitly and suppresses responses after changed text, owner or dismissal', async () => {
   const h = harness()
   const copy = teamOnboardingCopy.en
   fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
@@ -263,7 +270,7 @@ it('reconciles Improve retries and suppresses responses after changed text, owne
       })
   )
   fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
-  expect(vi.mocked(h.client.improve).mock.calls[0][1].idempotencyKey).toBe(
+  expect(vi.mocked(h.client.improve).mock.calls[0][1].idempotencyKey).not.toBe(
     vi.mocked(h.client.improve).mock.calls[1][1].idempotencyKey
   )
 
@@ -296,11 +303,11 @@ it('reconciles Improve retries and suppresses responses after changed text, owne
   expect(h.onCreated).not.toHaveBeenCalled()
 })
 
-it('leaves legacy-runtime descriptions editable without advertising unsupported Improve calls', () => {
+it('uses the shared helper independently of organization Improve capability', () => {
   const h = harness({ ...setup, inputImprovementVersion: undefined })
   fireEvent.change(screen.getByLabelText(teamOnboardingCopy.en.jobs), { target: { value: 'Research' } })
-  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', true)
-  expect(screen.getByText(teamOnboardingCopy.en.improveUnavailable)).toBeTruthy()
+  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', false)
+  expect(screen.queryByText(teamOnboardingCopy.en.improveUnavailable)).toBeNull()
   expect(h.client.improve).not.toHaveBeenCalled()
 })
 
@@ -353,13 +360,13 @@ it('uses a new intent only for deliberate Regenerate and retains the proposal th
 })
 
 it.each(['exhausted', 'running', 'uncertain', 'blocked'] as const)(
-  'blocks new Improve and Generate calls when authoritative allowance is %s while preserving manual setup',
+  'blocks Generate but permits ordinary Improve when generation allowance is %s while preserving manual setup',
   status => {
     const h = harness({ ...setup, generationAllowance: { status, remainingCalls: status === 'exhausted' ? 0 : 1 } })
     const copy = teamOnboardingCopy.en
     fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
     fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
-    expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', false)
     expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', true)
     fireEvent.click(screen.getByText(copy.manual))
     expect(screen.getByRole('button', { name: copy.manualStart })).toHaveProperty('disabled', false)
@@ -661,8 +668,16 @@ it.each([
   const h = keyboardRevealHarness(fieldTop, 64, label)
   const heading = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-input-heading')!
   const help = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-note')!
-  vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({ top: contextTop, bottom: contextTop + 24, height: 24 } as DOMRect)
-  vi.spyOn(help, 'getBoundingClientRect').mockReturnValue({ top: contextTop + 30, bottom: fieldTop - 6, height: fieldTop - 36 - contextTop } as DOMRect)
+  vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({
+    top: contextTop,
+    bottom: contextTop + 24,
+    height: 24
+  } as DOMRect)
+  vi.spyOn(help, 'getBoundingClientRect').mockReturnValue({
+    top: contextTop + 30,
+    bottom: fieldTop - 6,
+    height: fieldTop - 36 - contextTop
+  } as DOMRect)
 
   try {
     h.start()
@@ -686,13 +701,18 @@ it('clears fractional context edges when native scrollTop rounds the one-shot ad
   let scrollTop = 500
   Object.defineProperty(h.body, 'scrollTop', {
     get: () => scrollTop,
-    set: value => { scrollTop = Math.round(value) }
+    set: value => {
+      scrollTop = Math.round(value)
+    }
   })
   vi.mocked(h.body.getBoundingClientRect).mockReturnValue({ top: 169.5 } as DOMRect)
 
-  const bounds = (top: number, height: number) => ({
-    top: top + 500 - scrollTop, bottom: top + height + 500 - scrollTop, height
-  }) as DOMRect
+  const bounds = (top: number, height: number) =>
+    ({
+      top: top + 500 - scrollTop,
+      bottom: top + height + 500 - scrollTop,
+      height
+    }) as DOMRect
 
   vi.mocked(h.field.getBoundingClientRect).mockImplementation(() => bounds(268, 64))
   vi.spyOn(heading, 'getBoundingClientRect').mockImplementation(() => bounds(160, 24))
@@ -816,14 +836,8 @@ it.each([
   const copy = teamOnboardingCopy.en
   fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
   fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
-  expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty(
-    'disabled',
-    operations.improveTeamInput === 0
-  )
-  expect(screen.getByRole('button', { name: copy.improveGoals })).toHaveProperty(
-    'disabled',
-    operations.improveTeamInput === 0
-  )
+  expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('button', { name: copy.improveGoals })).toHaveProperty('disabled', false)
   expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', operations.generateTeam === 0)
 
   if (operations.generateTeam) {
@@ -938,7 +952,7 @@ it.each(['saved', 'uncertain'] as const)(
       expect(screen.getByRole('button', { name: copy.validate })).toHaveProperty('disabled', true)
       expect(screen.queryByRole('button', { name: copy.create })).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: copy.back }))
-      expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
+      expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', false)
       expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', true)
       fireEvent.click(screen.getByRole('button', { name: 'Check original budget change' }))
       await screen.findByRole('region', { name: setupBudgetCopy.en.receipt })
