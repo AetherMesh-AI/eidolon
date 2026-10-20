@@ -39,7 +39,7 @@ def test_strict_snapshot_and_runtime_verification_only_run_before_each_write(run
         def verified(*args, _original=original, _name=name, **kwargs):
             assert not state['write'], 'Expensive deterministic verification must precede the write lock'
             calls.append(_name)
-            with running.store._connect() as competing:
+            with running.store._connect(write=True) as competing:
                 competing.execute('BEGIN IMMEDIATE')
                 competing.rollback()
             return _original(*args, **kwargs)

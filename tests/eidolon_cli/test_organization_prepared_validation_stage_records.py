@@ -46,7 +46,7 @@ def test_every_stage_write_has_fresh_preparse_and_competing_writer_can_progress(
     def unlocked():
         token = records._SCOPE.get()
         assert token is not None and token.phase == 'preflight'
-        with running.store._connect() as conn:
+        with running.store._connect(write=True) as conn:
             conn.execute('BEGIN IMMEDIATE')
             conn.rollback()
         return token

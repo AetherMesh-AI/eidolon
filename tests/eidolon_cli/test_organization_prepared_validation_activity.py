@@ -49,7 +49,7 @@ def test_legacy_only_absence_does_not_register_schema(state, tmp_path):
     with store._write() as conn:
         ident = store._create_objective(conn, 'Legacy objective', idempotency_key='legacy-only',
                                        project_ids=['desktop'], delivery_mode='managed_artifact', required_checks=[])
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         # Model an actual pre-migration store, not a freshly migrated store.
         tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'prepared_validation_%'")]
         for table in tables:

@@ -61,7 +61,7 @@ def test_explicit_project_selection_survives_restart_and_routes_independent_work
         assert context['task']['projectId'] == claim['team']
         assert context['task']['project']['team'] == claim['team']
         assert context['toolPolicy']['readRootAliases'] == [context['task']['project']['root']]
-    with reopened._connect() as conn:
+    with reopened._connect(write=True) as conn:
         for claim in claims:
             binding = task_project(conn, claim['task_id'])
             assert binding in objective_projects(conn, objective['id'])

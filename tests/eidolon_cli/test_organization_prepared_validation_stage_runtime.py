@@ -291,7 +291,7 @@ def test_stale_independently_reviewed_read_cannot_authorize_new_source_bytes(run
 
 
 def test_scope_retention_failure_rolls_back_both_units_and_all_source_rows(running, monkeypatch):
-    with running.store._connect() as conn:
+    with running.store._connect(write=True) as conn:
         conn.execute("CREATE TRIGGER fail_review_scope BEFORE INSERT ON prepared_validation_review_scopes "
                      "BEGIN SELECT RAISE(ABORT,'synthetic scope persistence failure'); END")
     calls = host(monkeypatch, running)

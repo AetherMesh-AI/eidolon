@@ -70,10 +70,10 @@ def test_concurrent_and_lost_acknowledgment_never_duplicate_launch(tmp_path):
 
 def test_launch_receipt_failure_rolls_back_objective_and_membership(tmp_path):
     store,_=setup(tmp_path);approve(store);enable(store)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute("CREATE TRIGGER block_launch BEFORE INSERT ON organization_continuation_launches BEGIN SELECT RAISE(ABORT,'Injected'); END")
     with pytest.raises(sqlite3.IntegrityError): store.advance_goal_continuation()
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         assert conn.execute('SELECT count(*) FROM objectives').fetchone()[0]==1
         assert conn.execute('SELECT count(*) FROM organization_goal_members').fetchone()[0]==1
         conn.execute('DROP TRIGGER block_launch')
@@ -120,7 +120,7 @@ def test_stale_preview_and_same_key_different_input_reject(tmp_path):
 
 def test_passive_legacy_and_partial_schema(tmp_path):
     store,_=setup(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in ('organization_continuation_receipts','organization_continuation_launches','organization_continuation_controls','organization_continuation_plans'):
             conn.execute('DROP TABLE '+table)
         before='\n'.join(conn.iterdump())

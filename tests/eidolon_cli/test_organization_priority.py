@@ -39,7 +39,7 @@ def test_priority_orders_survive_restart_and_replay_without_rewriting_admission(
     with pytest.raises(ValueError, match='nonterminal'):
         change(store, first, 'P2', revision=1, key='cancelled')
     assert change(store, first, 'P1') == receipt  # retry never replays the mutation
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         row = dict(conn.execute('SELECT * FROM objectives WHERE id=?', (first['id'],)).fetchone())
         assert {k:v for k,v in row.items() if k not in ('priority','cancelled')} == {k:v for k,v in original.items() if k not in ('priority','cancelled')}
         assert list(map(tuple, conn.execute('SELECT * FROM objective_budgets'))) == budgets

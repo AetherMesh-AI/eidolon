@@ -48,7 +48,7 @@ def test_reversible_archive_retains_identity_requests_audit_and_duplicate_receip
         archive(restarted, obj, 'late-new-key')
     with pytest.raises(ValueError, match='different input'):
         restarted.set_objective_archived(obj['id'], False, expected_revision=1, idempotency_key='archive')
-    with restarted._connect() as conn:
+    with restarted._connect(write=True) as conn:
         assert conn.execute('SELECT count(*) FROM history_transitions').fetchone()[0] == 2
         with pytest.raises(sqlite3.IntegrityError, match='immutable'):
             conn.execute('DELETE FROM history_transitions')

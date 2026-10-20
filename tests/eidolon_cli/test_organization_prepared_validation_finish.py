@@ -38,7 +38,7 @@ def test_each_finish_hashes_once_outside_write_lock_and_heartbeat_remains_availa
     observe, recheck = dependency._observe_dependency_bundle, dependency._recheck_dependency_observation
     @contextmanager
     def observed(*args, **kwargs):
-        with running.store._connect() as conn:
+        with running.store._connect(write=True) as conn:
             # This real competing write lock must remain available throughout
             # expensive hashing, rather than accepting a mocked heartbeat.
             conn.execute('BEGIN IMMEDIATE')
@@ -48,7 +48,7 @@ def test_each_finish_hashes_once_outside_write_lock_and_heartbeat_remains_availa
             yield value
     verify_file = dependency._verify_file
     def verify_with_competing_writer(*args, **kwargs):
-        with running.store._connect() as conn:
+        with running.store._connect(write=True) as conn:
             conn.execute('BEGIN IMMEDIATE')
             conn.rollback()
         concurrent_writes.append(True)

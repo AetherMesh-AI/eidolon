@@ -139,7 +139,7 @@ def test_inspection_source_acceptance_rechecks_every_project_and_current_proof(
                     verify(conn)
         claim = finish_project_stage(store, claim)
     store = OrganizationStore(store.path, store.settings)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         verify(conn)
         receipts = conn.execute('SELECT * FROM project_source_receipts ORDER BY request_id').fetchall()
         run = conn.execute('SELECT * FROM project_run_starts WHERE id=?', (receipts[1]['run_id'],)).fetchone()
@@ -240,7 +240,7 @@ def test_inspection_source_acceptance_rechecks_every_project_and_current_proof(
                 claim = finish_project_stage(legacy, claim)
         revoked = OrganizationStore(legacy.path, replace(legacy.settings,
             tool_grants=tuple(item for item in legacy.settings.tool_grants if item != 'integrate_source')))
-        with revoked._connect() as conn:
+        with revoked._connect(write=True) as conn:
             assert conn.execute('SELECT count(*) FROM project_source_receipts').fetchone()[0] == 0
             assert conn.execute('SELECT count(*) FROM project_run_starts WHERE source_base IS NOT NULL').fetchone()[0] == 1
             for round_number in (0, 1):

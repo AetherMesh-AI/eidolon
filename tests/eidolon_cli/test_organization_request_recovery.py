@@ -107,7 +107,7 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
         if self.owner is not None:
             # The actual peer is queued before opening SQLite. Independently
             # prove that the winner still owns this same database's transaction.
-            with connect() as conn:
+            with connect(write=True) as conn:
                 conn.execute('PRAGMA busy_timeout=0')
                 with pytest.raises(sqlite3.OperationalError) as error:
                     conn.execute('BEGIN IMMEDIATE')
