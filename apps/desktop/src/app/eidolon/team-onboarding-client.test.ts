@@ -400,3 +400,28 @@ it.each(['resolve', 'reject'] as const)('fences a late local check %s after owne
   await expect(check).rejects.toThrow('stale')
   expect(request).toHaveBeenCalledTimes(1)
 })
+
+it('pins the selected live session and discards its result after session selection changes', async () => {
+  let selected: string | null = 'live-session'
+  let finish!: (value: unknown) => void
+
+  const request = vi.fn(
+    () =>
+      new Promise(resolve => {
+        finish = resolve
+      })
+  )
+
+  const client = createTeamOnboardingClient(
+    () => ({ key: 'A', ownerKey: 'owner', profile: 'default', eligible: true, request: request as never }),
+    () => () => {},
+    () => selected
+  )
+
+  const pending = client.improve(improvementSetup, improvementInput)
+  expect(request).toHaveBeenCalledWith('llm.oneshot', expect.objectContaining({ session_id: 'live-session' }))
+  selected = null
+  finish({ text: JSON.stringify(suggestion) })
+  await expect(pending).rejects.toThrow('stale')
+  expect(request).toHaveBeenCalledTimes(1)
+})

@@ -772,7 +772,7 @@ it.each(['input', 'operation', 'scope', 'close'] as const)(
     expect(screen.queryByRole('button', { name: copy.retryUnsent })).toBeNull()
     expect(h.client.reconcileSubscriptionRequest).not.toHaveBeenCalled()
     expect(h.client.improve).not.toHaveBeenCalled()
-    expect(h.client.improve).not.toHaveBeenCalled()
+    expect(h.client.generate).not.toHaveBeenCalled()
   }
 )
 

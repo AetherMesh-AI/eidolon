@@ -85,3 +85,11 @@ def test_live_session_route_and_generation_are_pinned(served, monkeypatch):
     assert call(transport=transport, session_id='fixture-session')['error']['code'] == 4001
 
     assert seen == [True]
+
+
+def test_profile_model_change_discards_result(served, monkeypatch):
+    def reply(**kw):
+        (served / 'config.yaml').write_text('model:\n  provider: openrouter\n  default: changed-model\n')
+        return '{"suggestion":"Stale route","assumptions":[]}'
+    monkeypatch.setattr(oneshot, 'run_oneshot', reply)
+    assert call()['error']['code'] == 4001
