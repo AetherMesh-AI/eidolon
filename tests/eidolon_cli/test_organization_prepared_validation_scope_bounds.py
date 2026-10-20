@@ -21,7 +21,7 @@ def test_static_scope_preflights_binding_scalars_before_raw_loader(running, monk
     calls = host(monkeypatch, running)
     assert running.store.run_project_stage(running.claim, running.cancel) == {}
     assert len(calls) == 2
-    with running.store._connect() as conn:
+    with running.store._connect(write=True) as conn:
         identifier = conn.execute('SELECT id FROM prepared_validation_review_scopes').fetchone()[0]
         assert review_scope_artifact(conn, identifier)['objectiveId'] == running.objective
         oversized = b'private-scalar-' * 32768

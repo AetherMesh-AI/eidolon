@@ -51,7 +51,7 @@ def test_goal_wrong_scope_and_unconfirmed_writes_reject(setup,change):
 
 def test_passive_goal_receipt_rejects_partial_storage(setup):
     service,_,params=setup
-    with service.store._connect() as conn: conn.execute('DROP TABLE organization_goal_members')
+    with service.store._connect(write=True) as conn: conn.execute('DROP TABLE organization_goal_members')
     assert 'error' in call('organization.goalReceipt',dict(params,receiptKind='allowance',idempotencyKey='missing'))
 
 

@@ -21,7 +21,7 @@ from tests.eidolon_cli.test_organization_outcome_contracts import decision
 
 
 def initialize_graph(store):
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.executescript(SCHEMA)
 
 
@@ -86,7 +86,7 @@ def test_exact_admission_is_idempotent_immutable_and_neutral(tmp_path):
     assert satisfied(store, second)
     edge['predecessor']['receipt']['artifacts'].clear()
     assert satisfied(store, second)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         assert conn.execute(f'SELECT count(*) FROM {TABLE}').fetchone()[0] == 1
         assert unchanged == {table: [tuple(row) for row in conn.execute('SELECT * FROM ' + table)]
                              for table in unchanged}
@@ -133,7 +133,7 @@ def test_accepted_but_ineligible_predecessor_cannot_admit_a_dependency(tmp_path,
 
 def test_admission_requires_caller_transaction_and_acquires_actual_write_lock(tmp_path):
     store, first, second = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         pin = inputs(conn, first, second)
         with pytest.raises(ObjectiveDependencyError, match='write_transaction_required'):
             add_objective_dependency(conn, first, second, **pin)
@@ -160,7 +160,7 @@ def test_read_only_transaction_cannot_admit_even_an_idempotent_edge(tmp_path):
 
 def test_admission_failure_rolls_back_successor_creation_in_same_transaction(tmp_path):
     store, first, _ = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         count = conn.execute('SELECT count(*) FROM objectives').fetchone()[0]
         conn.execute(f"CREATE TRIGGER reject_dependency BEFORE INSERT ON {TABLE} "
                      "BEGIN SELECT RAISE(ABORT,'Injected failure'); END")

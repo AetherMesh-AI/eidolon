@@ -81,7 +81,7 @@ def test_native_typecheck_acceptance_finish_is_exact_and_durable(native, tmp_pat
     reopened = OrganizationStore(store.path, store.settings)
     outcome = reopened.snapshot()['objectives'][0]
     assert outcome['id'] == objective['id'] and outcome['status'] == 'completed'
-    with reopened._connect() as conn:
+    with reopened._connect(write=True) as conn:
         accepted = conn.execute('SELECT * FROM objective_contract_acceptances WHERE request_id=?', (accept['id'],)).fetchone()
         assert accepted is not None
         assert accepted['contract_sha256'] == contract_view(conn, objective['id'])['sha256']

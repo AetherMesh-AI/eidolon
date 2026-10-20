@@ -359,8 +359,10 @@ def test_bad_configuration_fails_privately_without_recovery_writes(configured, m
         'invalid_utf8': b'private-syntax-marker: \xff\xfe\n',
     }.get(failure, configured.read_bytes())
     configured.write_bytes(content)
-    before_files = {path.relative_to(configured.parent) for path in configured.parent.rglob('*')}
     ledger = ledger_dump(service) if service else None
+    # The readonly snapshot can retain SQLite's WAL/SHM sidecars. Finish that
+    # test observation before measuring the refused RPC's filesystem effects.
+    before_files = {path.relative_to(configured.parent) for path in configured.parent.rglob('*')}
     read_bytes = Path.read_bytes
     if failure == 'unreadable':
         def denied(path):
@@ -370,7 +372,14 @@ def test_bad_configuration_fails_privately_without_recovery_writes(configured, m
         monkeypatch.setattr(Path, 'read_bytes', denied)
     params = {} if method == 'organization.projectSetup' else {
         'project': PROJECT, 'expectedRevision': revision}
-    response = rpc(method, **params)
+
+    def forbidden_connection(*args, **kwargs):
+        pytest.fail('Invalid configuration must fail before opening the ledger')
+
+    with monkeypatch.context() as refusal_guard:
+        refusal_guard.setattr(OrganizationStore, '_connect', forbidden_connection)
+        refusal_guard.setattr(OrganizationStore, '_write', forbidden_connection)
+        response = rpc(method, **params)
     assert response['error']['code'] == -32602, response
     message = response['error']['message']
     assert 'Profile configuration' in message

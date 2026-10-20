@@ -6,7 +6,7 @@ unchanged production guard refuses it. Never install outside disposable tests.
 The private RSA key and vault values are synthetic and live only in this process.
 """
 from collections import deque
-from contextlib import closing
+from contextlib import closing, contextmanager, ExitStack
 from functools import wraps
 import hashlib
 import http.client
@@ -544,17 +544,53 @@ class RecoveryFaults:
             finally:
                 os.close(fd)
 
-    def _call_locked(self, function, prepared):
+    @contextmanager
+    def _fault_transaction(self):
         # A real writer blocks the unchanged dispatch worker's BEGIN IMMEDIATE.
         # Its release precedes infer_subscription's actual failed-job cleanup.
         with closing(sqlite3.connect(self.home / 'organization' / 'state.db', timeout=0)) as writer:
             writer.execute('BEGIN IMMEDIATE')
             self.triggered += 1
             try:
-                return function(prepared)
+                yield
             finally:
                 writer.rollback()
                 self.restored += 1
+
+    def _call_locked(self, function, prepared):
+        from eidolon_cli.organization_ledger_writer import (
+            ledger_writer, LedgerWriterUnavailable, PUBLICATION_WAIT_SECONDS,
+        )
+        cancelled = prepared._admission.network_cancelled
+        deadline = time.monotonic() + PUBLICATION_WAIT_SECONDS
+
+        def check_setup():
+            if cancelled():
+                raise LedgerWriterUnavailable('cancelled')
+            if time.monotonic() >= deadline:
+                raise LedgerWriterUnavailable('deadline')
+
+        # Drain cooperating writers once, using their existing bounded gate.
+        # This fixture writes no rows and grants no authority. Dispatch retains
+        # its own publication/coordinator/SQLite fences after setup releases the
+        # coordinator. Holding that gate during completion would test a different
+        # failure, not the intended real SQLite BEGIN refusal.
+        with ExitStack() as cleanup:
+            with ledger_writer(self.home / 'organization' / 'state.db',
+                               deadline=deadline, cancelled=cancelled), ExitStack() as setup:
+                check_setup()
+                setup.enter_context(self._fault_transaction())
+                # Failed connect/BEGIN closes under the coordinator. Transfer
+                # only the owned transaction; every later failure still performs
+                # rollback -> restored -> close before infer's failed-job cleanup.
+                transferred = setup.pop_all()
+                try:
+                    cleanup.enter_context(transferred)
+                except BaseException:
+                    transferred.close()
+                    raise
+            check_setup()  # No deadline renewal or late cancelled completion.
+            return function(prepared)
 
     def _install_open_recheck(self, patch):
         """Two real sibling changes around the pinned descriptor's first recheck."""

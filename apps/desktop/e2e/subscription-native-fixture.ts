@@ -693,6 +693,8 @@ async function observeSubscriptionRpc(page: Page) {
           capabilityVersionOne: result.capabilityVersion === 1,
           organizationMatches:
             expected.organization === undefined ? null : digest(result.organizationId) === expected.organization,
+          sourceRevisionValid: hashText(result.sourceRevision),
+          organizationIdValid: typeof result.organizationId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(result.organizationId),
           sourceMatches: expected.source === undefined ? null : digest(result.sourceRevision) === expected.source,
           sourceMatchesAction: sequence?.source === undefined ? null : digest(result.sourceRevision) === sequence.source,
           policyReceiptMatchesRequest,
@@ -872,10 +874,11 @@ async function observeSubscriptionRpc(page: Page) {
       method: 'organization.improveTeamInput' | 'organization.generateTeam',
       action: () => Promise<unknown>
     ) => performObserved(method, action),
-    performSetupAction: (kind: 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) => {
+    performSetupAction: (kind: 'checkConfiguration' | 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) => {
       // Observe only these existing owner actions. This barrier sends no RPCs
       // and invokes the supplied UI action once, without retrying it.
       const paths = {
+        checkConfiguration: ['teamSetup'],
         inspect: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
         begin: ['beginSetupSubscription', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
         migration: ['teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy', 'beginSetupSubscriptionHostMigration', 'teamSetup', 'setupSubscriptionStatus', 'setupSubscriptionPolicy'],
@@ -1151,7 +1154,7 @@ export async function setupNativeSubscription(
       cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
         rpcObserver!.performOperation(`organization.${method}`, action),
-      performSetupAction: (kind: 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) =>
+      performSetupAction: (kind: 'checkConfiguration' | 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) =>
         rpcObserver!.performSetupAction(kind, action),
       diagnostic: () => {
         const rows = events()

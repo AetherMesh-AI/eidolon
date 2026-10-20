@@ -126,7 +126,7 @@ def test_replacement_membership_retains_original_cost_after_restart(tmp_path):
     with store._write() as conn: inherit_goal_membership(conn,objectives[0],objectives[1])
     reopened=OrganizationStore(store.path,store.settings)
     with pytest.raises(ValueError): reserve(reopened,claims[1])
-    with reopened._connect() as conn:
+    with reopened._connect(write=True) as conn:
         assert goal_for_objective(conn,objectives[1])['reserved']['modelCalls'] == 1
         with pytest.raises(sqlite3.IntegrityError,match='immutable'): conn.execute('DELETE FROM organization_goal_members')
 
@@ -136,7 +136,7 @@ def test_receipt_replay_and_failure_rollback(tmp_path):
     value=limits();receipt=configure(store,objectives,value)
     assert configure(store,objectives,value) == receipt
     with pytest.raises(ValueError,match='different input'): configure(store,objectives,limits(modelCalls=2))
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute("CREATE TRIGGER block_goal_receipt BEFORE INSERT ON organization_goal_receipts BEGIN SELECT RAISE(ABORT,'Injected'); END;")
     with pytest.raises(sqlite3.IntegrityError): configure(store,objectives,limits(),rev=1)
     assert view(store)['revision'] == 1
@@ -144,7 +144,7 @@ def test_receipt_replay_and_failure_rollback(tmp_path):
 
 def test_passive_legacy_and_partial_storage(tmp_path):
     store,objectives,_=setup(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in ('organization_goal_members','organization_goal_receipts','organization_goal_revisions'): conn.execute('DROP TABLE '+table)
         before='\n'.join(conn.iterdump())
         assert goal_for_objective(conn,objectives[0]) is None

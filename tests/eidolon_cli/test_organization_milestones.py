@@ -82,7 +82,7 @@ def test_cycle_and_outside_project_links_fail_atomically(tmp_path):
 
 def test_legacy_passive_read_is_empty_and_no_migration(tmp_path):
     store, first, second = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in ('organization_milestone_links', 'organization_milestone_receipts', 'organization_milestone_revisions'):
             conn.execute('DROP TABLE '+table)
         before = '\n'.join(conn.iterdump())
@@ -91,7 +91,7 @@ def test_legacy_passive_read_is_empty_and_no_migration(tmp_path):
     assert store.milestones() == []
     OrganizationStore(store.path, settings=store.settings)
     assert store.milestones() == []
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute('DROP TABLE organization_milestone_links')
     with pytest.raises(ValueError, match='incomplete'):
         store.milestones()
@@ -110,7 +110,7 @@ def test_no_empty_milestone_or_cancelled_objective_claims_completion(tmp_path):
 def test_history_is_immutable_and_foreign_key_preserves_objectives(tmp_path):
     store, first, second = fixture(tmp_path)
     save(store, 'work', [first]); save(store, 'work', [first], rev=1)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         assert conn.execute('SELECT count(*) FROM organization_milestone_revisions').fetchone()[0] == 2
         for table in ('organization_milestone_links', 'organization_milestone_receipts', 'organization_milestone_revisions'):
             with pytest.raises(sqlite3.IntegrityError, match='Immutable'):
@@ -128,7 +128,7 @@ def test_archive_preserves_completion_and_evidence_links(tmp_path):
 
 def test_insert_failure_rolls_back_revision_links_and_receipt(tmp_path):
     store, first, second = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute("CREATE TRIGGER reject_milestone_receipt BEFORE INSERT ON organization_milestone_receipts BEGIN SELECT RAISE(ABORT,'Injected failure'); END;")
     with pytest.raises(sqlite3.IntegrityError, match='Injected'):
         save(store, 'work', [first])
@@ -150,7 +150,7 @@ def test_read_only_projection_keeps_entire_database_unchanged(tmp_path):
 def test_legacy_and_partial_schema_compatibility(tmp_path):
     from eidolon_cli.organization_observation import _compatible_schema
     store, first, second = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in ('organization_milestone_links', 'organization_milestone_receipts', 'organization_milestone_revisions'):
             conn.execute('DROP TABLE '+table)
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -180,7 +180,7 @@ def test_same_text_typed_kind_change_invalidates_milestone_completion(tmp_path):
 
 def test_legacy_contract_absence_is_supported_by_milestone_projection(tmp_path):
     store, first, _ = fixture(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in ('objective_contract_acceptances', 'objective_human_judgments', 'objective_contract_revisions'):
             conn.execute('DROP TABLE '+table)
     save(store, 'work', [first]); accept(store, first)

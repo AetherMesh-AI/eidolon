@@ -62,7 +62,7 @@ def test_changed_launched_scope_cannot_be_refreshed(tmp_path):
 
 def test_authorization_and_disable_rollback_if_receipt_write_fails(tmp_path):
     store,_=setup(tmp_path);approve(store);enable(store)
-    with store._connect() as conn: conn.execute("CREATE TRIGGER fail_refresh BEFORE INSERT ON organization_continuation_receipts WHEN NEW.idempotency_key='refresh' BEGIN SELECT RAISE(ABORT,'injected'); END")
+    with store._connect(write=True) as conn: conn.execute("CREATE TRIGGER fail_refresh BEFORE INSERT ON organization_continuation_receipts WHEN NEW.idempotency_key='refresh' BEGIN SELECT RAISE(ABORT,'injected'); END")
     with pytest.raises(sqlite3.IntegrityError,match='injected'): refresh(store)
     with store._connect() as conn:
         assert conn.execute('SELECT count(*) FROM organization_continuation_authorizations').fetchone()[0]==0
@@ -88,7 +88,7 @@ def test_legacy_passive_authorization_read_does_not_migrate(tmp_path):
     from eidolon_cli.organization_goal_continuation import _records
     from eidolon_cli.organization_goal_reauthorization import effective_authority
     store,_=setup(tmp_path);approve(store)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute('DROP TABLE organization_continuation_authorizations')
         before='\n'.join(conn.iterdump());plan=_records(conn)[0]
         assert effective_authority(conn,plan)==(plan['goalRevision'],plan['authoritySha256'])

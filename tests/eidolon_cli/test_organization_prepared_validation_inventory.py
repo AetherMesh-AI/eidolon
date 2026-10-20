@@ -67,7 +67,7 @@ def test_inventory_is_private_frozen_exact_and_preserves_caller_transaction(reta
     "UPDATE tool_receipts SET result=CAST(result AS BLOB)",
 ])
 def test_body_scalar_null_and_storage_type_mutations_fail_without_relying_on_hash(retained, sql):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         mutable(conn, *(table for table, _, _ in inventory._FIELDS))
         observed = capture(conn, retained)
@@ -79,7 +79,7 @@ def test_body_scalar_null_and_storage_type_mutations_fail_without_relying_on_has
 
 
 def test_rehashed_source_evidence_and_same_count_replacement_are_not_equal(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         row = conn.execute('SELECT id,content FROM evidence LIMIT 1').fetchone()
@@ -113,7 +113,7 @@ def test_rehashed_source_evidence_and_same_count_replacement_are_not_equal(retai
     ('objective_task_rounds', "UPDATE objective_task_rounds SET round=round+1"),
 ])
 def test_new_rows_absence_and_source_membership_invalidate(retained, table, sql):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         mutable(conn, table)
         if table == 'workspace_heads':
@@ -128,7 +128,7 @@ def test_new_rows_absence_and_source_membership_invalidate(retained, table, sql)
 
 
 def test_new_generation_is_detected_even_with_missing_steps(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         mutable(conn, 'prepared_validation_sets')
         conn.execute('PRAGMA ignore_check_constraints=ON')
@@ -144,7 +144,7 @@ def test_new_generation_is_detected_even_with_missing_steps(retained):
 
 
 def test_schema_mutation_is_not_an_equal_empty_table(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         conn.execute('CREATE INDEX inventory_schema_change ON workspace_absent_sources(path)')
@@ -154,7 +154,7 @@ def test_schema_mutation_is_not_an_equal_empty_table(retained):
 
 
 def test_current_finish_lease_and_pair_review_rows_are_not_static_inputs(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         conn.execute('UPDATE requests SET lease=lease+100,status=\'completed\' WHERE id=?', (retained.claim['id'],))
@@ -220,7 +220,7 @@ def test_sqlite_typed_values_never_coerce_numeric_null_text_or_blob_equality():
 
 
 def test_aggregate_cap_combines_projects_before_fetching_any_raw_rows(retained, monkeypatch):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         conn.execute('INSERT INTO objective_projects SELECT objective_id,\'second\',binding '
                      'FROM objective_projects WHERE project_id=\'notes\'')
@@ -243,7 +243,7 @@ def test_aggregate_cap_combines_projects_before_fetching_any_raw_rows(retained, 
 
 
 def test_new_source_review_invalidates_the_latest_selector(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         request = dict(conn.execute("SELECT * FROM requests WHERE type='request.review' LIMIT 1").fetchone())
@@ -257,7 +257,7 @@ def test_new_source_review_invalidates_the_latest_selector(retained):
 
 
 def test_new_owner_revision_invalidates_latest_registration_and_pins_old_bound_row(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         conn.execute('INSERT INTO organization_prepared_validation_registrations '
@@ -274,7 +274,7 @@ def test_new_owner_revision_invalidates_latest_registration_and_pins_old_bound_r
 
 
 def test_schema_column_change_is_detected_without_rows(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         conn.execute('ALTER TABLE workspace_absent_sources ADD COLUMN changed TEXT')
@@ -290,7 +290,7 @@ def test_inventory_is_rechecked_against_a_fresh_transaction(retained):
         conn.rollback()
     with retained.store._write() as conn:
         conn.execute("UPDATE evidence SET summary=summary||' changed'")
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN IMMEDIATE')
         with pytest.raises(ValueError, match='changed'):
             inventory.require_prepared_inventory(conn, observed)
@@ -299,7 +299,7 @@ def test_inventory_is_rechecked_against_a_fresh_transaction(retained):
 
 
 def test_source_reuse_schema_absence_invalidates_even_without_reused_rows(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         observed = capture(conn, retained)
         conn.execute('DROP TABLE task_repair_inputs')
@@ -309,7 +309,7 @@ def test_source_reuse_schema_absence_invalidates_even_without_reused_rows(retain
 
 
 def test_unselected_project_binding_is_part_of_task_selection(retained):
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         mutable(conn, 'objective_projects')
         conn.execute('INSERT INTO objective_projects SELECT objective_id,\'other\',binding '
@@ -355,7 +355,7 @@ def test_shared_source_bytes_are_exact_immutable_and_not_copied(retained):
 
 def test_foreign_round_control_is_pinned_when_it_changes_current_task_membership(retained):
     from eidolon_cli.organization_acceptance import current_tasks
-    with retained.store._connect() as conn:
+    with retained.store._connect(write=True) as conn:
         conn.execute('BEGIN')
         conn.execute("INSERT INTO objectives SELECT 'foreign-objective','foreign-key',input_hash,title,"
                      'description,priority,created,cancelled FROM objectives WHERE id=?', (retained.objective,))

@@ -160,7 +160,7 @@ def test_retained_backend_outcome_cannot_bypass_lost_execution_authority(tmp_pat
     monkeypatch.setattr(runner, 'run_project_tests', stopped_after_dispatch)
     store.run_project_stage(claim, threading.Event())
     assert not store.finish(claim, {})
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         assert conn.execute('SELECT count(*) FROM project_run_results').fetchone()[0] == 1
         assert conn.execute('SELECT count(*) FROM project_run_reviews').fetchone()[0] == 0
         for table in ('project_run_starts', 'project_run_results'):

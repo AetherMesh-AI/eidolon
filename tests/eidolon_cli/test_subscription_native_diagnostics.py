@@ -580,7 +580,8 @@ def test_ledger_holder_observer_requires_acquired_exact_code_and_clears_on_exit(
         assert diagnostics.ledger_holders == {}
 
         @contextmanager
-        def already_in_transaction():
+        def already_in_transaction(*, write):
+            assert write is True
             with closing(sqlite3.connect(store.path, isolation_level=None)) as connection:
                 connection.execute('BEGIN IMMEDIATE')
                 yield connection

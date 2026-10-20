@@ -362,7 +362,7 @@ def test_project_reconcile_storage_is_optional_for_passive_legacy_reads(tmp_path
     from tests.eidolon_cli.test_organization_observation import seed, files, forbid_runtime
     from eidolon_cli.organization_observation import read_observation
     store = seed(tmp_path)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute('DROP TABLE organization_project_reconcile_only')
         if malformed: conn.execute('CREATE TABLE organization_project_reconcile_only(request_id TEXT)')
         before = '\n'.join(conn.iterdump())

@@ -304,7 +304,7 @@ def test_successful_replan_supersedes_failed_checks_without_erasing_failed_histo
     handoff = store.evidence(fixed_evidence)['editProposal']['sourceVerificationReceipt']
     assert handoff['status'] == 'verified' and handoff['manifestValidation']['status'] == 'passed'
     assert any(row['status'] == 'failed' for row in handoff['validations'])
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         store.verify_project_objective_acceptance(conn, gate['objectiveId'])
 
 

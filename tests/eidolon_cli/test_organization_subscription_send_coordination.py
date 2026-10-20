@@ -28,8 +28,9 @@ def held_scheduler_close(store, monkeypatch):
     failures = []
     connect = store._connect
     @contextmanager
-    def connection():
-        with connect() as conn:
+    def connection(*, write=False):
+        assert write is True
+        with connect(write=write) as conn:
             try:
                 yield conn
             finally:

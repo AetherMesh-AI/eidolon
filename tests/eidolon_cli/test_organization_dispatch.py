@@ -25,7 +25,7 @@ def test_pause_isolates_dispatch_and_restart_preserves_admission_and_allowances(
     restarted = OrganizationStore(store.path)
     assert toggle(restarted, one) == receipt
     assert create(restarted, 'one')['id'] == one['id']
-    with restarted._connect() as conn:
+    with restarted._connect(write=True) as conn:
         assert before == {table:list(map(tuple, conn.execute(f'SELECT * FROM {table}'))) for table in before}
         with pytest.raises(sqlite3.IntegrityError, match='immutable'):
             conn.execute('DELETE FROM dispatch_changes')

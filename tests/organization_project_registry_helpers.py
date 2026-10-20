@@ -117,8 +117,8 @@ elif mode == 'inserted_receipt':
 elif mode == 'blocked_writer':
     connect = service.store._connect
     @contextlib.contextmanager
-    def observed_connect():
-        with connect() as conn:
+    def observed_connect(*, write=False):
+        with connect(write=write) as conn:
             def observe(sql):
                 if sql == 'BEGIN IMMEDIATE':
                     Path(payload['waiting']).write_text('waiting for the real SQLite writer')

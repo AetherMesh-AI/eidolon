@@ -317,7 +317,7 @@ def test_sql_history_row_bound_precedes_existing_lineage_verifier(tmp_path, monk
 def test_bounded_lineage_read_closes_its_transaction_and_preserves_caller_work(tmp_path):
     store, source, objective = applied(tmp_path)
     retained = capture(store, objective, source)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         with pytest.raises(ProjectSnapshotError, match='captured alias'):
             effective.verify_effective_snapshot_lineage(conn, retained, str(source.parent) + '-other',
                                                         check_authorized=lambda: True)

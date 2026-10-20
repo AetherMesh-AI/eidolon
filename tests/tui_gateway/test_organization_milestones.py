@@ -75,6 +75,6 @@ def test_receipt_reconciliation_is_passive_and_bound_to_owner(setup, monkeypatch
 
 def test_receipt_lookup_rejects_partial_milestone_storage(setup):
     service, _, params = setup
-    with service.store._connect() as conn:
+    with service.store._connect(write=True) as conn:
         conn.execute('DROP TABLE organization_milestone_links')
     assert 'error' in call('organization.milestoneReceipt', dict(params, idempotencyKey='missing'))

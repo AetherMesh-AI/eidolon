@@ -110,12 +110,36 @@ async function openSetup(legacy: boolean) {
 
   const dialog = page.getByRole('dialog', { name: 'Build your starter team', exact: true })
   await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: 'Check configuration', exact: true }).click()
+  const checkConfiguration = dialog.getByRole('button', { name: 'Check configuration', exact: true })
+  await expect(checkConfiguration).toBeEnabled()
+  await completeCheckConfiguration(checkConfiguration)
   await dialog.getByLabel('Work to delegate', { exact: true }).fill(jobs)
   await dialog.getByLabel('What success looks like', { exact: true }).fill(goals)
   await dialog.getByLabel('Team naming style (optional)', { exact: true }).fill('Ash, Ember and Flint')
 
   return dialog
+}
+
+// This owns only the explicit Check action. Unknown earlier bootstrap reads
+// still refuse before the click; socket identity is not client provenance.
+async function completeCheckConfiguration(button: Locator) {
+  const result = await fixture!.performSetupAction('checkConfiguration', () => button.click())
+  const steps = result.steps as { method: string; phase: string; shape: Record<string, unknown> }[]
+  expect(steps).toHaveLength(1)
+  expect(steps[0]).toMatchObject({
+    method: 'organization.teamSetup',
+    phase: 'result',
+    shape: {
+      result: 'object',
+      capabilityVersionOne: true,
+      state: 'available',
+      organizationMatches: true,
+      requestOrganizationMatchesAction: true,
+      sourceMatchesAction: true,
+      sourceRevisionValid: true,
+      organizationIdValid: true
+    }
+  })
 }
 
 async function completePolicyApply(apply: Locator, hostIdentityState: 'current' | 'migration_required') {

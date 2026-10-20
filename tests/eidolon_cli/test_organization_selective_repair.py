@@ -64,7 +64,7 @@ def test_independent_a_reused_b_and_dependent_c_repaired_without_budget_reset(tm
         before = {name: [tuple(r) for r in conn.execute('SELECT * FROM '+name)] for name in ('objective_budgets', 'objective_usage', 'evidence', 'reviews')}
         old_requests = [dict(r) for r in conn.execute('SELECT * FROM requests WHERE task_id=?', (tasks['b'],))]
     assert store.finish(accept, result)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         retained = conn.execute('SELECT * FROM objective_reused_evidence').fetchall()
         assert len(retained) == 1 and retained[0]['task_id'] == tasks['a']
         for name in ('objective_budgets', 'evidence', 'reviews'):
@@ -162,7 +162,7 @@ def test_legacy_passive_reads_do_not_create_repair_tables(tmp_path):
     from eidolon_cli.organization_selective_repair import REPAIR_TABLES, reuse_view
     from eidolon_cli.organization_observation import _compatible_schema
     store = OrganizationStore(tmp_path/'legacy.db')
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         for table in REPAIR_TABLES:
             conn.execute('DROP TABLE '+table)
         before = '\n'.join(conn.iterdump())

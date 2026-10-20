@@ -138,7 +138,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect() as conn:
+        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect(write=True) as conn:
             from eidolon_cli.organization_prepared_validation_ledger import migrate_prepared_validation_schema
             migrate_prepared_validation_schema(conn)
             # Schema creation is one durable unit: avoid hundreds of separate
@@ -182,19 +182,28 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                 self._maybe_integrate(conn, row['objective_id'])
 
     @contextlib.contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+    def _connect(self, *, write=False):
+        if type(write) is not bool:
+            raise TypeError('Organization connection write mode must be boolean')
+        # Observation connections never provision or change journal mode. A
+        # writable WAL observer can take an EXCLUSIVE main-file lock on last
+        # close, even without row writes, racing a final send-authority read.
+        # Keep long-lived read snapshots concurrent and genuinely read-only;
+        # initialization and _write retain their existing coordinated lifetime.
+        target = self.path if write else self.path.absolute().as_uri() + '?mode=ro'
+        conn = sqlite3.connect(target, uri=not write, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA journal_mode=WAL")
+            if write:
+                conn.execute("PRAGMA journal_mode=WAL")
             yield conn
         finally:
             conn.close()
 
     @contextlib.contextmanager
     def _write(self):
-        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect() as conn:
+        with ledger_writer(self.path, deadline=time.monotonic() + 10), self._connect(write=True) as conn:
             conn.execute("BEGIN IMMEDIATE")
             previous = (self.settings, getattr(self, '_policy_generation', None), getattr(self, '_policy_fingerprint', None))
             try:

@@ -46,7 +46,7 @@ def test_measurements_are_bound_immutable_and_late_completion_is_preserved(tmp_p
     from eidolon_cli.organization_routing_observations import provider_usage
     store, objective, claim = setup(tmp_path)
     call = reserve(store, claim)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute("UPDATE requests SET token='replacement-token',lease=NULL,status='queued' WHERE id=?", (claim['id'],))
     measured = dict(input_tokens=10, output_tokens=5, elapsed_seconds=0.25, outcome='response')
     assert store.record_model_observation(claim, call, **measured)
@@ -59,7 +59,7 @@ def test_measurements_are_bound_immutable_and_late_completion_is_preserved(tmp_p
     assert provider_usage(None) == (None, None)
     report = routing_observations(store.path)
     assert report['observations'][0]['providerReportedUsage']['inputTokens'] == 10
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute("UPDATE objective_usage SET completed=1 WHERE request_id=? AND token=?", (claim['id'], claim['token']))
     item = routing_observations(store.path)['observations'][0]
     assert item['stageCompleted'] is True
@@ -69,7 +69,7 @@ def test_measurements_are_bound_immutable_and_late_completion_is_preserved(tmp_p
 def test_legacy_missing_measurement_table_remains_readable_without_migration(tmp_path):
     store, objective, claim = setup(tmp_path)
     reserve(store, claim)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute('DROP TABLE organization_route_observations')
         before = '\n'.join(conn.iterdump())
     report = routing_observations(store.path)
@@ -87,7 +87,7 @@ def test_optional_measurement_writer_fails_fast_under_contention(tmp_path):
     import time
     store, objective, claim = setup(tmp_path)
     call = reserve(store, claim)
-    with store._connect() as conn:
+    with store._connect(write=True) as conn:
         conn.execute('BEGIN IMMEDIATE')
         start = time.monotonic()
         with pytest.raises(sqlite3.OperationalError, match='locked'):
