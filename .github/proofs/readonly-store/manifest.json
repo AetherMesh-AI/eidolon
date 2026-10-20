@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "kind": "temporary_native_sqlite_readonly_diagnostic",
+  "revision": 2,
+  "supersedesSourceManifestSha256": "ee4fea6b84db97a144a614ffe73628fefae700c0a587bf67583ec51cebd48409",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "7071b7d4b435766fdb3348331c1aa8ba7c4bb3a257689286e22745567d458788"
+    },
+    {
+      "path": "native_permissions.py",
+      "sha256": "69046828f22ea9ba5c8870448bdf70746e9f32711829a6e6d1e0710961c61f0c"
+    },
+    {
+      "path": "native_sqlite.py",
+      "sha256": "ea07140550527d70cb2d32c4d0aec7c7d24c55e5a806f12fd383395fc0401e8b"
+    },
+    {
+      "path": "pytest.ini",
+      "sha256": "f52214e7f39d6a1e22e67a1fbcbf1278b0154aebc3e0fe2ce9f5086dd06d657a"
+    },
+    {
+      "path": "required-cases.json",
+      "sha256": "1da995aaa0a9c401ec2ed86f4892d86d17f01681bbdde423d6bf0987f00a46bb"
+    },
+    {
+      "path": "run.py",
+      "sha256": "240f41c642b1ffea00c103590c23e01564bfe769c44611ed309905a6c740a229"
+    },
+    {
+      "path": "test_admission_probe.py",
+      "sha256": "6af11c2188767a0cf9f4697f91772374d9dc283c3bfcdb23085f3fabf5ae751a"
+    },
+    {
+      "path": "test_native_permissions.py",
+      "sha256": "9c269001c409b3445efcce37ebc8b03579395945ce6f9bf7c37145cf912bc771"
+    },
+    {
+      "path": "test_native_vfs.py",
+      "sha256": "a9459a40bfb4ce7e706c8957c209b7c0db6cec94e8186ebd40bdf51940993f3f"
+    },
+    {
+      "path": "test_verifier.py",
+      "sha256": "e81ed5f4c088cc267acf4c52a2271ffcb9178921bdaa2ca28589726aaa998002"
+    },
+    {
+      "path": "verify_evidence.py",
+      "sha256": "cfbd37861a76d933f8a6cd0bd7134f6bd2b89d5a0f713e580867870bc2f4b9a7"
+    },
+    {
+      "path": "vfs_probe.py",
+      "sha256": "2cffbba30bf0d45f1ed4e85ce94ee668ef15f876d925c4b5c4313f87a0da252b"
+    }
+  ]
+}
