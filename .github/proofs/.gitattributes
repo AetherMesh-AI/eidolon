@@ -1,0 +1,2 @@
+.gitattributes text eol=lf
+readonly-store/pytest.ini text eol=lf

@@ -1,0 +1,106 @@
+name: Subscription readonly Windows ACL diagnostic
+'on':
+  push:
+    branches:
+    - proof/subscription-readonly-acl-diagnostic-20261020
+permissions:
+  contents: read
+concurrency:
+  group: subscription-readonly-acl-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CI: 'true'
+jobs:
+  readonly-native-contracts:
+    name: Readonly store ACL diagnostic (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: windows-latest
+          python: '3.11'
+          platform: win32
+        - os: windows-latest
+          python: '3.12'
+          platform: win32
+    defaults:
+      run:
+        shell: bash
+        working-directory: source
+    env:
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      NOUS_API_KEY: ''
+      ANTHROPIC_API_KEY: ''
+      SUBSCRIPTION_PROOF_SHA: 8bb3444382fe658e937830441b5e6195907c731b
+      SUBSCRIPTION_PROOF_TREE: 01aec73a193becd7c74f242cf97a3a816e190ba6
+      SUBSCRIPTION_WORKFLOW_EVENT_SHA: ${{ github.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      READONLY_PROOF_PARENT: 0babe54215cd06220b2ee528627bfd993ed1cf1a
+      READONLY_STORE_SHA256: 9c69661ccade2af564a0c84ad50f791b2384d4f90f0bc6b296b3c0a88f8efd2a
+      READONLY_HARNESS_SHA256: e7752bc60c5ef78877021767b16977f870f7a2471227a4edb4b08abdc5e4c743
+      PROOF_PYTHON: ${{ matrix.python }}
+      PROOF_PLATFORM: ${{ matrix.platform }}
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: 8bb3444382fe658e937830441b5e6195907c731b
+        path: source
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Checkout immutable proof harness only
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        path: proof-harness
+        fetch-depth: 2
+        persist-credentials: false
+        sparse-checkout: .github/proofs
+        sparse-checkout-cone-mode: true
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: ${{ matrix.python }}
+    - name: Install locked native Python dependencies
+      run: |
+        set -euo pipefail
+        python -m pip install uv==0.12.23
+        uv sync --locked --python "$(python -c 'import sys; sys.stdout.write(sys.executable)')" --extra dev
+        uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+        if test "$RUNNER_OS" = Windows; then py="$PWD/.venv/Scripts/python.exe"; else py="$PWD/.venv/bin/python"; fi
+        printf 'HERMES_PYTHON=%s\n' "$py" >> "$GITHUB_ENV"
+        printf 'READONLY_HARNESS=%s/.github/proofs/readonly-store\n' "$(cd ../proof-harness && pwd)" >> "$GITHUB_ENV"
+        printf 'READONLY_WORKFLOW=%s/.github/proofs/readonly-workflow\n' "$(cd ../proof-harness && pwd)" >> "$GITHUB_ENV"
+    - name: Verify exact source, harness and installed native interpreter
+      run: |
+        set -euo pipefail
+        mkdir -p readonly-native-proof
+        test "$(git -C ../proof-harness rev-parse HEAD)" = "$SUBSCRIPTION_WORKFLOW_EVENT_SHA"
+        test "$(git -C ../proof-harness show -s --format=%P HEAD)" = "$SUBSCRIPTION_PROOF_SHA"
+        git -C ../proof-harness rev-parse HEAD 'HEAD^{tree}' > readonly-native-proof/harness-source.txt
+        "$HERMES_PYTHON" -B "$READONLY_WORKFLOW/workflow_gate.py" preflight --source "$PWD" --head "$SUBSCRIPTION_PROOF_SHA" --tree "$SUBSCRIPTION_PROOF_TREE" --parent "$READONLY_PROOF_PARENT" --store-sha256 "$READONLY_STORE_SHA256" --harness "$READONLY_HARNESS" --harness-sha256 "$READONLY_HARNESS_SHA256" --collection "$READONLY_WORKFLOW/readonly-collection.json" --platform "$PROOF_PLATFORM" --python "$PROOF_PYTHON" --output readonly-native-proof/preflight.json
+    - name: Collect and execute exact readonly source contracts once
+      run: |
+        set -euo pipefail
+        mkdir -p readonly-native-proof/collection-home
+        HERMES_HOME="$PWD/readonly-native-proof/collection-home" "$HERMES_PYTHON" -B -m pytest tests/eidolon_cli/test_organization_store_readonly_connections.py --collect-only -q -p no:cacheprovider 2>&1 | tee readonly-native-proof/contracts-collection.log
+        scripts/run_tests.sh tests/eidolon_cli/test_organization_store_readonly_connections.py --file-retries 0 --junitxml="$PWD/readonly-native-proof/contracts-junit.xml" 2>&1 | tee readonly-native-proof/contracts.log
+        "$HERMES_PYTHON" -B "$READONLY_WORKFLOW/workflow_gate.py" contracts --collection "$READONLY_WORKFLOW/readonly-collection.json" --platform "$PROOF_PLATFORM" --junit readonly-native-proof/contracts-junit.xml --collect-log readonly-native-proof/contracts-collection.log --output readonly-native-proof/contracts-gate.json
+    - name: Prove writable contention and readonly refusal with the loaded SQLite
+      run: |
+        set -euo pipefail
+        "$HERMES_PYTHON" -B "$READONLY_HARNESS/run.py" --source-root "$PWD" --store-sha256 "$READONLY_STORE_SHA256" --expected-head "$SUBSCRIPTION_PROOF_SHA" --expected-tree "$SUBSCRIPTION_PROOF_TREE" --output "$PWD/readonly-native-proof/mechanism" --suite all
+        "$HERMES_PYTHON" -B "$READONLY_HARNESS/verify_evidence.py" --evidence "$PWD/readonly-native-proof/mechanism" --source-root "$PWD" --store-sha256 "$READONLY_STORE_SHA256" --expected-head "$SUBSCRIPTION_PROOF_SHA" --expected-tree "$SUBSCRIPTION_PROOF_TREE" --suite all
+    - name: Retain native source, runtime, VFS, ACL and exact case evidence
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: subscription-readonly-acl-diagnostic-${{ matrix.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt
+          }}
+        path: source/readonly-native-proof/
+        retention-days: 7
+        if-no-files-found: error
