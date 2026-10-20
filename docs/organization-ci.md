@@ -63,6 +63,13 @@ No branch protection, repository setting, secret, or permission grant is changed
   handoff selections and legacy admission guidance. The completion, request,
   owner and project fixtures include executive decomposition; native completion
   asserts that completed packages alone cannot produce an accepted objective.
+  `organization-goal-completion.spec.ts` is included by the same native core glob:
+  two explicitly approved finite templates run through the production scheduler
+  and scripted loopback provider, with exact dependency blocking, independent
+  acceptance, a disabled boundary restart, cumulative reservations and retained
+  outcomes. A second restart with the exhausted plan enabled verifies no third
+  launch. This supplements the dispatch-disabled goal-controls proof; scripted
+  acceptance does not establish real-model usefulness.
   Owner/member chat adds exact identity and reply routing, duplicate admission,
   cancellation/late-response fencing, explicit allowance review/cancel/renewal,
   exact renewal replay and stale-review rejection, continuation after renewal,
