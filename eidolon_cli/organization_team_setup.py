@@ -258,15 +258,48 @@ def create_team(home, params):
         raise ValueError('Creating the reviewed team requires explicit confirmation')
     key = _text(params.get('idempotencyKey'), 'Idempotency key', 128)
     digest = _hash(params)
+    try:
+        return _create_team(home, params, key, digest)
+    except OwnerPolicyError as exc:
+        if exc.reason != 'locked':
+            raise
+        # A competing creator can have committed its immutable receipt while
+        # still holding the writer gate through connection cleanup. Recover
+        # only that exact committed result; never retry a mutation here.
+        try:
+            with _connection(home) as conn:
+                identity = _identity(conn, params['expectedOrganizationId'])
+                _schema(conn)
+                prior = _team_receipt(conn, identity, key, digest)
+                result = json.loads(prior['result_json']) if prior is not None else None
+        except OwnerPolicyError as recovery:
+            if recovery.reason not in {'locked', 'unreadable', 'unconfigured'}:
+                raise
+        except OSError:
+            pass  # Unavailable reconciliation must retain the original busy result.
+        else:
+            # A fetched receipt is not a successful read until close also succeeds.
+            if prior is not None:
+                return result
+        raise
+
+
+def _team_receipt(conn, identity, key, digest):
+    prior = conn.execute('SELECT * FROM organization_team_setup WHERE id=1').fetchone()
+    if prior:
+        if prior['organization_id'] != identity['organizationId']:
+            raise OwnerPolicyError('identity_conflict')
+        if prior['idempotency_key'] != key or prior['input_hash'] != digest:
+            raise OwnerPolicyError('idempotency_conflict')
+    return prior
+
+
+def _create_team(home, params, key, digest):
     with _connection(home, write=True) as conn:
         identity = _identity(conn, params['expectedOrganizationId'])
         _schema(conn)
-        prior = conn.execute('SELECT * FROM organization_team_setup WHERE id=1').fetchone()
-        if prior:
-            if prior['organization_id'] != identity['organizationId']:
-                raise OwnerPolicyError('identity_conflict')
-            if prior['idempotency_key'] != key or prior['input_hash'] != digest:
-                raise OwnerPolicyError('idempotency_conflict')
+        prior = _team_receipt(conn, identity, key, digest)
+        if prior is not None:
             return json.loads(prior['result_json'])
         preview, policy, settings = _preview(conn, home, params)
         if params.get('previewVersion') != preview['previewVersion']:

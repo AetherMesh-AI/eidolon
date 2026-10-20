@@ -33,6 +33,17 @@ changes. Existing meaningful work, conversations, memory, or explicit staffing
 prevent initial setup from silently replacing an organization. Untouched automatically
 seeded identities are handled without deleting historical identities.
 
+Concurrent creation retains the bounded writer wait. If another creator has
+already committed, an identical intent can recover its receipt through a
+read-only transaction while the first writer finishes connection cleanup.
+Recovery checks the organization identity and exact idempotency key and input
+hash. A different intent conflicts; an absent committed receipt leaves the
+operation busy, with the original intent safe to retry. Creation does not
+automatically retry writes or promise success under indefinite contention.
+A reconciliation read must finish successfully, including connection close.
+Busy or unavailable reconciliation retains the original busy error; identity
+and intent conflicts, corrupt storage, and unsupported state remain explicit.
+
 Generation uses the guarded direct chat-completions boundary and a durable setup
 allowance of at most three physical sends and 120,000 reserved tokens. Complete
 invalid proposals remain charged; editing the input starts a new explicit attempt
