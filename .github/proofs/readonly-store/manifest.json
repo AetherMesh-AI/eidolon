@@ -1,0 +1,108 @@
+{
+  "files": [
+    {
+      "path": "ACL-DIAGNOSTIC.md",
+      "sha256": "9e14afb3630edc6aba8eda460f46fd4fcba8532c4c688f78ab9508199266aa1b"
+    },
+    {
+      "path": "README.md",
+      "sha256": "1e516ff1f3fca37e21fb7201d5632d3ca1fe792ffb372a6ee5a61a260c045265"
+    },
+    {
+      "path": "RESTORE-EXPERIMENT.md",
+      "sha256": "ee265f08a2c920395d2a7bd310549167cb9a2c89e318401dd2eb28ada245809c"
+    },
+    {
+      "path": "acl_descriptor_diagnostic.py",
+      "sha256": "2b00cf2e6a5154f28034e311ee3a9e8dfb4c3e5ccfd4065092701630eebee187"
+    },
+    {
+      "path": "base-manifest.json",
+      "sha256": "cf7a018dc4ee3e756f1ca25cdbfa0f3f30fe87688d27eaba09b5d244b6b24c17"
+    },
+    {
+      "path": "diagnostic-base-manifest.json",
+      "sha256": "e7752bc60c5ef78877021767b16977f870f7a2471227a4edb4b08abdc5e4c743"
+    },
+    {
+      "path": "fixtures/cpython-v3.11.9-LICENSE.md",
+      "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+    },
+    {
+      "path": "fixtures/cpython-v3.11.9-ctypes-init.py",
+      "sha256": "608671c6b49e5e027e3348fcf492718c33f69f919d99f4ff170522c40bd4c550"
+    },
+    {
+      "path": "fixtures/cpython-v3.12.10-LICENSE.md",
+      "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+    },
+    {
+      "path": "fixtures/cpython-v3.12.10-ctypes-init.py",
+      "sha256": "e0db1242e78267cba0124ee9fe5963b72d1c8a1832bb51a88abcf012a9cbce76"
+    },
+    {
+      "path": "fixtures/native_permissions.diagnostic-base.py",
+      "sha256": "b1c8c63622989ebcd8739e48f1d2f10c5a843c425ad4f2795484b47c8b9212eb"
+    },
+    {
+      "path": "native_permissions.py",
+      "sha256": "a10608ea2e0e6a0af39fc4dca73ecc75a3444c7f35064becf365975209b448f7"
+    },
+    {
+      "path": "native_sqlite.py",
+      "sha256": "3c35a6c7fd3688ed92300bfb939c12604f4b42baffecdcdb865d13dddaf967fd"
+    },
+    {
+      "path": "pytest.ini",
+      "sha256": "f52214e7f39d6a1e22e67a1fbcbf1278b0154aebc3e0fe2ce9f5086dd06d657a"
+    },
+    {
+      "path": "required-cases.json",
+      "sha256": "1da995aaa0a9c401ec2ed86f4892d86d17f01681bbdde423d6bf0987f00a46bb"
+    },
+    {
+      "path": "run.py",
+      "sha256": "240f41c642b1ffea00c103590c23e01564bfe769c44611ed309905a6c740a229"
+    },
+    {
+      "path": "test_acl_descriptor_diagnostic.py",
+      "sha256": "b01f55453a77ca3cd71c39ad7d0baf66f38d3b8ea62adc1ea2b6f594b345e001"
+    },
+    {
+      "path": "test_admission_probe.py",
+      "sha256": "6af11c2188767a0cf9f4697f91772374d9dc283c3bfcdb23085f3fabf5ae751a"
+    },
+    {
+      "path": "test_native_permissions.py",
+      "sha256": "9c269001c409b3445efcce37ebc8b03579395945ce6f9bf7c37145cf912bc771"
+    },
+    {
+      "path": "test_native_vfs.py",
+      "sha256": "a9459a40bfb4ce7e706c8957c209b7c0db6cec94e8186ebd40bdf51940993f3f"
+    },
+    {
+      "path": "test_verifier.py",
+      "sha256": "e81ed5f4c088cc267acf4c52a2271ffcb9178921bdaa2ca28589726aaa998002"
+    },
+    {
+      "path": "test_windows_binding.py",
+      "sha256": "d08a3ee125423797954889c4e569abcf1aae525e83724048ac97dfd49a7dcd19"
+    },
+    {
+      "path": "test_windows_restore_experiment.py",
+      "sha256": "26288f9f4806a42203945ae109edc179720aa0c776b3bd794ccb1be5b2bea727"
+    },
+    {
+      "path": "verify_evidence.py",
+      "sha256": "cfbd37861a76d933f8a6cd0bd7134f6bd2b89d5a0f713e580867870bc2f4b9a7"
+    },
+    {
+      "path": "vfs_probe.py",
+      "sha256": "2cffbba30bf0d45f1ed4e85ce94ee668ef15f876d925c4b5c4313f87a0da252b"
+    }
+  ],
+  "kind": "temporary_native_sqlite_readonly_restore_experiment",
+  "revision": 5,
+  "supersedesSourceManifestSha256": "e7752bc60c5ef78877021767b16977f870f7a2471227a4edb4b08abdc5e4c743",
+  "version": 1
+}
