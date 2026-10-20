@@ -735,6 +735,11 @@ test('selected live chat lends its route to Improve without appending conversati
   })
   const f = fixture
   await waitForAppReady(f)
+  // Establish identity before the chat so this case isolates borrowing a live
+  // session route. openSetup still verifies automatic first-save continuation.
+  const initialSetup = await openSetup(f)
+  await initialSetup.locator('[data-slot=dialog-close-button]').click()
+  await expect(initialSetup).not.toBeVisible()
   const observed: { method: string; params?: Record<string, unknown> }[] = []
   const cdp = await f.page.context().newCDPSession(f.page)
   await cdp.send('Network.enable')
@@ -755,7 +760,9 @@ test('selected live chat lends its route to Improve without appending conversati
   const sent = observed.find(frame => frame.method === 'prompt.submit')
   expect(sent?.params?.session_id).toBeTruthy()
   await f.page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
-  const dialog = await openSetup(f)
+  await f.page.locator('.eid-team-entry').getByRole('button', { name: labels.en.generate, exact: true }).click()
+  const dialog = f.page.getByRole('dialog', { name: labels.en.title, exact: true })
+  await expect(dialog).toBeVisible()
   const before = history(f)
   await dialog.getByLabel(labels.en.jobs, { exact: true }).fill('Clear work')
   await dialog.getByRole('button', { name: labels.en.improveJobs, exact: true }).click()
