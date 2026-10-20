@@ -111,16 +111,20 @@ def _normalize_path(path: str) -> str:
     return p.rstrip("/\\") or p
 
 
-def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
+def connect(db_path: Optional[Path] = None, *, must_exist: bool = False) -> sqlite3.Connection:
     """Open (and initialize if needed) the per-profile projects DB.
 
     WAL with DELETE fallback for network filesystems (``eidolon_state`` helper). Schema init is
     idempotent (``CREATE TABLE IF NOT EXISTS`` + additive migrations) and cached per-path per-process.
     """
     path = db_path if db_path is not None else projects_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Tree reads must not recreate a store removed after their absence check.
+    # Existing-store schema/journal initialization is deliberately unchanged.
+    if not must_exist:
+        path.parent.mkdir(parents=True, exist_ok=True)
     resolved = str(path.resolve())
-    conn = sqlite3.connect(str(path))
+    conn = (sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True)
+            if must_exist else sqlite3.connect(str(path)))
     try:
         conn.row_factory = sqlite3.Row
         from eidolon_state_wal import apply_wal_with_fallback
@@ -141,10 +145,10 @@ def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 
 @contextlib.contextmanager
-def connect_closing(db_path: Optional[Path] = None):
+def connect_closing(db_path: Optional[Path] = None, *, must_exist: bool = False):
     """Open a projects DB connection and close it on exit (sqlite3's own context manager only
     commits/rollbacks, so long-lived gateway/dashboard processes would leak fds otherwise)."""
-    conn = connect(db_path=db_path)
+    conn = connect(db_path=db_path, must_exist=True) if must_exist else connect(db_path=db_path)
     try:
         yield conn
     finally:
