@@ -183,6 +183,7 @@ jobs:
             tests/eidolon_cli/test_organization_store_readonly_connections.py
             tests/eidolon_cli/test_organization_subscription_send_coordination.py
             tests/eidolon_cli/test_organization_team_setup.py
+            tests/eidolon_cli/test_organization_team_contention.py
             tests/eidolon_cli/test_organization_team_admission.py
             tests/eidolon_cli/test_organization_team_generation.py
             tests/tui_gateway/test_organization_team_setup.py
