@@ -1,0 +1,69 @@
+{
+  "path": "tests/eidolon_cli/test_organization_store_readonly_connections.py",
+  "gitBlob": "5c03bd4ab7688e11907d8e6689181b4dfb1f1108",
+  "sha256": "708ca159150c15a6128187472e78dbb1f92d7a7e3ffd9e55379a15b480096850",
+  "orderedNodeIds": [
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[INSERT INTO t VALUES(2)]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[UPDATE t SET a=2]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[DELETE FROM t]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[CREATE TABLE extra(a)]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[DROP TABLE t]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_actual_readonly_handle_refuses_mutation_with_query_only_off[PRAGMA user_version=7]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_uri_encoding_selects_the_exact_existing_database[state.db]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_uri_encoding_selects_the_exact_existing_database[space # % caf\\xe9.db]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_uri_encoding_selects_the_exact_existing_database[literal?mode=rw.db]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_windows_uri_encoding_is_explicit_static_evidence_only",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_reader_never_creates_ledger_or_directory[True]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_reader_never_creates_ledger_or_directory[False]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_non_wal_reader_never_converts_or_mutates_database",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_reader_outliving_writer_retains_sidecars_and_next_guarded_writer_cleans",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_read_snapshot_and_autocommit_freshness_are_preserved",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_wal_sidecars_can_be_created_only_when_directory_allows",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_sidecar_permission_failure_stays_visible_without_fallback",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_readable_existing_sidecars_allow_readonly_reopen",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_hot_rollback_journal_requires_writable_recovery_and_is_not_hidden",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_backup_captures_committed_wal_after_readonly_last_close[sqlite]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_backup_captures_committed_wal_after_readonly_last_close[product]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_clone_all_preserves_quiescent_retained_wal",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[None]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[0]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[1]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[true]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[value5]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_write_mode_requires_exact_boolean_before_open[value6]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_restricted_views_cannot_open_any_connection[False-observation]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_restricted_views_cannot_open_any_connection[False-owner_policy]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_restricted_views_cannot_open_any_connection[True-observation]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_restricted_views_cannot_open_any_connection[True-owner_policy]",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_constructor_and_write_remain_explicitly_writable_and_coordinated",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_metadata_only_ledger_is_initialized_by_writer_not_reader",
+    "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_deleted_ledger_is_not_recreated_by_existing_store"
+  ],
+  "collected": 36,
+  "collectionLogSha256": "7426815b8a1107702d93101b167f1ca495aec6d9c8c8777421c511d063cbbf16",
+  "collectionExit": 0,
+  "macos": {
+    "passed": 36,
+    "skipped": [],
+    "requiresUnprivilegedUser": true
+  },
+  "windows": {
+    "passed": 33,
+    "skipped": [
+      {
+        "nodeId": "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_uri_encoding_selects_the_exact_existing_database[literal?mode=rw.db]",
+        "reason": "Question mark is not a Windows filename"
+      },
+      {
+        "nodeId": "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_missing_sidecar_permission_failure_stays_visible_without_fallback",
+        "reason": "Real unprivileged POSIX permission control"
+      },
+      {
+        "nodeId": "tests/eidolon_cli/test_organization_store_readonly_connections.py::test_readable_existing_sidecars_allow_readonly_reopen",
+        "reason": "Real unprivileged POSIX permission control"
+      }
+    ]
+  },
+  "limits": "Expected native counts are gates, not completed native results. Linux canonical36 passed; Mac/Windows unrun."
+}

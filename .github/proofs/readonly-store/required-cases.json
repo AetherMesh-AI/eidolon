@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "all-posix": {
+    "selected": [
+      "test_admission_probe.py::test_callback_bundle_lifetime_survives_close_and_gc",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[close_tracking]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[lock_observation]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_after_proxy]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_before_proxy]",
+      "test_admission_probe.py::test_callback_retention_exhaustion_preserves_native_connection",
+      "test_admission_probe.py::test_probe_restores_default_after_body_exception",
+      "test_admission_probe.py::test_probe_restores_default_before_reporting_live_connection",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[ordinary_open_reader]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[released_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[uncoordinated_close]",
+      "test_admission_probe.py::test_unsuccessful_exclusive_lock_does_not_pause",
+      "test_native_permissions.py::test_native_missing_sidecars_refuse_without_fallback",
+      "test_native_permissions.py::test_native_readable_sidecars_reopen_with_identical_closed_bytes",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-10]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-3850]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-5]",
+      "test_native_vfs.py::test_main_open_is_delegated_once_when_observation_fails",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[0]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[4]",
+      "test_native_vfs.py::test_null_method_pointer_is_refused",
+      "test_native_vfs.py::test_registered_vfs_witness_uses_python_sqlite_instance",
+      "test_native_vfs.py::test_store_readonly_close_comparison_requires_writable_positive",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[4]"
+    ],
+    "deselected": []
+  },
+  "all-windows": {
+    "selected": [
+      "test_admission_probe.py::test_callback_bundle_lifetime_survives_close_and_gc",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[close_tracking]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[lock_observation]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_after_proxy]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_before_proxy]",
+      "test_admission_probe.py::test_callback_retention_exhaustion_preserves_native_connection",
+      "test_admission_probe.py::test_probe_restores_default_after_body_exception",
+      "test_admission_probe.py::test_probe_restores_default_before_reporting_live_connection",
+      "test_admission_probe.py::test_unsuccessful_exclusive_lock_does_not_pause",
+      "test_native_permissions.py::test_native_missing_sidecars_refuse_without_fallback",
+      "test_native_permissions.py::test_native_readable_sidecars_reopen_with_identical_closed_bytes",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-10]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-3850]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-5]",
+      "test_native_vfs.py::test_main_open_is_delegated_once_when_observation_fails",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[0]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[4]",
+      "test_native_vfs.py::test_null_method_pointer_is_refused",
+      "test_native_vfs.py::test_registered_vfs_witness_uses_python_sqlite_instance",
+      "test_native_vfs.py::test_store_readonly_close_comparison_requires_writable_positive",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[4]"
+    ],
+    "deselected": [
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[ordinary_open_reader]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[released_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[uncoordinated_close]"
+    ]
+  },
+  "portable": {
+    "selected": [
+      "test_admission_probe.py::test_callback_bundle_lifetime_survives_close_and_gc",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[close_tracking]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[lock_observation]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_after_proxy]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_before_proxy]",
+      "test_admission_probe.py::test_callback_retention_exhaustion_preserves_native_connection",
+      "test_admission_probe.py::test_probe_restores_default_after_body_exception",
+      "test_admission_probe.py::test_probe_restores_default_before_reporting_live_connection",
+      "test_admission_probe.py::test_unsuccessful_exclusive_lock_does_not_pause",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[close-10]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-0]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-3850]",
+      "test_native_vfs.py::test_callback_unit_preserves_one_delegate_and_exact_return_on_error[lock-5]",
+      "test_native_vfs.py::test_main_open_is_delegated_once_when_observation_fails",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[0]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_method_version_refused_before_full_table_copy[4]",
+      "test_native_vfs.py::test_null_method_pointer_is_refused",
+      "test_native_vfs.py::test_registered_vfs_witness_uses_python_sqlite_instance",
+      "test_native_vfs.py::test_store_readonly_close_comparison_requires_writable_positive",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[1]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[2]",
+      "test_native_vfs.py::test_vfs_version_refused_before_full_table_copy[4]"
+    ],
+    "deselected": [
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[ordinary_open_reader]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[released_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[uncoordinated_close]"
+    ]
+  },
+  "admission": {
+    "selected": [
+      "test_admission_probe.py::test_callback_bundle_lifetime_survives_close_and_gc",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[close_tracking]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[lock_observation]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_after_proxy]",
+      "test_admission_probe.py::test_callback_observation_failure_preserves_native_result_and_cleanup[open_before_proxy]",
+      "test_admission_probe.py::test_callback_retention_exhaustion_preserves_native_connection",
+      "test_admission_probe.py::test_probe_restores_default_after_body_exception",
+      "test_admission_probe.py::test_probe_restores_default_before_reporting_live_connection",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[coordinated_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[ordinary_open_reader]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[readonly_stale_owner]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[released_close]",
+      "test_admission_probe.py::test_production_admission_at_real_wal_close[uncoordinated_close]",
+      "test_admission_probe.py::test_unsuccessful_exclusive_lock_does_not_pause"
+    ],
+    "deselected": []
+  },
+  "permissions": {
+    "selected": [
+      "test_native_permissions.py::test_native_missing_sidecars_refuse_without_fallback",
+      "test_native_permissions.py::test_native_readable_sidecars_reopen_with_identical_closed_bytes"
+    ],
+    "deselected": []
+  },
+  "identity": {
+    "selected": [],
+    "deselected": []
+  }
+}
