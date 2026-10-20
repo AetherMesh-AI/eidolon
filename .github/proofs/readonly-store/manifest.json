@@ -1,0 +1,76 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "1e516ff1f3fca37e21fb7201d5632d3ca1fe792ffb372a6ee5a61a260c045265"
+    },
+    {
+      "path": "fixtures/cpython-v3.11.9-LICENSE.md",
+      "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+    },
+    {
+      "path": "fixtures/cpython-v3.11.9-ctypes-init.py",
+      "sha256": "608671c6b49e5e027e3348fcf492718c33f69f919d99f4ff170522c40bd4c550"
+    },
+    {
+      "path": "fixtures/cpython-v3.12.10-LICENSE.md",
+      "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+    },
+    {
+      "path": "fixtures/cpython-v3.12.10-ctypes-init.py",
+      "sha256": "e0db1242e78267cba0124ee9fe5963b72d1c8a1832bb51a88abcf012a9cbce76"
+    },
+    {
+      "path": "native_permissions.py",
+      "sha256": "69046828f22ea9ba5c8870448bdf70746e9f32711829a6e6d1e0710961c61f0c"
+    },
+    {
+      "path": "native_sqlite.py",
+      "sha256": "3c35a6c7fd3688ed92300bfb939c12604f4b42baffecdcdb865d13dddaf967fd"
+    },
+    {
+      "path": "pytest.ini",
+      "sha256": "f52214e7f39d6a1e22e67a1fbcbf1278b0154aebc3e0fe2ce9f5086dd06d657a"
+    },
+    {
+      "path": "required-cases.json",
+      "sha256": "1da995aaa0a9c401ec2ed86f4892d86d17f01681bbdde423d6bf0987f00a46bb"
+    },
+    {
+      "path": "run.py",
+      "sha256": "240f41c642b1ffea00c103590c23e01564bfe769c44611ed309905a6c740a229"
+    },
+    {
+      "path": "test_admission_probe.py",
+      "sha256": "6af11c2188767a0cf9f4697f91772374d9dc283c3bfcdb23085f3fabf5ae751a"
+    },
+    {
+      "path": "test_native_permissions.py",
+      "sha256": "9c269001c409b3445efcce37ebc8b03579395945ce6f9bf7c37145cf912bc771"
+    },
+    {
+      "path": "test_native_vfs.py",
+      "sha256": "a9459a40bfb4ce7e706c8957c209b7c0db6cec94e8186ebd40bdf51940993f3f"
+    },
+    {
+      "path": "test_verifier.py",
+      "sha256": "e81ed5f4c088cc267acf4c52a2271ffcb9178921bdaa2ca28589726aaa998002"
+    },
+    {
+      "path": "test_windows_binding.py",
+      "sha256": "d08a3ee125423797954889c4e569abcf1aae525e83724048ac97dfd49a7dcd19"
+    },
+    {
+      "path": "verify_evidence.py",
+      "sha256": "cfbd37861a76d933f8a6cd0bd7134f6bd2b89d5a0f713e580867870bc2f4b9a7"
+    },
+    {
+      "path": "vfs_probe.py",
+      "sha256": "2cffbba30bf0d45f1ed4e85ce94ee668ef15f876d925c4b5c4313f87a0da252b"
+    }
+  ],
+  "kind": "temporary_native_sqlite_readonly_diagnostic",
+  "revision": 3,
+  "supersedesSourceManifestSha256": "d69027780c7549090ee7c601a391d9c009a0cb75e1cba1823780effb050b42dc",
+  "version": 1
+}
