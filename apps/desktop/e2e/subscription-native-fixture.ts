@@ -419,6 +419,7 @@ async function observeSubscriptionRpc(page: Page) {
   let dropped = 0
   let malformed = 0
   let closed = false
+  let waitUnavailable: { closed: boolean; hasCompletionWaiter: boolean; isSequence: boolean; pendingCount: number } | null = null
   type CompletionWaiter = {
     method: string
     sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string; organization?: string; appliedGeneration?: number; connectionRevision?: number; preparedTicket?: string }
@@ -825,6 +826,12 @@ async function observeSubscriptionRpc(page: Page) {
       completionWaiter ||
       (sequence ? pending.size !== 0 : !['organization.improveTeamInput', 'organization.generateTeam', 'llm.oneshot'].includes(method))
     ) {
+      waitUnavailable = {
+        closed,
+        hasCompletionWaiter: Boolean(completionWaiter),
+        isSequence: Boolean(sequence),
+        pendingCount: pending.size
+      }
       throw new Error('subscription_operation_wait_unavailable')
     }
 
@@ -922,6 +929,7 @@ async function observeSubscriptionRpc(page: Page) {
       dropped,
       malformed,
       pending: pending.size,
+      waitUnavailable: waitUnavailable ? { ...waitUnavailable } : null,
       rpc: structuredClone(rpc)
     }),
     close: async () => {

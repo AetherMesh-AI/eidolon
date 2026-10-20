@@ -664,6 +664,25 @@ test('setup action allowlist, old-pending and shared inference guard reject befo
   await h.observer.close()
 })
 
+test('wait refusal snapshot retains the guard instant after a prior reply completes without invoking Check', async () => {
+  const h = await harness()
+  let actions = 0
+  assert.equal(h.observer.read().waitUnavailable, null)
+  h.send('private-prior-id', 'organization.teamSetup')
+  await assert.rejects(h.observer.performSetupAction('checkConfiguration', async () => { actions++ }), /wait_unavailable/)
+  const expected = { closed: false, hasCompletionWaiter: false, isSequence: true, pendingCount: 1 }
+  assert.deepEqual({ ...h.observer.read().waitUnavailable }, expected)
+  h.receive('private-prior-id')
+  assert.equal(h.observer.read().pending, 0)
+  assert.equal(actions, 0)
+  const snapshot = h.observer.read().waitUnavailable
+  snapshot.pendingCount = 99
+  assert.deepEqual({ ...h.observer.read().waitUnavailable }, expected)
+  assert.ok(!JSON.stringify(h.observer.read()).includes('private-prior-id'))
+  assert.equal(h.timers.size, 0)
+  await h.observer.close()
+})
+
 test('status/readiness evidence keeps refusals and equality results while redacting raw IDs and unknown labels', async () => {
   const h = await harness()
   let result
