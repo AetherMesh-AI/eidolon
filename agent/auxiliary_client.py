@@ -1669,6 +1669,7 @@ class _AnthropicCompletionsAdapter:
         response = create_anthropic_message(
             self._client,
             anthropic_kwargs,
+            allow_stream_retry=kwargs.pop("_allow_stream_retry", True),
             # Record provider-response timing every event, but tick forward progress only for
             # substantive payloads so keepalives can't hold a stalled summary open. None keeps
             # the fast get_final_message path.
@@ -6289,6 +6290,10 @@ def _create_with_progress_once(
     ``force_stream``, where a stream-only provider rejects the plain call by definition, so the original
     error is surfaced to the normal recovery chains instead.
     """
+    # The Anthropic adapter streams internally, so pass the per-request policy
+    # through without mutating its cached client or leaking a private SDK kwarg.
+    if not allow_stream_retry and isinstance(client.chat.completions, _AnthropicCompletionsAdapter):
+        kwargs = {**kwargs, "_allow_stream_retry": False}
     _notify_aux_dispatch()
     _notify_aux_progress()  # Preserve the watchdog's historical dispatch tick.
     if (not _aux_progress_active() and not force_stream) or _client_streams_internally(client):

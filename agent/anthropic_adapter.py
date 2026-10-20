@@ -648,7 +648,7 @@ def _stream_final_message(stream_fn, api_kwargs, log_prefix, on_stream_event, on
 
 def create_anthropic_message(
     client: Any, api_kwargs: dict, *, log_prefix: str = "", prefer_stream: bool = True,
-    on_stream_event=None, on_response=None,
+    on_stream_event=None, on_response=None, allow_stream_retry: bool = True,
 ) -> Any:
     """Create an Anthropic message, aggregating via stream when available. Some Anthropic-compatible
     gateways are SSE-only and answer ``create()`` with ``text/event-stream``, which the SDK surfaces
@@ -657,7 +657,8 @@ def create_anthropic_message(
     streaming (restricted Bedrock roles). Both callbacks are best-effort and fire only on the
     streaming path: ``on_stream_event(event)`` lets liveness watchdogs see forward progress;
     ``on_response(httpx_response)`` exposes headers the parsed Message drops (Nous Portal's
-    ``x-nous-credits-*`` balance family)."""
+    ``x-nous-credits-*`` balance family). Set ``allow_stream_retry=False`` for
+    callers that require a single physical attempt; the original stream error then propagates."""
     sanitize_anthropic_kwargs(api_kwargs, log_prefix=log_prefix)
     messages_api = getattr(client, "messages", None)
     stream_fn = getattr(messages_api, "stream", None)
@@ -667,7 +668,7 @@ def create_anthropic_message(
         except TimeoutError:
             raise
         except Exception as exc:
-            if not _is_stream_unavailable_error(exc):
+            if not allow_stream_retry or not _is_stream_unavailable_error(exc):
                 raise
             logger.debug(
                 "%sAnthropic Messages stream unavailable; falling back to messages.create(): %s", log_prefix, exc

@@ -103,3 +103,34 @@ def test_credit_error_does_not_retry_with_smaller_output(monkeypatch):
     with pytest.raises(RuntimeError, match='fixture budget'):
         improve(main_runtime={'provider': 'openrouter', 'model': 'fixture-model'})
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('error', [
+    'stream not supported',
+    'AccessDeniedException: not authorized to perform bedrock:InvokeModelWithResponseStream',
+])
+def test_anthropic_improve_stream_rejection_has_one_physical_attempt(monkeypatch, error):
+    from unittest.mock import Mock
+
+    messages = Mock()
+    messages.stream.side_effect = RuntimeError(error)
+    client = aux.AnthropicAuxiliaryClient(
+        SimpleNamespace(messages=messages), 'fixture-model', 'synthetic', 'https://fixture.invalid')
+    monkeypatch.setattr(aux, '_get_cached_client', lambda *a, **kw: (client, 'fixture-model'))
+    with pytest.raises(RuntimeError, match=error):
+        improve(main_runtime={'provider': 'anthropic', 'model': 'fixture-model'})
+    assert messages.stream.call_count == 1
+    messages.create.assert_not_called()
+    assert '_allow_stream_retry' not in messages.stream.call_args.kwargs
+
+
+def test_anthropic_default_still_recovers_from_unavailable_stream():
+    from unittest.mock import Mock
+    from agent.anthropic_adapter import create_anthropic_message
+
+    messages = Mock()
+    messages.stream.side_effect = RuntimeError('stream not supported')
+    result = create_anthropic_message(SimpleNamespace(messages=messages), {'model': 'fixture-model'})
+    assert result is messages.create.return_value
+    assert messages.stream.call_count == 1
+    assert messages.create.call_count == 1
