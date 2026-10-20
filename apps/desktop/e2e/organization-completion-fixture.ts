@@ -58,6 +58,7 @@ export interface CompletionStage {
   reasoningEffort?: string
   projectIds?: string[]
   kind: string
+  objectiveTitle: string
   agentId: string
   scope: string
   requiredChecks: string[]
@@ -121,6 +122,7 @@ function resultFor(kind: string, context: StageContext, taskCount = 1) {
 }
 
 interface CompletionFixtureOptions {
+  finiteGoal?: { titles: string[]; prepareHome: (home: string) => void }
   completionReserve?: boolean
   adaptivePacing?: boolean
   modelRouting?: boolean
@@ -134,6 +136,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
   const stages: CompletionStage[] = []
   const providerErrors: string[] = []
   const pendingReplies: Array<() => void> = []
+  const acceptanceReplies: Array<() => void> = []
   const mock = await startMockServer()
 
   const sandbox = createSandbox(
@@ -218,6 +221,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
             model: payload?.model,
             reasoningEffort: payload?.reasoning_effort,
             kind,
+            objectiveTitle: context.objective.title,
             projectIds: context.objective.projects?.map(project => project.id),
             agentId: context.agent.id,
             scope: context.objective.description,
@@ -227,10 +231,10 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
           })
 
           if (
-            context.objective.title !==
+            !(options.finiteGoal?.titles.includes(context.objective.title) ?? (context.objective.title ===
               ((options.expiredReplacement || options.exhaustedReplacement) && context.objective.description === amendedScope
                 ? replacementTitle
-                : options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
+                : options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle))) ||
             payload?.tools?.length
           ) {
             throw new Error('Unexpected objective or expanded tool grants')
@@ -308,9 +312,11 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
             }
           }
 
-          // Hold real inference at the revised plan, so owner submission and
-          // renderer reload cannot accidentally appear to complete the work.
-          if (kind === 'request.plan' && context.objective.description === amendedScope) {
+          // Keep final acceptance pending for the dependency-negative proof.
+          // The existing revised-plan hold still covers scope amendment/reload.
+          if (kind === 'request.accept' && context.objective.title === options.finiteGoal?.titles[0]) {
+            acceptanceReplies.push(reply)
+          } else if (kind === 'request.plan' && context.objective.description === amendedScope) {
             pendingReplies.push(reply)
           } else {
             reply()
@@ -352,6 +358,8 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
   const closeProvider = () =>
     new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())))
 
+  const releaseAcceptance = () => acceptanceReplies.splice(0).forEach(reply => reply())
+  const appEnv = () => buildAppEnv(sandbox, options.finiteGoal ? { HOME: sandbox.root, USERPROFILE: sandbox.root } : {})
   const releasePlan = () => pendingReplies.splice(0).forEach(reply => reply())
   let fixture: MockBackendFixture | undefined
 
@@ -371,14 +379,15 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${options.adaptivePacing ? "\n  adaptive_pacing_enabled: true\n  pacing_conserve_below_percent: 100\n  pacing_conserve_interval_seconds: 1\n  pacing_critical_interval_seconds: 1" : ""}${routingYaml}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: ${options.finiteGoal ? 2 : 1}\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${options.adaptivePacing ? "\n  adaptive_pacing_enabled: true\n  pacing_conserve_below_percent: 100\n  pacing_conserve_interval_seconds: 1\n  pacing_critical_interval_seconds: 1" : ""}${routingYaml}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,
       false
     )
     writeEnvFile(sandbox.hermesHome)
-    const launch = await launchDesktop(buildAppEnv(sandbox))
+    options.finiteGoal?.prepareHome(sandbox.hermesHome)
+    const launch = await launchDesktop(appEnv())
     fixture = {
       ...launch,
       mock,
@@ -386,6 +395,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox,
       cleanup: async () => {
         releasePlan()
+        releaseAcceptance()
 
         try {
           await fixture!.app.close()
@@ -428,9 +438,10 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
     stages,
     providerErrors,
     releasePlan,
+    releaseAcceptance,
     restart: async () => {
       await fixture.app.close()
-      const launched = await launchDesktop(buildAppEnv(sandbox))
+      const launched = await launchDesktop(appEnv())
       fixture.app = launched.app
       fixture.page = launched.page
       await waitForAppReady(fixture, 120_000)
