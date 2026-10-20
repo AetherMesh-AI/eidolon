@@ -261,6 +261,9 @@ def test_exact_history_attention_is_scoped_and_reads_ignore_retained_settled_row
     store.set_objective_archived(other['id'], True, expected_revision=0, idempotency_key='archive')
     from eidolon_cli.organization_attention import attention_view
     with store._connect() as conn:
+        # Measure attention query work, excluding the connection's one-time
+        # schema load that writable journal-mode setup previously performed.
+        conn.execute('SELECT name FROM sqlite_schema LIMIT 1').fetchall()
         ticks = []
         conn.set_progress_handler(lambda: ticks.append(True) or 0, 100)
         result = attention_view(conn)
