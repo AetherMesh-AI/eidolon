@@ -726,7 +726,7 @@ jobs:
                   specs+=("$spec")
                 fi
               done
-              specs+=(e2e/objective-tab-retention.spec.ts)
+              specs+=(e2e/objective-tab-retention.spec.ts e2e/projects-first-use.spec.ts)
               ;;
             visual) specs=(e2e/organization-visual-polish.spec.ts e2e/code-direction.spec.ts) ;;
             *) echo 'Unknown native suite' >&2; exit 1 ;;
