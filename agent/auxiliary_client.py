@@ -6271,7 +6271,8 @@ def _stream_request_plan(kwargs: Dict[str, Any]) -> "Tuple[Dict[str, Any], str, 
 
 
 def _create_with_progress_once(
-    client: Any, kwargs: Dict[str, Any], task: Optional[str] = None, *, force_stream: bool = False
+    client: Any, kwargs: Dict[str, Any], task: Optional[str] = None, *, force_stream: bool = False,
+    allow_stream_retry: bool = True,
 ) -> Any:
     """create() that streams (and re-aggregates, ticking the hook per substantive chunk) when a
     progress hook is active or the provider is stream-only; plain ``create(**kwargs)`` otherwise
@@ -6301,7 +6302,7 @@ def _create_with_progress_once(
     except Exception as exc:
         # Genuine provider failures aren't streaming's fault — surface unchanged so the
         # recovery chains see the same error as a plain call.
-        if (force_stream or _is_transient_transport_error(exc) or _is_auth_error(exc)
+        if (not allow_stream_retry or force_stream or _is_transient_transport_error(exc) or _is_auth_error(exc)
                 or _is_payment_error(exc) or _is_rate_limit_error(exc)):
             raise
         # Possibly a streaming-specific rejection: retry non-streaming once; a genuinely bad
@@ -6515,6 +6516,7 @@ def _resolve_call_client(
     api_key: Optional[str], resolved_provider: str, resolved_model: Optional[str],
     resolved_base_url: Optional[str], resolved_api_key: Optional[str],
     resolved_api_mode: Optional[str], main_runtime: Optional[Dict[str, Any]], async_mode: bool,
+    strict_runtime: bool = False,
 ) -> _ResolvedAuxRoute:
     """Resolve the client for one aux call: vision chain, or cached text client with the
     explicit-provider fallback_chain / auto-chain rescue; RuntimeError when nothing is configured."""
@@ -6539,6 +6541,11 @@ def _resolve_call_client(
             api_key=resolved_api_key, api_mode=resolved_api_mode, main_runtime=main_runtime,
             task=task)
         effective_provider = _effective_provider_for_client(client, resolved_provider)
+        if strict_runtime:
+            if client is None or effective_provider != resolved_provider:
+                raise RuntimeError('The selected ordinary provider is unavailable; no fallback was attempted.')
+            if final_model != _normalize_resolved_model(resolved_model, resolved_provider):
+                raise RuntimeError('The selected model is unavailable; no replacement was requested.')
         if client is None:
             # Explicit provider with no credentials: honor the task fallback_chain before
             # raising (fallback entries may use OAuth / credential-pool auth).
@@ -6586,6 +6593,7 @@ def _prepare_aux_request(
     timeout: Optional[float], extra_body: Optional[dict], reasoning_config: Optional[dict],
     extra_headers: Optional[Dict[str, str]], api_mode: Optional[str],
     route_info: Optional[Dict[str, str]], async_mode: bool,
+    strict_runtime: bool = False,
 ) -> _PreparedAuxRequest:
     """Shared head of call_llm/async_call_llm: resolve route + client, publish it, build request kwargs.
     Sync-only: compression fast lane, per-request ``extra_headers``, and ``base_info`` falling
@@ -6601,6 +6609,7 @@ def _prepare_aux_request(
         resolved_provider=resolved_provider, resolved_model=resolved_model,
         resolved_base_url=resolved_base_url, resolved_api_key=resolved_api_key,
         resolved_api_mode=resolved_api_mode, main_runtime=main_runtime, async_mode=async_mode,
+        strict_runtime=strict_runtime,
     )
     effective_timeout = _effective_aux_timeout(task, timeout)
     request_provider = effective_provider or resolved_provider
@@ -7012,6 +7021,7 @@ def call_llm(
     extra_headers: Optional[Dict[str, str]] = None, api_mode: str = None, stream: bool = False,
     stream_options: dict = None, route_info: Optional[Dict[str, str]] = None,
     latency_info: Optional[Dict[str, int]] = None,
+    strict_runtime: bool = False,
 ) -> Any:
     """Run an auxiliary LLM request, applying the configured task limit."""
     from eidolon_cli.profile_isolation import block_auxiliary
@@ -7042,6 +7052,7 @@ def call_llm(
                 max_tokens=max_tokens, tools=tools, timeout=timeout, extra_body=extra_body,
                 reasoning_config=reasoning_config, extra_headers=extra_headers, api_mode=api_mode,
                 stream=stream, stream_options=stream_options, route_info=route_info,
+                strict_runtime=strict_runtime,
             )
         if stream and semaphore is not None:
             stream_semaphore = semaphore
@@ -7075,11 +7086,22 @@ def _plan_aux_call(
     timeout: Optional[float], extra_body: Optional[dict], reasoning_config: Optional[dict],
     extra_headers: Optional[Dict[str, str]], api_mode: Optional[str],
     route_info: Optional[Dict[str, str]],
+    strict_runtime: bool = False,
 ) -> Tuple[_PreparedAuxRequest, Dict[str, Any], Dict[str, Any]]:
     """Shared head of both call impls: prepare the request and bundle the kwargs the recovery
     drivers pass to ``_retry_same_provider_*`` / ``_call_fallback_candidate_*``. One immutable
     runtime snapshot for keying/resolution/retries/fallbacks, so a concurrent /model switch
     can't mix key and client from different runtimes."""
+    if strict_runtime:
+        if not isinstance(main_runtime, dict):
+            raise ValueError('Select an ordinary provider and model before improving text.')
+        main_runtime = _normalize_main_runtime(main_runtime)
+        provider, model = main_runtime.get('provider'), main_runtime.get('model')
+        if not provider or provider in ('auto', 'moa') or not model or model == 'auto' or tools:
+            raise ValueError('Improve needs an explicit ordinary provider/model and no tools.')
+        task = None  # Never inherit auxiliary.title_generation routing or credentials.
+        base_url, api_key = main_runtime.get('base_url'), main_runtime.get('api_key')
+        api_mode = main_runtime.get('api_mode')
     main_runtime = _normalize_main_runtime(main_runtime)
     req = _prepare_aux_request(
         task, provider=provider, model=model, base_url=base_url, api_key=api_key,
@@ -7087,6 +7109,7 @@ def _plan_aux_call(
         max_tokens=max_tokens, tools=tools, timeout=timeout, extra_body=extra_body,
         reasoning_config=reasoning_config, extra_headers=extra_headers,
         api_mode=api_mode, route_info=route_info, async_mode=async_mode,
+        strict_runtime=strict_runtime,
     )
     candidate_kwargs = dict(
         task=task, messages=messages, temperature=temperature, max_tokens=max_tokens,
@@ -7147,6 +7170,7 @@ def _call_llm_impl(
     timeout: float = None, extra_body: dict = None, reasoning_config: Optional[dict] = None,
     extra_headers: Optional[Dict[str, str]] = None, api_mode: str = None, stream: bool = False,
     stream_options: dict = None, route_info: Optional[Dict[str, str]] = None,
+    strict_runtime: bool = False,
 ) -> Any:
     """Centralized synchronous LLM call: resolve provider/model, auth, kwargs, fallbacks.
     task: aux task whose provider:model comes from config (ignored if provider set); api_mode
@@ -7159,6 +7183,7 @@ def _call_llm_impl(
         temperature=temperature, max_tokens=max_tokens, tools=tools, timeout=timeout,
         extra_body=extra_body, reasoning_config=reasoning_config,
         extra_headers=extra_headers, api_mode=api_mode, route_info=route_info,
+        strict_runtime=strict_runtime,
     )
     client, kwargs, request_provider = req.client, req.kwargs, req.request_provider
     # Streaming path (MoA aggregator): return the raw SDK stream, skipping validation and
@@ -7188,14 +7213,19 @@ def _call_llm_impl(
         return _validate_llm_response(
             _relay_sync_completion(
                 client, kwargs, provider=request_provider, api_mode=req.resolved_api_mode,
-                create=lambda request: _create_with_progress(
+                create=lambda request: (_create_with_progress_once if strict_runtime else _create_with_progress)(
                     client, request, task,
+                    **({"allow_stream_retry": False} if strict_runtime else {}),
                     force_stream=_provider_requires_stream(
                         request_provider, req.base_info or req.resolved_base_url),
                 ),
             ),
             task, **validate_kw,
         )
+    if strict_runtime:
+        # One physical attempt on the selected route: no parameter repair,
+        # credential rotation, transient retry, or cross-provider recovery ladder.
+        return _primary(provider=request_provider, base_url=req.base_info)
     try:
         # Bounded same-provider retry (exponential backoff, auxiliary.transient_retries) for
         # transient blips before escalating to fallback — a dropped connection shouldn't

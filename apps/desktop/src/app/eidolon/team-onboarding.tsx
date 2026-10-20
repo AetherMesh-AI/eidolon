@@ -12,6 +12,7 @@ import { teamOnboardingCopy, type TeamOnboardingCopy } from '@/i18n/organization
 import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscription'
 import { $gateway } from '@/store/gateway'
 import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
+import { $activeSessionId } from '@/store/session'
 
 import { queueKeyboardReveal } from './home-keyboard-focus'
 import { subscribeOrganizationDirectorySource } from './organization-directory-runtime'
@@ -64,7 +65,7 @@ function readTeamScope() {
       return gateway.request<T>(
         method,
         params,
-        ['organization.generateTeam', 'organization.improveTeamInput'].includes(method) ? 180000 : 15000
+        ['organization.generateTeam', 'llm.oneshot'].includes(method) ? 180000 : 15000
       )
     }
   }
@@ -120,7 +121,10 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
       return
     }
 
-    const next = createTeamOnboardingClient(readTeamScope, subscribeOrganizationDirectorySource)
+    const next = createTeamOnboardingClient(readTeamScope, subscribeOrganizationDirectorySource, () =>
+      $activeSessionId.get()
+    )
+
     setClient(next)
     let active = true
 
@@ -443,7 +447,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   }
 
   const recoveryCurrent = (request: TeamUnsentRequest) =>
-    requestCurrent(request) && recoveryAllowance(latestSetup.current, request)
+    request.operation === 'generate' && requestCurrent(request) && recoveryAllowance(latestSetup.current, request)
 
   const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>, request?: TeamUnsentRequest) => {
     if (busy.current || !client.current()) {
@@ -468,9 +472,11 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
             ? copy.stale
             : kind === 'reconcile' || kind === 'inspect'
               ? subscriptionCopy.checkUnsentBlocked
-              : kind === 'check'
-                ? copy.checkFailed
-                : copy.error
+              : kind === 'improve' && failure instanceof Error
+                ? failure.message
+                : kind === 'check'
+                  ? copy.checkFailed
+                  : copy.error
         )
 
         // A captured original request enables only local proof, not an unsent claim.
@@ -484,7 +490,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
           setUnsentRequest(request)
         }
 
-        if (['generate', 'regenerate', 'improve'].includes(kind) && client.current()) {
+        if (['generate', 'regenerate'].includes(kind) && client.current()) {
           setAllowanceUnverified(true)
 
           try {
@@ -553,62 +559,22 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
         (setup.generationAllowance.remainingByOperation?.[operation] ?? setup.generationAllowance.remainingCalls) ===
           0))
 
-  const improvementFingerprint = (field: 'jobs' | 'goals') =>
-    JSON.stringify({ ...inputs, sourceRevision: setup.sourceRevision, field })
-
-  const canImprove = (field: 'jobs' | 'goals') =>
-    !allowanceBlocked('improveTeamInput') ||
-    improvementIntents.current[field]?.fingerprint === improvementFingerprint(field)
+  const canImprove = (field: 'jobs' | 'goals') => !!inputs[field].trim()
 
   const improve = (field: 'jobs' | 'goals') => {
-    if (
-      busy.current ||
-      setup.readiness.status === 'blocked' ||
-      setup.inputImprovementVersion !== 1 ||
-      !inputs[field].trim() ||
-      !canImprove(field)
-    ) {
+    if (busy.current || !inputs[field].trim()) {
       return
     }
 
     const revision = inputRevision.current
-    const fingerprint = improvementFingerprint(field)
-
-    if (improvementIntents.current[field]?.fingerprint !== fingerprint) {
-      improvementIntents.current[field] = { fingerprint, key: crypto.randomUUID() }
-    }
-
-    const idempotencyKey = improvementIntents.current[field]!.key
-    clearUnsent()
     setSuggestion(null)
-    void act(
-      'improve',
-      async () => {
-        const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
+    void act('improve', async () => {
+      const result = await client.improve(setup, { ...inputs, field, idempotencyKey: crypto.randomUUID() })
 
-        if (alive.current && client.current() && revision === inputRevision.current) {
-          setSuggestion({ ...result, original: inputs[field], revision })
-
-          if (result.generationAllowance) {
-            refreshSetup({
-              ...latestSetup.current,
-              generationAllowance: result.generationAllowance
-            })
-            setAllowanceUnverified(false)
-          }
-        }
-      },
-      {
-        idempotencyKey,
-        operation: field === 'jobs' ? 'improve_jobs' : 'improve_goals',
-        sourceRevision: setup.sourceRevision ?? '',
-        organizationId: setup.organizationId ?? '',
-        inputs: { ...inputs },
-        fingerprint,
-        revision,
-        replace: false
+      if (alive.current && client.current() && revision === inputRevision.current) {
+        setSuggestion({ ...result, original: inputs[field], revision })
       }
-    )
+    })
   }
 
   const generate = (replace = false) => {
@@ -1215,7 +1181,7 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                     canImprove={canImprove}
                     copy={copy}
                     disabled={!!pending || unresolvedCreate}
-                    improvementSupported={setup.inputImprovementVersion === 1}
+                    improvementSupported={true}
                     inputs={inputs}
                     modelBlocked={modelBlocked}
                     onApply={applySuggestion}
