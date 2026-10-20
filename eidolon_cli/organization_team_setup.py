@@ -266,12 +266,21 @@ def create_team(home, params):
         # A competing creator can have committed its immutable receipt while
         # still holding the writer gate through connection cleanup. Recover
         # only that exact committed result; never retry a mutation here.
-        with _connection(home) as conn:
-            identity = _identity(conn, params['expectedOrganizationId'])
-            _schema(conn)
-            prior = _team_receipt(conn, identity, key, digest)
+        try:
+            with _connection(home) as conn:
+                identity = _identity(conn, params['expectedOrganizationId'])
+                _schema(conn)
+                prior = _team_receipt(conn, identity, key, digest)
+                result = json.loads(prior['result_json']) if prior is not None else None
+        except OwnerPolicyError as recovery:
+            if recovery.reason not in {'locked', 'unreadable', 'unconfigured'}:
+                raise
+        except OSError:
+            pass  # Unavailable reconciliation must retain the original busy result.
+        else:
+            # A fetched receipt is not a successful read until close also succeeds.
             if prior is not None:
-                return json.loads(prior['result_json'])
+                return result
         raise
 
 

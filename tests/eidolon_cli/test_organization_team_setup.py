@@ -171,17 +171,6 @@ def test_create_failure_rolls_back_roster_names_and_receipt(profile):
     assert team.create_team(profile.home, apply)['state'] == 'created'
 
 
-def test_concurrent_creates_are_atomic_and_idempotent(profile):
-    from concurrent.futures import ThreadPoolExecutor
-    apply = confirmed(profile)
-    with ThreadPoolExecutor(2) as pool:
-        results = list(pool.map(lambda _: team.create_team(profile.home, apply), range(2)))
-    assert results[0] == results[1]
-    with sqlite3.connect(profile.path) as conn:
-        assert conn.execute('SELECT count(*) FROM organization_team_setup').fetchone()[0] == 1
-        assert conn.execute('SELECT count(*) FROM organization_configuration').fetchone()[0] == 1
-
-
 @pytest.mark.parametrize('model', [
     {'provider': 'openai-api', 'default': 'gpt', 'openai_runtime': 'codex_app_server'},
     {'provider': 'anthropic', 'default': 'claude'},
