@@ -347,17 +347,27 @@ def _project_tree_inputs(
     from eidolon_cli import projects_db as pdb
     policy = _repo_discovery_policy()
     policy_key = _repo_discovery_policy_key(policy)
-    with pdb.connect_closing() as conn:
-        if include_discovered:
-            pdb.reconcile_discovered_repos_policy(
-                conn, policy_key, preserve_unversioned=_repo_discovery_policy_is_default(policy))
+    try:
+        pdb.projects_db_path().lstat()
+    except FileNotFoundError:
+        # A background tree warm-up must not provision projects storage. Keep
+        # session-derived groups, without the cached-repo helper's writable fallback.
+        discovered = (_discover_repos_payload(db, backfill=False, include_cached=False)
+                      if include_discovered else [])
+        return sessions, [], discovered, None
+    # This is existing-only, not read-only: legacy schema/journal handling remains
+    # unchanged. Surface a concurrent removal instead of recreating the store.
+    with pdb.connect_closing(must_exist=True) as conn:
+        stored_policy = pdb.get_discovery_policy_key(conn) if include_discovered else None
+        cache_current = (stored_policy == policy_key or
+                         (stored_policy is None and _repo_discovery_policy_is_default(policy)))
         projects = [p.to_dict() for p in pdb.list_projects(conn)]
         active_id = pdb.get_active_id(conn)
         # backfill stays off the hot tree path — grouping uses the live resolver.
         discovered = []
         if include_discovered:
             discovered = _discover_repos_payload(
-                db, conn=conn, backfill=False, include_cached=policy["enabled"])
+                db, conn=conn, backfill=False, include_cached=policy["enabled"] and cache_current)
     return sessions, projects, discovered, active_id
 
 
