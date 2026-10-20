@@ -965,7 +965,7 @@ test('both actual policy helpers await completion before the original saved-copy
   for (const name of ['activate', 'reviewMigrationPolicy']) {
     const helper = journeyParsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(journeyParsed)
     assert.match(helper, /await completePolicyApply\(apply, /)
-    assert.ok(helper.indexOf('await completePolicyApply(apply, ') < helper.indexOf("'Policy saved. Load account models again before Generate or Improve.'"))
+    assert.ok(helper.indexOf('await completePolicyApply(apply, ') < helper.indexOf("'Policy saved. Load account models again before Generate.'"))
     assert.doesNotMatch(helper, /await apply\.click\(\)/)
     assert.doesNotMatch(helper, /toBeVisible\(\{/)
   }

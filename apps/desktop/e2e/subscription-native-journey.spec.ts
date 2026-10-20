@@ -53,7 +53,7 @@ async function completeInference(
   const completed = await fixture!.performOperation(method, () => button.click())
   expect(completed).toMatchObject(
     expected === 'result'
-      ? { method: `organization.${method}`, phase: 'result' }
+      ? { method: method === 'improveTeamInput' ? 'llm.oneshot' : `organization.${method}`, phase: 'result' }
       : { method: `organization.${method}`, phase: 'error', code: 5076, reason: 'unavailable' }
   )
 }
@@ -397,7 +397,7 @@ async function activate(dialog: Locator, legacy: boolean) {
   await connection.getByRole('checkbox', { name: subscriptionAck, exact: true }).check()
   await completePolicyApply(apply, 'current')
   await expect(
-    connection.getByText('Policy saved. Load account models again before Generate or Improve.', { exact: true })
+    connection.getByText('Policy saved. Load account models again before Generate.', { exact: true })
   ).toBeVisible()
   const after = fixture!.snapshot()
   expect(after.subscriptionPolicy).toHaveLength(1)
@@ -428,8 +428,8 @@ async function reviewMigrationPolicy(
   if (stalePolicy) {
     const dialog = fixture!.page.getByRole('dialog', { name: 'Build your starter team', exact: true })
     await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeEnabled()
   }
 
   await connection.getByLabel('Setup model', { exact: true }).selectOption(subscriptionModel)
@@ -449,7 +449,7 @@ async function reviewMigrationPolicy(
   await acknowledgement.check()
   await completePolicyApply(apply, hostIdentityState)
   await expect(
-    connection.getByText('Policy saved. Load account models again before Generate or Improve.', { exact: true })
+    connection.getByText('Policy saved. Load account models again before Generate.', { exact: true })
   ).toBeVisible()
   fixture!.assertQuiet(0)
 }
@@ -461,6 +461,7 @@ test.describe('host-native subscription setup', () => {
     test(`${legacy ? 'legacy-empty' : 'fresh'} profile consents, chooses policy, reviews Improve, generates and explicitly creates`, async () => {
       fixture = await setupNativeSubscription({
         legacy,
+        ordinaryImprove: true,
         availabilityProbe: legacy ? 'scheduler_writer_once' : 'ancestor_final_path_once'
       })
       const dialog = await openSetup(legacy)
@@ -468,6 +469,31 @@ test.describe('host-native subscription setup', () => {
       await completeInference(
         dialog.getByRole('button', { name: 'Improve work description', exact: true }),
         'improveTeamInput'
+      )
+      const suggestion = dialog.getByRole('region', { name: 'Review suggested wording', exact: true })
+      await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedJobs)
+      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(jobs)
+      expect(fixture.snapshot().teams).toEqual([])
+      fixture.assertQuiet(0)
+      await suggestion.getByLabel('Suggested text', { exact: true }).fill(suggestedJobs + ' Keep scope small.')
+      await suggestion.getByRole('button', { name: 'Apply suggestion', exact: true }).click()
+      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(
+        suggestedJobs + ' Keep scope small.'
+      )
+      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toBeFocused()
+      fixture.assertQuiet(0)
+      await completeInference(
+        dialog.getByRole('button', { name: 'Improve success description', exact: true }),
+        'improveTeamInput'
+      )
+      await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedGoals)
+      await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
+      await suggestion.getByRole('button', { name: 'Discard suggestion', exact: true }).click()
+      await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
+      fixture.assertQuiet(0)
+      await completeInference(
+        dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }),
+        'generateTeam'
       )
       const probes = fixture.events().filter(row => row.kind === 'availability-probe')
       expect(probes).toHaveLength(1)
@@ -478,33 +504,8 @@ test.describe('host-native subscription setup', () => {
         renewed: !legacy,
         queued: legacy
       })
-      const suggestion = dialog.getByRole('region', { name: 'Review suggested wording', exact: true })
-      await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedJobs)
-      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(jobs)
-      expect(fixture.snapshot().teams).toEqual([])
-      fixture.assertQuiet(1)
-      await suggestion.getByLabel('Suggested text', { exact: true }).fill(suggestedJobs + ' Keep scope small.')
-      await suggestion.getByRole('button', { name: 'Apply suggestion', exact: true }).click()
-      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(
-        suggestedJobs + ' Keep scope small.'
-      )
-      await expect(dialog.getByLabel('Work to delegate', { exact: true })).toBeFocused()
-      fixture.assertQuiet(1)
-      await completeInference(
-        dialog.getByRole('button', { name: 'Improve success description', exact: true }),
-        'improveTeamInput'
-      )
-      await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedGoals)
-      await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
-      await suggestion.getByRole('button', { name: 'Discard suggestion', exact: true }).click()
-      await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
-      fixture.assertQuiet(2)
-      await completeInference(
-        dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }),
-        'generateTeam'
-      )
       await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash', { timeout: 30_000 })
-      fixture.assertQuiet(3)
+      fixture.assertQuiet(1)
       expect(fixture.snapshot().teams).toEqual([])
       await dialog.getByLabel('Name', { exact: true }).first().fill('Ash Reviewed')
       await expect(dialog.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0)
@@ -519,9 +520,9 @@ test.describe('host-native subscription setup', () => {
       const after = fixture.snapshot()
       expect(after.teams).toHaveLength(1)
       expect(after.model).toEqual(before.model)
-      expect(after.generations).toHaveLength(legacy ? 4 : 3)
-      expect(after.outcomes).toHaveLength(3)
-      expect(after.dispatches).toHaveLength(3)
+      expect(after.generations).toHaveLength(legacy ? 2 : 1)
+      expect(after.outcomes).toHaveLength(1)
+      expect(after.dispatches).toHaveLength(1)
       expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
 
       if (legacy) {
@@ -533,14 +534,15 @@ test.describe('host-native subscription setup', () => {
           .events()
           .filter(row => row.kind === 'responses')
           .map(row => row.operation)
-      ).toEqual(['improve_jobs', 'improve_goals', 'generate'])
+      ).toEqual(['generate'])
+      expect(fixture.events().filter(row => row.kind === 'ordinary-responses').map(row => row.field)).toEqual(['jobs', 'goals'])
       expect(
         fixture
           .events()
           .filter(row => row.kind === 'responses')
           .every(row => row.durableDispatch === true)
       ).toBe(true)
-      fixture.assertQuiet(3)
+      fixture.assertQuiet(1)
       await fixture.page
         .getByRole('dialog', { name: 'Team saved', exact: true })
         .getByRole('button', { name: 'Cancel', exact: true })
@@ -554,7 +556,7 @@ test.describe('host-native subscription setup', () => {
       await expect(fixture.page.getByText('Ash Reviewed', { exact: true }).first()).toBeVisible()
       await expect(fixture.page.getByText('Ember', { exact: true }).first()).toBeVisible()
       await expect(fixture.page.getByText('Flint', { exact: true }).first()).toBeVisible()
-      fixture.assertQuiet(3)
+      fixture.assertQuiet(1)
       // The saved team removes setup entry. Lifecycle management remains in
       // Settings and must not turn a configured organization into a fresh one.
       const headPath = path.join(fixture.sandbox.hermesHome, '.setup-subscription-private', 'current.json')
@@ -592,7 +594,7 @@ test.describe('host-native subscription setup', () => {
 
       expect(fixture.events()).toEqual(eventsBeforeSettings)
       expect(fixture.snapshot()).toEqual(after)
-      fixture.assertQuiet(3)
+      fixture.assertQuiet(1)
       await completeConnectionAction(management.getByRole('button', { name: 'Disconnect setup connection', exact: true }), 'settings-disconnect')
       await expect(management.getByText('Setup connection disconnected locally', { exact: true })).toBeVisible()
       await expect(
@@ -613,7 +615,7 @@ test.describe('host-native subscription setup', () => {
       ).toEqual(
         eventsBeforeSettings.filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind))
       )
-      fixture.assertQuiet(3)
+      fixture.assertQuiet(1)
       await test
         .info()
         .attach('subscription-settings-disconnected', { contentType: 'image/png', body: await management.screenshot() })
@@ -642,8 +644,8 @@ test.describe('host-native subscription setup', () => {
     fixture = await setupNativeSubscription({ legacy: true, recoveryFault: 'sqlite_dispatch_once' })
     const dialog = await openSetup(true)
     const before = await activate(dialog, true)
-    const improve = dialog.getByRole('button', { name: 'Improve work description', exact: true })
-    await completeInference(improve, 'improveTeamInput', 'unavailable')
+    const generate = dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })
+    await completeInference(generate, 'generateTeam', 'unavailable')
     const retry = dialog.getByRole('button', { name: 'Retry unsent request', exact: true })
     await expect(retry).toBeVisible({ timeout: 20_000 })
     await expect(dialog.getByRole('button', { name: 'Check configuration', exact: true })).toBeEnabled({
@@ -664,9 +666,9 @@ test.describe('host-native subscription setup', () => {
     expect(failed.teams).toEqual([])
     expect(failed.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
     fixture.assertQuiet(0)
-    const retained = await fixture.performOperation('improveTeamInput', () => improve.click())
+    const retained = await fixture.performOperation('generateTeam', () => generate.click())
     expect(retained).toMatchObject({
-      method: 'organization.improveTeamInput',
+      method: 'organization.generateTeam',
       phase: 'error',
       code: 5076,
       reason: 'generation_failed'
@@ -674,12 +676,8 @@ test.describe('host-native subscription setup', () => {
     await expect(retry).toBeEnabled({ timeout: 20_000 })
     expect(fixture.snapshot()).toEqual(failed)
     fixture.assertQuiet(0)
-    await completeInference(retry, 'improveTeamInput')
-    await expect(
-      dialog
-        .getByRole('region', { name: 'Review suggested wording', exact: true })
-        .getByLabel('Suggested text', { exact: true })
-    ).toHaveValue(suggestedJobs)
+    await completeInference(retry, 'generateTeam')
+    await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash')
     await expect(retry).toHaveCount(0)
     const after = fixture.snapshot()
     expect(after.generations).toHaveLength(3)
@@ -698,7 +696,8 @@ test.describe('host-native subscription setup', () => {
     expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
     fixture.assertQuiet(1)
     // The now-completed explicit intent is replayed, never sent again.
-    await completeInference(improve, 'improveTeamInput')
+    await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+    await completeInference(generate, 'generateTeam')
     expect(fixture.snapshot()).toEqual(after)
     fixture.assertQuiet(1)
     await test.info().attach('subscription-unsent-recovered', {
@@ -716,8 +715,8 @@ test.describe('host-native subscription setup', () => {
     fixture = await setupNativeSubscription({ legacy: true, availabilityProbe: 'scheduler_cleanup_once' })
     const dialog = await openSetup(true)
     const before = await activate(dialog, true)
-    const improve = dialog.getByRole('button', { name: 'Improve work description', exact: true })
-    await completeInference(improve, 'improveTeamInput', 'unavailable')
+    const generate = dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })
+    await completeInference(generate, 'generateTeam', 'unavailable')
     const check = dialog.getByRole('button', { name: 'Check unsent request', exact: true })
     const retry = dialog.getByRole('button', { name: 'Retry unsent request', exact: true })
     await expect(check).toBeEnabled({ timeout: 20_000 })
@@ -770,12 +769,8 @@ test.describe('host-native subscription setup', () => {
       nativeDeleteCount: probe.nativeDeleteCount
     })
     fixture.assertQuiet(0)
-    await completeInference(retry, 'improveTeamInput')
-    await expect(
-      dialog
-        .getByRole('region', { name: 'Review suggested wording', exact: true })
-        .getByLabel('Suggested text', { exact: true })
-    ).toHaveValue(suggestedJobs)
+    await completeInference(retry, 'generateTeam')
+    await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash')
     await expect(retry).toHaveCount(0)
     const after = fixture.snapshot()
     expect(after.generations).toHaveLength(3)
@@ -796,7 +791,8 @@ test.describe('host-native subscription setup', () => {
     expect(after.teams).toEqual([])
     expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
     fixture.assertQuiet(1)
-    await completeInference(improve, 'improveTeamInput')
+    await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+    await completeInference(generate, 'generateTeam')
     expect(fixture.snapshot()).toEqual(after)
     fixture.assertQuiet(1)
     await test.info().attach('subscription-stranded-unsent-reconciled', {
@@ -1037,8 +1033,8 @@ test.describe('host-native subscription setup', () => {
     const dialog = await openSetup(false)
     await activate(dialog, false)
     await completeInference(
-      dialog.getByRole('button', { name: 'Improve work description', exact: true }),
-      'improveTeamInput',
+      dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }),
+      'generateTeam',
       'unavailable'
     )
     await expect(dialog.getByRole('alert')).toHaveText(
@@ -1050,8 +1046,8 @@ test.describe('host-native subscription setup', () => {
       timeout: 20_000
     })
     await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeEnabled()
     expect(fixture!.snapshot().generations[0]?.status).toBe('uncertain')
     fixture.assertQuiet(1)
     const after = fixture.snapshot()
@@ -1061,8 +1057,8 @@ test.describe('host-native subscription setup', () => {
     await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
     // Changing text cannot turn unknown provider work into a new admitted call.
     await dialog.getByLabel('Work to delegate', { exact: true }).fill('A different synthetic request')
-    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeEnabled()
     fixture.assertQuiet(1)
     expect(fixture.snapshot()).toEqual(after)
     await test
@@ -1208,8 +1204,8 @@ test.describe('host-native subscription setup', () => {
     })
     expect(fixture.snapshot()).toEqual(oldPolicy)
     await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeEnabled()
     fixture.assertQuiet(0)
 
     // The previous epoch's policy is not authorization for this grant. The

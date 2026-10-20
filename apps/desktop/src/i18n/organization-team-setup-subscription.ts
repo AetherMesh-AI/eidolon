@@ -10,12 +10,12 @@ const messages = {
     'Осталось вызовов настройки: {count}. Каждый запрос расходует квоту подписки без жёсткого лимита токенов или стоимости плана.'
   ],
   readyForSetup: [
-    'Choose Generate or Improve to make a setup request using your subscription allowance.',
-    '生成または改善を選ぶと、サブスクリプション枠でセットアップ要求を行います。',
-    '选择生成或润色，使用订阅额度发起设置请求。',
-    '選擇產生或潤飾，以訂閱額度提出設定請求。',
-    'اختر التوليد أو التحسين لإرسال طلب إعداد باستخدام حصة اشتراكك.',
-    'Нажмите «Генерация» или «Улучшение», чтобы отправить запрос настройки за счёт квоты подписки.'
+    'Choose Generate to make a setup request using your subscription allowance.',
+    '生成を選ぶと、サブスクリプション枠でセットアップ要求を行います。',
+    '选择生成，使用订阅额度发起设置请求。',
+    '選擇產生，以訂閱額度提出設定請求。',
+    'اختر التوليد لإرسال طلب إعداد باستخدام حصة اشتراكك.',
+    'Нажмите «Генерация», чтобы отправить запрос настройки за счёт квоты подписки.'
   ],
   sourceWarning: [
     'External configuration files can change independently. Eidolon rechecks them before applying this policy and before each request.',
@@ -34,12 +34,12 @@ const messages = {
     'План ChatGPT для настройки'
   ],
   intro: [
-    'Connect ChatGPT separately for Generate and Improve. Existing Codex sign-in is not used.',
-    '生成と改善用にChatGPTを別途接続します。既存のCodexログインは使用しません。',
-    '单独连接 ChatGPT，用于生成和润色。不会使用现有 Codex 登录。',
-    '另外連結 ChatGPT 以產生及潤飾內容。不會使用現有 Codex 登入。',
-    'اربط ChatGPT بشكل منفصل للتوليد والتحسين. لن يُستخدم تسجيل دخول Codex الحالي.',
-    'Подключите ChatGPT отдельно для генерации и улучшения. Текущий вход в Codex не используется.'
+    'Connect ChatGPT separately for Generate. Existing Codex sign-in is not used.',
+    '生成用にChatGPTを別途接続します。既存のCodexログインは使用しません。',
+    '单独连接 ChatGPT，用于生成。不会使用现有 Codex 登录。',
+    '另外連結 ChatGPT 以產生內容。不會使用現有 Codex 登入。',
+    'اربط ChatGPT بشكل منفصل للتوليد. لن يُستخدم تسجيل دخول Codex الحالي.',
+    'Подключите ChatGPT отдельно для генерации. Текущий вход в Codex не используется.'
   ],
   unsupported: [
     'This requires Eidolon running locally on a Mac. Linux, Windows and remote connections are not supported.',
@@ -198,12 +198,12 @@ const messages = {
     'Принимаю перечисленные изменения только для настройки. Вызовы расходуют квоту подписки без жёсткого лимита токенов или USD. Использование может продолжиться после отмены. Лимиты выполнения и прежние списания сохраняются.'
   ],
   changed: [
-    'Policy saved. Load account models again before Generate or Improve.',
-    '方針を保存しました。生成や改善の前にアカウントのモデルを再読み込みしてください。',
-    '策略已保存。生成或润色前请重新加载账户模型。',
-    '政策已儲存。產生或潤飾前請重新載入帳戶模型。',
-    'حُفظت السياسة. أعد تحميل نماذج الحساب قبل التوليد أو التحسين.',
-    'Политика сохранена. Снова загрузите модели аккаунта перед генерацией или улучшением.'
+    'Policy saved. Load account models again before Generate.',
+    '方針を保存しました。生成の前にアカウントのモデルを再読み込みしてください。',
+    '策略已保存。生成前请重新加载账户模型。',
+    '政策已儲存。產生前請重新載入帳戶模型。',
+    'حُفظت السياسة. أعد تحميل نماذج الحساب قبل التوليد.',
+    'Политика сохранена. Снова загрузите модели аккаунта перед генерацией.'
   ],
   nonHard: [
     'Calls and a local timeout replace the listed setup token and cost guarantees. Their historical origin is unknown. Execution settings and all previous calls are preserved.',
@@ -312,12 +312,12 @@ const messages = {
     'Проверить неотправленный запрос'
   ],
   unsentVerified: [
-    'The saved request was closed locally as unsent. If needed, choose {setup}, then {models}, before explicitly choosing Generate or Improve. Nothing has been resent.',
-    '保存済み要求は未送信としてローカルで終了しました。必要に応じて{setup}、{models}の順に選び、その後で生成または改善を明示的に選んでください。再送信は行っていません。',
-    '已在本地将保存的请求作为未发送请求结束。必要时先选择{setup}，然后选择{models}，再明确选择生成或润色。尚未重新发送任何请求。',
-    '已在本機將儲存的要求以未傳送狀態結束。必要時先選擇{setup}，然後選擇{models}，再明確選擇產生或潤飾。尚未重新傳送任何要求。',
-    'أُغلق الطلب المحفوظ محلياً باعتباره غير مرسل. عند الحاجة، اختر {setup} ثم {models} قبل اختيار التوليد أو التحسين صراحةً. لم تتم إعادة إرسال أي طلب.',
-    'Сохранённый запрос локально завершён как неотправленный. При необходимости выберите {setup}, затем {models}, после чего явно нажмите генерацию или улучшение. Ничего не отправлено повторно.'
+    'The saved request was closed locally as unsent. If needed, choose {setup}, then {models}, before explicitly choosing Generate. Nothing has been resent.',
+    '保存済み要求は未送信としてローカルで終了しました。必要に応じて{setup}、{models}の順に選び、その後で生成を明示的に選んでください。再送信は行っていません。',
+    '已在本地将保存的请求作为未发送请求结束。必要时先选择{setup}，然后选择{models}，再明确选择生成。尚未重新发送任何请求。',
+    '已在本機將儲存的要求以未傳送狀態結束。必要時先選擇{setup}，然後選擇{models}，再明確選擇產生。尚未重新傳送任何要求。',
+    'أُغلق الطلب المحفوظ محلياً باعتباره غير مرسل. عند الحاجة، اختر {setup} ثم {models} قبل اختيار التوليد صراحةً. لم تتم إعادة إرسال أي طلب.',
+    'Сохранённый запрос локально завершён как неотправленный. При необходимости выберите {setup}, затем {models}, после чего явно нажмите генерацию. Ничего не отправлено повторно.'
   ],
   checkUnsentHelp: [
     'Check only examines this saved request locally and closes it if proven unsent. It does not retry or send a new request. Previous calls remain counted.',
