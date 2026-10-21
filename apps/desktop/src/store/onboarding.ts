@@ -55,6 +55,7 @@ export interface DesktopOnboardingState {
   flow: OnboardingFlow
   mode: OnboardingMode
   providers: null | OAuthProvider[]
+  supportedProviders?: string[]
   reason: null | string
   requested: boolean
   /** True when the user explicitly chose "I'll choose a provider later" on the
@@ -153,6 +154,7 @@ const INITIAL: DesktopOnboardingState = {
   flow: { status: 'idle' },
   mode: 'oauth',
   providers: null,
+  supportedProviders: undefined,
   reason: null,
   requested: false,
   firstRunSkipped: readCachedSkipped(),
@@ -448,13 +450,13 @@ async function refreshProviders(ctx?: OnboardingContext) {
 
   const promise = Promise.resolve().then(async () => {
     try {
-      const { providers } = await listOAuthProviders(profile)
+      const { providers, supportedProviders } = await listOAuthProviders(profile, true)
 
       if (generation !== flowGeneration || (owner && !owner())) {return}
-      patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers })
+      patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers, supportedProviders })
     } catch {
       if (generation !== flowGeneration || (owner && !owner())) {return}
-      patch({ mode: 'apikey', providers: [] })
+      patch({ mode: 'apikey', providers: [], supportedProviders: [] })
     } finally {
       if (providersRefresh?.token === token) {providersRefresh = null}
     }
@@ -514,6 +516,7 @@ export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONB
     manual: true,
     targetProfile: profile,
     providers: null,
+    supportedProviders: undefined,
     requested: true,
     localEndpoint: false,
     // `null` opts out of the prompt banner entirely (e.g. when the user already
@@ -537,6 +540,7 @@ export function startManualLocalEndpoint(reason: null | string = null, profile?:
     manual: true,
     targetProfile: profile,
     providers: null,
+    supportedProviders: undefined,
     requested: true,
     localEndpoint: true,
     mode: 'apikey',
@@ -592,6 +596,7 @@ export function completeDesktopOnboarding() {
     flow: { status: 'idle' },
     mode: 'oauth',
     providers: null,
+    supportedProviders: undefined,
     reason: null,
     requested: false,
     firstRunSkipped: false,

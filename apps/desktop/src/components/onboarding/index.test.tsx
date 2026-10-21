@@ -226,7 +226,7 @@ describe('provider response publication ownership', () => {
     let release!: (value: { providers: OAuthProvider[] }) => void
     const held = new Promise<{ providers: OAuthProvider[] }>(resolve => { release = resolve })
     const providerApi = vi.fn().mockReturnValueOnce(held).mockResolvedValue({ providers: [makeOAuthProvider('fresh')] })
-    const api = vi.fn(async ({ path }: { path: string }) => path === '/api/providers/oauth' ? providerApi() : { providers: [] })
+    const api = vi.fn(async ({ path }: { path: string }) => path === '/api/providers/oauth?execution_only=true' ? providerApi() : { providers: [] })
     const previousBridge = window.hermesDesktop
     Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api } })
 
@@ -263,7 +263,7 @@ describe('manual provider entry publication ownership', () => {
     const providerApi = vi.fn().mockReturnValueOnce(held).mockResolvedValue({ providers: [makeOAuthProvider('fresh')] })
     const previousBridge = window.hermesDesktop
     Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
-      api: ({ path }: { path: string }) => path === '/api/providers/oauth' ? providerApi() : Promise.resolve({ providers: [] })
+      api: ({ path }: { path: string }) => path === '/api/providers/oauth?execution_only=true' ? providerApi() : Promise.resolve({ providers: [] })
     } })
     const request = vi.fn(async () => ({ ok: true }) as never)
     const view = render(<DesktopOnboardingOverlay enabled profile="default" requestGateway={request} />)
@@ -351,4 +351,16 @@ it('relinquishes an already mounted automatic overlay to verified workspace setu
   expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(1)
   view.rerender(renderSetup(false))
   expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(2)
+})
+
+it('offers only supported ordinary API choices for an isolated organization', () => {
+  setProviders([])
+  $desktopOnboarding.set({ ...$desktopOnboarding.get(), supportedProviders: ['openai-api'] })
+  render(<Picker ctx={ctx} />)
+  expect(screen.getByText('OpenAI')).toBeTruthy()
+  expect(screen.queryByText('Fireworks AI')).toBeNull()
+  expect(screen.queryByText('OpenRouter')).toBeNull()
+  expect(screen.queryByText('Google Gemini')).toBeNull()
+  expect(screen.queryByText('Local / custom endpoint')).toBeNull()
+  expect(screen.queryByText('ChatGPT or Codex Subscription')).toBeNull()
 })

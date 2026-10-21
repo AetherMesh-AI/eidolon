@@ -84,6 +84,10 @@ def build_models_payload(
     desktop chat pickers. ``pricing_cache_only``: with ``pricing``, use only values already resident
     in process caches (normal picker opens, while a background worker warms cold endpoints)."""
     from eidolon_cli.model_switch import list_authenticated_providers
+    from eidolon_cli.profile_isolation import isolation_view
+    from eidolon_constants import get_eidolon_home
+
+    isolation = isolation_view(get_eidolon_home())
 
     rows = list_authenticated_providers(
         current_provider=ctx.current_provider, current_base_url=ctx.current_base_url,
@@ -133,6 +137,10 @@ def build_models_payload(
 
     if include_unconfigured:
         rows = list(rows) + _without_slug(_append_unconfigured_rows(rows, ctx), "moa")
+    if isolation is not None:
+        # Ordinary model choices must reflect the workspace's existing runtime
+        # contract. Dedicated ChatGPT setup has its own connection and catalog.
+        rows = [row for row in rows if _slug(row) in isolation['supportedProviders']]
     if picker_hints:
         _apply_picker_hints(rows)
     if canonical_order:

@@ -223,6 +223,7 @@ jobs:
           )
           projects_config_tests=(
             tests/eidolon_cli/test_isolated_provider_inventory.py
+            tests/eidolon_cli/test_isolated_provider_presentation.py
             tests/eidolon_cli/test_organization_workspaces.py
             tests/tui_gateway/test_organization_workspaces.py
             tests/eidolon_cli/test_organization_project_registry.py

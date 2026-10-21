@@ -493,12 +493,21 @@ def _build_oauth_catalog() -> list[Dict[str, Any]]:
 
 
 @router.get("/api/providers/oauth")
-async def list_oauth_providers(profile: Optional[str] = None):
+async def list_oauth_providers(profile: Optional[str] = None, execution_only: bool = False):
     """Every OAuth-capable provider with current status (token_preview is the last
-    N chars, never the full token; disconnect_command only for external providers)."""
+    N chars, never the full token; disconnect_command only for external providers).
+    Execution pickers may restrict choices to the existing workspace contract;
+    account-management callers retain the complete catalog.
+    """
     def _run():
+        from eidolon_cli.profile_isolation import isolation_view
+        from eidolon_constants import get_eidolon_home
+
+        isolation = isolation_view(get_eidolon_home()) if execution_only else None
         providers = []
         for p in _build_oauth_catalog():
+            if isolation is not None and p["id"] not in isolation['supportedProviders']:
+                continue
             status = _resolve_provider_status(p["id"], p.get("status_fn"))
             disconnect_hint = _oauth_provider_disconnect_hint(p, status)
             providers.append({
@@ -508,7 +517,8 @@ async def list_oauth_providers(profile: Optional[str] = None):
                 "disconnect_command": _oauth_provider_disconnect_command(p),
                 "disconnectable": disconnect_hint is None, "status": status,
             })
-        return {"providers": providers}
+        return {"providers": providers, **({"supportedProviders": isolation["supportedProviders"]}
+            if isolation is not None else {})}
 
     return await scoped_to_thread(profile, _run)
 
