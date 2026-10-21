@@ -436,6 +436,7 @@ async function refreshProviders(ctx?: OnboardingContext) {
   const owner = ctx?.shouldPublish
   const profile = ctx?.profile ?? $desktopOnboarding.get().targetProfile
   const generation = flowGeneration
+  const managementProvider = $desktopOnboarding.get().manual ? pendingProviderOAuthId : null
 
   if (owner && !owner()) {return}
 
@@ -450,7 +451,12 @@ async function refreshProviders(ctx?: OnboardingContext) {
 
   const promise = Promise.resolve().then(async () => {
     try {
-      const { providers, supportedProviders } = await listOAuthProviders(profile, true)
+      const response = await listOAuthProviders(profile, managementProvider === null)
+
+      const providers = managementProvider === null ? response.providers :
+        response.providers.filter(provider => provider.id === managementProvider)
+
+      const supportedProviders = response.supportedProviders
 
       if (generation !== flowGeneration || (owner && !owner())) {return}
       patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers, supportedProviders })
@@ -512,6 +518,7 @@ export function consumePendingCredentialWarning(): null | string {
 export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONBOARDING_REASON, profile?: string) {
   cancelOnboardingFlow()
   providersRefresh = null
+  pendingProviderOAuthId = null
   patch({
     manual: true,
     targetProfile: profile,
@@ -558,8 +565,8 @@ export function startManualLocalEndpoint(reason: null | string = null, profile?:
 let pendingProviderOAuthId: null | string = null
 
 export function startManualProviderOAuth(providerId: string, profile?: string) {
-  pendingProviderOAuthId = providerId
   startManualOnboarding(null, profile)
+  pendingProviderOAuthId = providerId
 }
 
 // Read the pending provider id without clearing it. The overlay only clears it

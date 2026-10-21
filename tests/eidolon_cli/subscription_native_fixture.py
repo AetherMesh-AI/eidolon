@@ -1455,7 +1455,8 @@ class SyntheticEdges:
         self.codes[code] = query
         from tui_gateway import server
         authority = server._subscription_installation_authority()
-        assert authority is not None and authority.root == self.home and authority.profile == self.home
+        expected_root = self.home.parent.parent if self.home.parent.name == 'profiles' else self.home
+        assert authority is not None and authority.root == expected_root and authority.profile == self.home
         self.record('consent', dynamicRegistration=query['client_id'] == 'dynamic_agent_client',
                     capturedHostRoot=str(authority.root), capturedProfile=str(authority.profile), **migration)
         if migration.get('callbackDeferred'):

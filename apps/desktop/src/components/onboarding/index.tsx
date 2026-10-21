@@ -510,7 +510,10 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   }
 
   if (!hasOauth && apiKeyOptions.length === 0) {
-    return <Status>{t.settings.toolsets.noProviderOptions}</Status>
+    return <div className="grid gap-3">
+      <Status>{t.settings.toolsets.noProviderOptions}</Status>
+      {!manual && <ChooseLaterLink />}
+    </div>
   }
 
   // localEndpoint forces the key form regardless of `mode` (which a manual

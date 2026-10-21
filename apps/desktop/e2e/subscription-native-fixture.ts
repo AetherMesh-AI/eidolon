@@ -973,6 +973,7 @@ export async function setupNativeSubscription(
   options: {
     legacy?: boolean
     ordinaryImprove?: boolean
+    emptyIsolated?: boolean
     hostMigration?: 'cancel_once'
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
@@ -1094,6 +1095,17 @@ export async function setupNativeSubscription(
     )
     writeEnvFile(sandbox.hermesHome)
 
+    if (options.emptyIsolated) {
+      const created = JSON.parse(python(
+        "import sys,json; from pathlib import Path; from tests.eidolon_cli.subscription_native_fixture import seed_profile; from eidolon_cli.organization_metadata import read_descriptor; from eidolon_cli.organization_workspaces import create_workspace; h=Path(sys.argv[1]); seed_profile(h); m=read_descriptor(h/'organization'/'state.db')['metadata']; print(json.dumps(create_workspace(h, {'capabilityVersion':1,'expectedOrganizationId':m['organizationId'],'expectedOwnerId':m['owner']['ownerId'],'idempotencyKey':'empty-native-workspace','displayName':'Empty Native Workspace','ownerDisplayName':'Synthetic Owner'})))",
+        sandbox.hermesHome
+      )) as { profile: string }
+      writeFileSync(path.join(sandbox.userDataDir, 'active-profile.json'), JSON.stringify({ profile: created.profile }))
+      sandbox.hermesHome = path.join(sandbox.hermesHome, 'profiles', created.profile)
+      writeFileSync(path.join(sandbox.hermesHome, 'config.yaml'),
+        seedIsolatedModelCatalog(sandbox.hermesHome, 'model: {}\nupdates:\n  check: false\n'))
+    }
+
     if (options.legacy) {
       python(
         'import sys; from tests.eidolon_cli.subscription_native_fixture import seed_profile; seed_profile(sys.argv[1], legacy=True)',
@@ -1106,7 +1118,7 @@ export async function setupNativeSubscription(
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\n${options.ordinaryImprove ? ` runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'ordinary-improve-edge.py'))})['install'](subscription_fixture)\n` : ''}except BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(${JSON.stringify(sandbox.hermesHome)}, evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\n${options.ordinaryImprove ? ` runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'ordinary-improve-edge.py'))})['install'](subscription_fixture)\n` : ''}except BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -1114,7 +1126,8 @@ export async function setupNativeSubscription(
       PYTHONPATH: observer,
       PYTHONDONTWRITEBYTECODE: '1',
       EIDOLON_FRESH_TEAM_GUARD_DIR: evidence,
-      EIDOLON_FRESH_TEAM_ROOT_HOME: sandbox.hermesHome
+      EIDOLON_FRESH_TEAM_ROOT_HOME: options.emptyIsolated ? path.dirname(path.dirname(sandbox.hermesHome)) : sandbox.hermesHome,
+      ...(options.emptyIsolated ? { HERMES_HOME: path.dirname(path.dirname(sandbox.hermesHome)) } : {})
     })
 
     delete env.EIDOLON_HOME
@@ -1136,14 +1149,22 @@ export async function setupNativeSubscription(
       cleanup
     }
 
-    await waitForAppReady(fixture)
+    if (options.emptyIsolated) {
+      await launch.page.getByRole('navigation', { name: 'Primary', exact: true })
+        .getByRole('link', { name: 'Home', exact: true }).click()
+      await waitForAppReady(fixture, 60_000, '.eid-team-entry')
+    } else {
+      await waitForAppReady(fixture)
+    }
     // Boot is isolated on the ordinary synthetic API route. Select the unsupported
     // Codex configuration before opening setup, without inventing a Codex login.
     // The real Check configuration action below observes this source change.
-    python(
-      "import sys,yaml; from pathlib import Path; p=Path(sys.argv[1])/'config.yaml'; c=yaml.safe_load(p.read_text()); c['model']={'provider':'openai-codex','default':'synthetic-codex-model'}; p.write_text(yaml.safe_dump(c))",
-      sandbox.hermesHome
-    )
+    if (!options.emptyIsolated) {
+      python(
+        "import sys,yaml; from pathlib import Path; p=Path(sys.argv[1])/'config.yaml'; c=yaml.safe_load(p.read_text()); c['model']={'provider':'openai-codex','default':'synthetic-codex-model'}; p.write_text(yaml.safe_dump(c))",
+        sandbox.hermesHome
+      )
+    }
     await expect.poll(() => events().some(row => row.kind === 'installed')).toBe(true)
     expect(records('browser-windows').length).toBeGreaterThan(0)
     expect(records('browser-windows').every(row => row.guardedBeforeCreation === true)).toBe(true)

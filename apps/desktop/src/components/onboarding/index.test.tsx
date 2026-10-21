@@ -364,3 +364,63 @@ it('offers only supported ordinary API choices for an isolated organization', ()
   expect(screen.queryByText('Local / custom endpoint')).toBeNull()
   expect(screen.queryByText('ChatGPT or Codex Subscription')).toBeNull()
 })
+
+it('lets first-run onboarding choose later after a failed catalog without restoring provider choices', async () => {
+  setProviders([])
+  $gatewayState.set('open')
+  const previousBridge = window.hermesDesktop
+  const catalog = vi.fn().mockRejectedValue(new Error('Synthetic catalog failure'))
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api: ({ path }: { path: string }) =>
+    path === '/api/providers/oauth?execution_only=true' ? catalog() : Promise.resolve({ providers: [] }) } })
+
+  try {
+    render(<DesktopOnboardingOverlay enabled profile="default" requestGateway={async () => ({ provider_configured: false, ok: false }) as never} />)
+    await vi.waitFor(() => expect(catalog).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect($desktopOnboarding.get().supportedProviders).toEqual([]))
+    const choose = await screen.findByRole('button', { name: /choose a provider later/i })
+    expect(screen.queryByText('Fireworks AI')).toBeNull()
+    fireEvent.click(choose)
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect($desktopOnboarding.get().firstRunSkipped).toBe(true)
+    expect($desktopOnboarding.get().configured).toBe(false)
+  } finally {
+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previousBridge })
+    $gatewayState.set('closed')
+  }
+})
+
+it('hands off only the explicitly requested Settings provider using the management catalog', async () => {
+  const { startManualProviderOAuth } = await import('@/store/onboarding')
+  const provider = makeOAuthProvider('openai-codex', 'ChatGPT or Codex Subscription')
+  const paths: string[] = []
+  const previousBridge = window.hermesDesktop
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api: async ({ path }: { path: string }) => {
+    paths.push(path)
+
+    if (path === '/api/providers/oauth') { return { providers: [provider, makeOAuthProvider('nous')] } }
+
+    if (path === '/api/providers/oauth?execution_only=true') { return { providers: [], supportedProviders: ['openai-api'] } }
+
+    if (path === '/api/providers/oauth/openai-codex/start') { return { flow: 'pkce', auth_url: 'https://example.invalid/synthetic', session_id: 'synthetic' } }
+
+    return { providers: [] }
+  } } })
+
+  try {
+    setProviders([])
+    startManualProviderOAuth('openai-codex', 'isolated-test')
+    render(<DesktopOnboardingOverlay enabled={false} profile="isolated-test" requestGateway={ctx.requestGateway} />)
+    await vi.waitFor(() => expect(paths).toContain('/api/providers/oauth/openai-codex/start'))
+    expect(paths).toContain('/api/providers/oauth')
+    expect($desktopOnboarding.get().providers?.map(p => p.id)).toEqual(['openai-codex'])
+    expect(paths).not.toContain('/api/providers/oauth/nous/start')
+    await act(async () => { closeManualOnboarding() })
+    await act(async () => { startManualOnboarding(null, 'isolated-test') })
+    await vi.waitFor(() => expect(paths).toContain('/api/providers/oauth?execution_only=true'))
+    await vi.waitFor(() => expect($desktopOnboarding.get().providers).toEqual([]))
+    expect(paths.filter(path => path.endsWith('/start'))).toEqual(['/api/providers/oauth/openai-codex/start'])
+  } finally {
+    closeManualOnboarding()
+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previousBridge })
+  }
+})

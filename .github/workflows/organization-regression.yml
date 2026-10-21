@@ -576,6 +576,7 @@ jobs:
           const required = [
             ['subscription-native-journey.spec.ts', 'fresh profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
             ['subscription-native-journey.spec.ts', 'legacy-empty profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
+            ['subscription-native-journey.spec.ts', 'empty isolated workspace connects dedicated ChatGPT without an ordinary model and creates once'],
             ['subscription-native-journey.spec.ts', 'uncertain synthetic inference blocks a new intent without retry or refund'],
             ['subscription-native-journey.spec.ts', 'known unsent inference recovers through one explicit retry without losing debt'],
             ['subscription-native-journey.spec.ts', 'initial publication refusal recovers locally before explicit new consent'],
