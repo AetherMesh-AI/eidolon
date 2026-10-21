@@ -388,8 +388,13 @@ def test_same_key_concurrent_apply_returns_one_receipt_and_one_generation(profil
     request = confirmed(profile, 'budgetPolicy', policy_params(original, {'max_model_calls': 8}))
     barrier = threading.Barrier(2)
     def apply():
-        barrier.wait(timeout=10)
-        return owner_policy.apply_policy(profile.home, 'budgetPolicy', request)
+        try:
+            barrier.wait(timeout=10)
+            return owner_policy.apply_policy(profile.home, 'budgetPolicy', request)
+        except BaseException as exc:
+            from scripts.ci.organization_timing import record_policy_exception
+            record_policy_exception(exc, 'worker')
+            raise
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(apply) for _ in range(2)]
         results = [future.result(timeout=15) for future in futures]
