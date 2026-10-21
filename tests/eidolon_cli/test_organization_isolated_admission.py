@@ -2,6 +2,7 @@
 import hashlib
 import json
 import threading
+import os
 from types import SimpleNamespace
 
 import httpx
@@ -62,6 +63,7 @@ def execute(w, claim, executor=None):
     return record
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Scoped source execution requires POSIX descriptors; Windows refusal is tested separately')
 @pytest.mark.parametrize('kind', ['work.inspect', 'work.edit'])
 def test_registered_scheduler_shared_tool_turn_and_independent_review(workspace, monkeypatch, kind):
     from agent import conversation_loop
@@ -131,6 +133,7 @@ def test_registered_scheduler_shared_tool_turn_and_independent_review(workspace,
     assert (w.source / 'notes.txt').read_text() == 'Before\n'
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Post-read fences require a supported source reader; Windows refusal is tested separately')
 @pytest.mark.parametrize('change', ['revocation', 'root_replacement', 'schema', 'handler', 'budget', 'cancel', 'model', 'removed_scope'])
 def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
     from agent import conversation_loop
@@ -233,3 +236,12 @@ def test_untrusted_or_stale_entry_cannot_construct_agent(workspace, monkeypatch,
         finally:
             if token is not None:
                 reset_eidolon_home_override(token)
+
+
+@pytest.mark.windows_only
+def test_windows_admission_does_not_bypass_source_reader_refusal(workspace, monkeypatch):
+    _, claim = claim_work(workspace, 'work.inspect')
+    monkeypatch.setattr(organization_executor, '_runtime_kwargs',
+                        lambda *a, **kw: pytest.fail('Unsupported reader must stop before provider resolution'))
+    record = execute(workspace, claim)
+    assert 'POSIX no-follow directory-descriptor support' in record.result['intervention']
