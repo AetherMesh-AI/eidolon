@@ -225,6 +225,9 @@ jobs:
             tests/eidolon_cli/test_isolated_provider_inventory.py
             tests/eidolon_cli/test_isolated_provider_presentation.py
             tests/eidolon_cli/test_organization_workspaces.py
+            tests/eidolon_cli/test_organization_reuse_contract_evidence.py
+            tests/eidolon_cli/test_organization_isolated_admission.py
+            tests/eidolon_cli/test_organization_isolated_project_e2e.py
             tests/tui_gateway/test_organization_workspaces.py
             tests/eidolon_cli/test_organization_project_registry.py
             tests/eidolon_cli/test_organization_milestones.py

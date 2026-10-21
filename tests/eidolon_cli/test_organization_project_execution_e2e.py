@@ -46,13 +46,17 @@ def _exact(value, context):
     return text
 
 
-def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_unittest", typed=False):
+def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_unittest", typed=False, isolated_origin=None):
     from eidolon_cli import config
     from tools import file_tools
 
     source, home = tmp_path / "source", tmp_path / "profile"
     source.mkdir()
-    home.mkdir()
+    if isolated_origin is not None:
+        from tests.eidolon_cli.test_organization_workspaces import create as create_workspace
+        home, _ = create_workspace(isolated_origin)
+    else:
+        home.mkdir()
     if create:
         (source / "README.md").write_text("Implement integer addition with regression tests.\n")
     else:
@@ -203,6 +207,24 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
                                                 "execution": {"recipe": recipe, "timeout_seconds": 30}}],
                             "roster": [{"id": "editor", "name": "Project editor", "team": "general",
                                         "capabilities": ["work.inspect", "work.edit"], "tool_grants": grants}]}}
+    if isolated_origin is not None:
+        import httpx
+        from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
+        from eidolon_cli.profile_isolation import verify_isolation
+        cfg['model'].update(provider='openai-api', base_url='https://api.openai.com/v1')
+        assert verify_isolation(home) is not None
+        original_http = httpx.HTTPTransport.handle_request
+        def synthetic_owned_route(transport, request):
+            assert request.url.host == 'api.openai.com' and request.url.path == '/v1/chat/completions'
+            assert request.headers['authorization'] == 'Bearer local-fixture-only'
+            headers = dict(request.headers)
+            headers.pop('host', None)
+            local = httpx.Request(request.method,
+                request.url.copy_with(scheme='http', host='127.0.0.1', port=server.server_port),
+                headers=headers, content=request.read())
+            return original_http(transport, local)
+        monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', synthetic_owned_route)
+        profile_token = set_eidolon_home_override(home)
     (home / "config.yaml").write_text(json.dumps(cfg), encoding="utf-8")
     (home / ".env").write_text("OPENAI_API_KEY=local-fixture-only\n", encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -300,6 +322,8 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
         server.server_close()
         thread.join(3)
         config._LOAD_CONFIG_CACHE.clear()
+        if isolated_origin is not None:
+            reset_eidolon_home_override(profile_token)
 
 
 @pytest.mark.linux_only
