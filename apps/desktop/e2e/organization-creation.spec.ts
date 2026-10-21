@@ -1197,9 +1197,9 @@ for (const fault of ['failure', 'stale'] as const) {
         await expect(creation.getByRole('alert')).toBeVisible()
         await expect(creation.getByText(/Current source-work capability is unknown/)).toBeVisible()
         await expect(creation.getByRole('button', { name: copy.setupKeys, exact: true })).toHaveCount(0)
-        await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
         const error = await creation.getByRole('alert').textContent()
         await creation.getByRole('button', { name: 'Close', exact: true }).click()
+        await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
         await acknowledgeExpectedErrorBanner(page, error!)
       } else {
         expect(held).toBeDefined()
@@ -1213,11 +1213,7 @@ for (const fault of ['failure', 'stale'] as const) {
         await directory.getByRole('button', { name: 'Close', exact: true }).click()
         await expect(trigger).toHaveAccessibleName('Descriptor Origin · Organizations')
         await expect(creation).toHaveCount(0)
-        await requireGuard(
-          join(sandbox.hermesHome, 'profiles', receipts[0].profile),
-          receipts[0],
-          'after-stale-descriptor'
-        )
+        await requireGuard(sandbox.hermesHome, undefined, 'after-stale-descriptor')
       }
       expect(mock.receivedPrompts).toHaveLength(0)
       expect(attempts()).toEqual([])
