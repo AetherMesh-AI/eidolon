@@ -1,0 +1,110 @@
+name: Owner policy ambient diagnostic
+
+on:
+  push:
+    branches: [diagnostic/owner-policy-ambient-evidence]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-ledger-ambient-once:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      HERMES_TEST_FILE_RETRIES: '0'
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      NOUS_API_KEY: ''
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install the canonical locked test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Run the original 52-file ledger workload once
+        run: |
+          set -euo pipefail
+          mkdir -p policy-diagnostic
+          git rev-parse HEAD 'HEAD^{tree}' > policy-diagnostic/source.txt
+          ledger_identity_tests=(
+            tests/eidolon_cli/test_organization_setup_subscription_filesystem.py
+            tests/eidolon_cli/test_organization_setup_subscription_reconciliation.py
+            tests/eidolon_cli/test_subscription_native_diagnostics.py
+            tests/eidolon_cli/test_subscription_native_recovery_faults.py
+            tests/eidolon_cli/test_subscription_native_lifecycle.py
+            tests/tui_gateway/test_subscription_native_journey.py
+            tests/eidolon_cli/test_organization_store.py
+            tests/eidolon_cli/test_organization_schema_initialization.py
+            tests/eidolon_cli/test_organization_budget_migration.py
+            tests/eidolon_cli/test_organization_completion_reserve.py
+            tests/eidolon_cli/test_organization_completion_reserve_policy.py
+            tests/eidolon_cli/test_organization_completion_reserve_e2e.py
+            tests/eidolon_cli/test_organization_pacing.py
+            tests/eidolon_cli/test_organization_pacing_runtime.py
+            tests/eidolon_cli/test_organization_pacing_cli.py
+            tests/eidolon_cli/test_organization_model_routing.py
+            tests/eidolon_cli/test_organization_model_routing_e2e.py
+            tests/eidolon_cli/test_organization_routing_observations.py
+            tests/eidolon_cli/test_organization_route_benchmarks.py
+            tests/eidolon_cli/test_organization_owner_policy.py
+            tests/eidolon_cli/test_organization_ledger_writer.py
+            tests/eidolon_cli/test_organization_store_readonly_connections.py
+            tests/eidolon_cli/test_organization_subscription_send_coordination.py
+            tests/eidolon_cli/test_organization_team_setup.py
+            tests/eidolon_cli/test_organization_team_contention.py
+            tests/eidolon_cli/test_organization_team_admission.py
+            tests/eidolon_cli/test_organization_team_generation.py
+            tests/tui_gateway/test_organization_team_setup.py
+            tests/eidolon_cli/test_organization_shared_allowance.py
+            tests/eidolon_cli/test_organization_shared_allowance_cli.py
+            tests/eidolon_cli/test_organization_shared_budget.py
+            tests/eidolon_cli/test_organization_shared_runtime.py
+            tests/eidolon_cli/test_organization_shared_contention.py
+            tests/tui_gateway/test_organization_shared_allowance.py
+            tests/tui_gateway/test_organization_owner_policy.py
+            tests/agent/test_bounded_context.py
+            tests/eidolon_cli/test_organization_artifact_retention.py
+            tests/eidolon_cli/test_organization_identity.py
+            tests/eidolon_cli/test_organization_metadata.py
+            tests/eidolon_cli/test_organization_metadata_read.py
+            tests/eidolon_cli/test_organization_phases.py
+            tests/eidolon_cli/test_organization_observation.py
+            tests/tui_gateway/test_organization_observation.py
+            tests/tui_gateway/test_organization_metadata.py
+            tests/eidolon_cli/test_organization_identity_memory.py
+            tests/eidolon_cli/test_organization_identity_assignments.py
+            tests/eidolon_cli/test_organization_history.py
+            tests/eidolon_cli/test_organization_cross_feature_recovery.py
+            tests/eidolon_cli/test_organization_request_recovery.py
+            tests/eidolon_cli/test_organization_selective_recovery.py
+            tests/eidolon_cli/test_organization_replacement.py
+            tests/eidolon_cli/test_organization_tool_receipts.py
+          )
+          printf '%s\n' "${ledger_identity_tests[@]}" > policy-diagnostic/selection.txt
+          .venv/Scripts/python.exe --version > policy-diagnostic/python-version.txt
+          scripts/run_tests.sh "${ledger_identity_tests[@]}" -j 3 --file-timeout-override tests/eidolon_cli/test_organization_artifact_retention.py=600 -- -vv -s -p scripts.ci.organization_timing --organization-timing-dir=organization-timing -o faulthandler_timeout=30 2>&1 | tee policy-diagnostic/test.log
+      - name: Retain sanitized timing and immediate exceptions
+        if: always()
+        run: .venv/Scripts/python.exe -m scripts.ci.organization_timing organization-timing
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: owner-policy-ambient-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            policy-diagnostic/source.txt
+            policy-diagnostic/selection.txt
+            policy-diagnostic/python-version.txt
+            policy-diagnostic/test.log
+            organization-timing/sanitized/
+          retention-days: 7
