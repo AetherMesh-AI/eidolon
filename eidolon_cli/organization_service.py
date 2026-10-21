@@ -407,8 +407,7 @@ class OrganizationService:
                         record.result = self.store.run_project_stage(record.claim, record.cancel)
                     else:
                         from eidolon_cli.organization_isolated_admission import scheduler_admission
-                        with scheduler_admission(self.home, self.store, record.claim, context,
-                                lambda: record.cancel.is_set() or self._stop.is_set()):
+                        with scheduler_admission(self, record, context):
                             record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
                                 record.claim, context, record.cancel)
         except OrganizationPacingDeferred as wait:

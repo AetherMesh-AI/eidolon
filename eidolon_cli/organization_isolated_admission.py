@@ -26,8 +26,10 @@ def _fail():
 
 
 class _Admission:
-    def __init__(self, home, store, claim, context, cancelled):
+    def __init__(self, scheduler, record, context):
         from eidolon_cli.profile_isolation import local_path, verify_isolation
+        self.scheduler, self.record = scheduler, record
+        home, store, claim = scheduler.home, scheduler.store, record.claim
         self.home = local_path(home)
         self.store, self.claim = store, deepcopy(claim)
         if local_path(store.path) != self.home / 'organization' / 'state.db':
@@ -35,7 +37,7 @@ class _Admission:
         self.marker = verify_isolation(self.home)
         if self.marker is None or claim['type'] not in {'work.inspect', 'work.edit'}:
             _fail()
-        self.context, self.cancelled = context, cancelled
+        self.context = context
         canonical = store.context(self.claim, mark_read=False)
         if any(context.get(key) != canonical.get(key) for key in ('agent', 'toolPolicy')):
             _fail()
@@ -47,7 +49,7 @@ class _Admission:
             'recordToolStart': lambda call_id, name, args: store.record_tool_start(self.claim, call_id, name, args),
             'recordToolFinish': lambda ident, result, status: store.record_tool_finish(self.claim, ident, result, status),
             'requestToolReceipts': lambda: store.request_tool_receipts(self.claim),
-            'reserveModelCall': lambda **values: store.reserve_model_call(self.claim, **values),
+            'reserveModelCall': lambda **values: scheduler._reserve_model_call(record, **values),
             'recordModelObservation': lambda call_id, **values: store.record_model_observation(self.claim, call_id, **values),
             'selectModelRoute': lambda **values: store.select_model_route(self.claim, **values),
             'recordContextReceipt': lambda report: store.record_context_receipt(self.claim, report),
@@ -85,7 +87,10 @@ class _Admission:
         with _lock:
             if self not in _live or self.retired:
                 _fail()
-        if (self.cancelled() or local_path(get_eidolon_home()) != self.home
+        if (self.record.cancel.is_set() or self.scheduler._stop.is_set()
+                or self.scheduler.store is not self.store or self.record.claim != self.claim
+                or local_path(self.scheduler.home) != self.home
+                or local_path(get_eidolon_home()) != self.home
                 or verify_isolation(self.home) != self.marker):
             _fail()
         if agent is not None and (self.runtime is None or
@@ -157,13 +162,14 @@ class _Admission:
 
 
 @contextmanager
-def scheduler_admission(home, store, claim, context, cancelled):
+def scheduler_admission(scheduler, record, context):
     """Enter only around the scheduler's already-owned dispatch, retire on unwind."""
     from eidolon_cli.profile_isolation import read_isolation
+    home, claim = scheduler.home, record.claim
     if read_isolation(home) is None or claim.get('type') not in {'work.inspect', 'work.edit'}:
         yield
         return
-    admission = _Admission(Path(home), store, claim, context, cancelled)
+    admission = _Admission(scheduler, record, context)
     with _lock:
         _live.add(admission)
     token = _active.set(admission)

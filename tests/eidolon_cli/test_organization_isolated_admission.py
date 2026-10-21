@@ -42,10 +42,12 @@ def workspace(origin, tmp_path, monkeypatch):
 
 
 def claim_work(w, kind):
-    objective = w.store.create_objective('Inspect source', idempotency_key='objective')
+    project = w.settings.projects[0].id if w.settings.projects else None
+    objective = w.store.create_objective('Inspect source', idempotency_key='objective',
+        **({'project_ids': [project], 'delivery_mode': 'managed_artifact'} if project else {}))
     plan = claim_after_decomposition(w.store)
     assert w.store.finish(plan, {'tasks': [{'title': 'Inspect', 'description': 'Read root0/notes.txt',
-        'type': kind, 'agentId': 'editor'}], 'workers': 1})
+        'type': kind, 'agentId': 'editor', **({'projectId': project} if project else {})}], 'workers': 1})
     claim = w.store.claim_next()
     while claim and claim['type'] == 'request.hire':
         assert w.store.finish(claim, {})
@@ -134,11 +136,13 @@ def test_registered_scheduler_shared_tool_turn_and_independent_review(workspace,
 
 
 @pytest.mark.skipif(os.name != 'posix', reason='Post-read fences require a supported source reader; Windows refusal is tested separately')
-@pytest.mark.parametrize('change', ['revocation', 'root_replacement', 'schema', 'handler', 'budget', 'cancel', 'model', 'removed_scope'])
+@pytest.mark.parametrize('change', ['revocation', 'actual_root_revocation', 'grant_removal', 'root_replacement', 'schema', 'handler', 'budget', 'cancel', 'model', 'removed_scope'])
 def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
     from agent import conversation_loop
     from tools.registry import registry
     w = workspace
+    if change == 'actual_root_revocation':
+        register_owned_root(w)
     objective, claim = claim_work(w, 'work.inspect')
     calls, agents = [], []
     original_turn = conversation_loop.run_conversation
@@ -152,6 +156,24 @@ def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
         if change == 'revocation':
             with w.store._write() as conn:
                 conn.execute('INSERT OR IGNORE INTO organization_policy_pause VALUES (1)')
+        elif change == 'actual_root_revocation':
+            from eidolon_cli.organization_folder_revocation import folder_access, revoke_folder
+            ident = profile_isolation.verify_isolation(w.home)['organizationId']
+            view = folder_access(w.home, ident)
+            grant = view['grants'][0]
+            receipt = revoke_folder(w.home, {'expectedOrganizationId': ident,
+                'expectedGeneration': view['policyGeneration'], 'alias': grant['alias'],
+                'grantHash': grant['grantHash'], 'confirmed': True, 'idempotencyKey': 'revoke-source'})
+            assert receipt['receipt']['accessRevoked']
+            assert folder_access(w.home, ident)['grants'][0]['revoked']
+        elif change == 'grant_removal':
+            from dataclasses import replace
+            cfg = json.loads((w.home / 'config.yaml').read_text())
+            cfg['organization']['tool_grants'] = []
+            (w.home / 'config.yaml').write_text(json.dumps(cfg))
+            config._LOAD_CONFIG_CACHE.clear()
+            changed = OrganizationStore(w.store.path, replace(w.settings, tool_grants=()))
+            assert changed.settings.tool_grants == ()
         elif change == 'root_replacement':
             w.source.rename(w.source.with_name('old-project'))
             w.source.mkdir()
@@ -216,13 +238,15 @@ def test_untrusted_or_stale_entry_cannot_construct_agent(workspace, monkeypatch,
     elif change == 'expired':
         with w.store._write() as conn:
             conn.execute('UPDATE requests SET lease=0 WHERE id=?', (claim['id'],))
+    service = OrganizationService(w.store, home=w.home, settings=w.settings)
+    record = _Running(claim)
     if change in {'foreign_token', 'expired'}:
         with pytest.raises(ValueError, match='lease'):
-            with scheduler_admission(w.home, w.store, claim, context, lambda: False):
+            with scheduler_admission(service, record, context):
                 pytest.fail('Invalid claim admitted')
         return
     assert w.store.begin_dispatch(claim)
-    with scheduler_admission(w.home, w.store, claim, context, lambda: False):
+    with scheduler_admission(service, record, context):
         token = None
         if change == 'foreign_home':
             token = set_eidolon_home_override(w.home.parent.parent)
@@ -245,3 +269,80 @@ def test_windows_admission_does_not_bypass_source_reader_refusal(workspace, monk
                         lambda *a, **kw: pytest.fail('Unsupported reader must stop before provider resolution'))
     record = execute(workspace, claim)
     assert 'POSIX no-follow directory-descriptor support' in record.result['intervention']
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Shared source-turn pacing requires a supported source reader')
+@pytest.mark.parametrize('swallow', [False, True])
+def test_isolated_adaptive_deferral_retains_scheduler_latch(workspace, monkeypatch, swallow):
+    from dataclasses import replace
+    from eidolon_cli.organization_pacing import OrganizationPacingDeferred
+    from tests.eidolon_cli.test_organization_completion_reserve import backend_request, reserve, usage
+    from tests.eidolon_cli.test_organization_pacing import observe
+    w = workspace
+    w.settings = replace(w.settings, adaptive_pacing_enabled=True)
+    w.store = OrganizationStore(w.store.path, w.settings)
+    objective, claim = claim_work(w, 'work.inspect')
+    backend_request(w.store, objective, 'request.plan')
+    winner = w.store.claim_next()
+    assert winner['type'] == 'request.plan'
+    observe(w.store, objective, 5)
+    reserve(w.store, winner)
+    attempts, intercepted = [], []
+    original = w.store.reserve_model_call
+    def counted(request, **values):
+        attempts.append(request['id'])
+        return original(request, **values)
+    monkeypatch.setattr(w.store, 'reserve_model_call', counted)
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request',
+                        lambda *a: pytest.fail('Adaptive denial must precede physical inference'))
+    def run(request, context, cancel):
+        try:
+            return organization_executor.execute(request, context, cancel)
+        except OrganizationPacingDeferred as wait:
+            intercepted.append(wait)
+            if not swallow:
+                raise
+            # A wrapper retry must hit the scheduler latch, not reserve again.
+            with pytest.raises(OrganizationPacingDeferred) as retried:
+                context['reserveModelCall'](provider='openai-api', model='workspace-test-model',
+                                            input_limit=100, output_limit=100)
+            assert retried.value is wait
+            return {'intervention': 'Executor wrapper converted the deferral'}
+    service = OrganizationService(w.store, home=w.home, settings=w.settings, executor=run)
+    record = _Running(claim)
+    record.thread = threading.Thread()  # Synchronous _work is complete before maintenance.
+    service._running[claim['id']] = record
+    service._work(record)
+    assert len(intercepted) == 1
+    assert attempts == [claim['id']]
+    assert record.pacing_wait is intercepted[0]
+    service._maintain()
+    with w.store._connect() as conn:
+        row = conn.execute('SELECT status,attempts FROM requests WHERE id=?', (claim['id'],)).fetchone()
+        assert row['status'] == 'queued' and row['attempts'] == 0
+        assert conn.execute('SELECT count(*) FROM organization_model_calls WHERE request_id=?', (claim['id'],)).fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM organization_context_receipts WHERE request_id=?', (claim['id'],)).fetchone()[0] == 1
+    assert usage(w.store, objective)['modelCalls'] == 1
+
+
+def register_owned_root(w):
+    """Use the actual preview/confirmed-registration API in the disposable profile."""
+    from eidolon_cli.organization_folder_setup import folder_setup, preview_folder, register_folder
+    cfg = json.loads((w.home / 'config.yaml').read_text())
+    cfg['organization']['read_roots'] = []
+    (w.home / 'config.yaml').write_text(json.dumps(cfg))
+    config._LOAD_CONFIG_CACHE.clear()
+    w.store = OrganizationStore(w.store.path, OrganizationSettings.from_config(cfg))
+    ident = profile_isolation.verify_isolation(w.home)['organizationId']
+    view = folder_setup(w.home, ident)
+    params = {'expectedOrganizationId': ident, 'expectedGeneration': view['policyGeneration'],
+        'sourceRevision': view['sourceRevision'],
+        'folder': {'path': str(w.source), 'projectId': 'notes', 'team': 'general'}}
+    preview = preview_folder(w.home, params)
+    apply = {key: value for key, value in params.items() if key != 'folder'}
+    apply.update(candidate=preview['candidate'], previewVersion=preview['previewVersion'],
+                 idempotencyKey='grant-source', confirmed=True)
+    register_folder(w.home, apply)
+    w.store = OrganizationStore(w.store.path)
+    w.settings = w.store.settings
+    assert w.settings.ledger_read_roots == (str(w.source),)
