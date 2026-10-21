@@ -101,7 +101,7 @@ def test_isolated_tool_assignment_rejected_before_runtime_or_tool_scope(tmp_path
         pytest.fail('Isolation rejection must precede runtime resolution and tool-scope construction')
     monkeypatch.setattr(runtime_provider, 'resolve_runtime_provider', forbidden)
     monkeypatch.setattr(organization_tool_executor, 'tool_execution', forbidden)
-    with pytest.raises(profile_isolation.ProfileIsolationError, match='tool-free organization work only'):
+    with pytest.raises(profile_isolation.ProfileIsolationError, match='current scheduler-owned authority'):
         profile_isolation.require_tool_free_execution(kind=kind, context=context)
     result = executor.execute({'type': kind}, context, threading.Event())
     assert result['intervention'] == ("Model execution failed (ProfileIsolationError). "

@@ -248,9 +248,15 @@ def isolate_plugin_manager(manager) -> bool:
 
 
 def require_tool_free_execution(*, kind=None, context=None, execution=None) -> None:
-    if read_isolation() is not None and (kind in {'work.inspect', 'work.edit'}
-            or (context or {}).get('_credentialCapsule') is not None or execution is not None):
-        raise ProfileIsolationError('This isolated workspace currently supports tool-free organization work only')
+    from eidolon_cli.organization_isolated_admission import check_active
+    check_active(context=context, execution=execution)
+    if read_isolation() is None:
+        return
+    if (context or {}).get('_credentialCapsule') is not None:
+        raise ProfileIsolationError('Credential tools are unavailable in this isolated workspace')
+    if kind in {'work.inspect', 'work.edit'} or execution is not None:
+        from eidolon_cli.organization_isolated_admission import require_admission
+        require_admission(context=context, execution=execution)
 
 
 def require_owned_auth_path(path: Path) -> None:
@@ -297,6 +303,10 @@ def initialize_agent(agent, *, platform, provider, model, api_key, base_url, api
         raise ProfileIsolationError('This isolated workspace currently supports tool-free organization work only')
     isolated_runtime(requested=provider, target_model=model, explicit_api_key=api_key,
                      explicit_base_url=base_url)
+    admission = getattr(agent, '_isolated_source_admission', None)
+    if admission is not None:
+        from eidolon_cli.organization_isolated_admission import require_admission
+        require_admission(admission=admission)
     agent._isolated_workspace_home = str(local_path(get_eidolon_home()))
 
 
@@ -311,7 +321,12 @@ def validate_agent_send(agent) -> None:
         raise ProfileIsolationError('Agent workspace changed before provider send')
     isolated_runtime(home=Path(pinned), requested=agent.provider, target_model=agent.model,
                      explicit_api_key=agent.api_key, explicit_base_url=agent.base_url)
-    require_tool_free_execution(execution=getattr(agent, '_organization_tool_execution', None))
+    execution = getattr(agent, '_organization_tool_execution', None)
+    admission = getattr(agent, '_isolated_source_admission', None)
+    from eidolon_cli.organization_isolated_admission import check_active, require_admission
+    check_active(execution=execution, agent=agent)
+    if execution is not None or admission is not None:
+        require_admission(execution=execution, admission=admission, agent=agent)
 
 
 def create_isolated_client(agent, kwargs: dict):

@@ -1011,6 +1011,12 @@ class _ToolFreeBoundary:
 def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None, *, boundary=_ToolFreeBoundary, route_snapshot=None):
     from eidolon_cli.profile_isolation import require_tool_free_execution
     require_tool_free_execution(execution=tool_execution)
+    from eidolon_cli.profile_isolation import read_isolation
+    admission = None
+    if tool_execution is not None and read_isolation() is not None:
+        from eidolon_cli.organization_isolated_admission import require_admission
+        admission = require_admission(execution=tool_execution)
+        admission.bind_runtime(kwargs)
     from run_agent import AIAgent
 
     class OrganizationAgent(boundary, AIAgent):
@@ -1022,6 +1028,7 @@ def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_e
             self._organization_deadline = deadline
             self._organization_intervention = None
             self._organization_tool_execution = None
+            self._isolated_source_admission = admission
             super().__init__(**options)
 
     agent = OrganizationAgent(**kwargs)
@@ -1123,7 +1130,13 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
     timed_out = threading.Event()
     try:
         from eidolon_cli.profile_isolation import require_tool_free_execution
+        from eidolon_cli.organization_isolated_admission import check_active
+        check_active(request=request, context=context)
         require_tool_free_execution(kind=kind, context=context)
+        from eidolon_cli.profile_isolation import read_isolation
+        if kind in {'work.inspect', 'work.edit'} and read_isolation() is not None:
+            from eidolon_cli.organization_isolated_admission import require_admission
+            require_admission(request=request, context=context)
         timeout = context.get("timeoutSeconds", 180)
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 600:
             raise OrganizationExecutionError("timeoutSeconds must be greater than 0 and at most 600.")

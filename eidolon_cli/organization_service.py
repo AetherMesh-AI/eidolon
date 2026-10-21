@@ -406,8 +406,11 @@ class OrganizationService:
                     if kind in {'request.project_test', 'request.source_integrate'}:
                         record.result = self.store.run_project_stage(record.claim, record.cancel)
                     else:
-                        record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
-                            record.claim, context, record.cancel)
+                        from eidolon_cli.organization_isolated_admission import scheduler_admission
+                        with scheduler_admission(self.home, self.store, record.claim, context,
+                                lambda: record.cancel.is_set() or self._stop.is_set()):
+                            record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
+                                record.claim, context, record.cancel)
         except OrganizationPacingDeferred as wait:
             record.pacing_wait = wait
         except ValueError as error:
