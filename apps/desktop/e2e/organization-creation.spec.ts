@@ -1182,7 +1182,12 @@ for (const fault of ['failure', 'stale'] as const) {
         await creation.getByLabel(copy.ownerName, { exact: true }).fill('Fixture Owner')
         await creation.getByRole('button', { name: copy.create, exact: true }).click()
         await expect(creation.getByRole('button', { name: copy.switch, exact: true })).toBeEnabled()
-        if (name.endsWith(' A')) await creation.getByRole('button', { name: 'Close', exact: true }).click()
+        if (name.endsWith(' A')) {
+          await creation.getByRole('button', { name: copy.switch, exact: true }).click()
+          await expect(creation.getByText(copy.selected, { exact: true })).toBeVisible()
+          await creation.getByRole('button', { name: 'Close', exact: true }).click()
+          await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
+        }
       }
       expect(receipts).toHaveLength(2)
       armed = true
@@ -1192,7 +1197,7 @@ for (const fault of ['failure', 'stale'] as const) {
         await expect(creation.getByRole('alert')).toBeVisible()
         await expect(creation.getByText(/Current source-work capability is unknown/)).toBeVisible()
         await expect(creation.getByRole('button', { name: copy.setupKeys, exact: true })).toHaveCount(0)
-        await expect(trigger).toHaveAccessibleName('Descriptor Origin · Organizations')
+        await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
         const error = await creation.getByRole('alert').textContent()
         await creation.getByRole('button', { name: 'Close', exact: true }).click()
         await acknowledgeExpectedErrorBanner(page, error!)
@@ -1200,13 +1205,13 @@ for (const fault of ['failure', 'stale'] as const) {
         expect(held).toBeDefined()
         await creation.getByRole('button', { name: 'Close', exact: true }).click()
         await trigger.click()
-        await directory.getByRole('option').filter({ hasText: 'Descriptor Destination A' }).click()
+        await directory.getByRole('option').filter({ hasText: 'Descriptor Origin' }).click()
         await directory.getByRole('button', { name: 'Use selected organization', exact: true }).click()
         await directory.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
         await expect(directory.getByRole('status')).toHaveText('Selected organization verified.')
         held!()
         await directory.getByRole('button', { name: 'Close', exact: true }).click()
-        await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
+        await expect(trigger).toHaveAccessibleName('Descriptor Origin · Organizations')
         await expect(creation).toHaveCount(0)
         await requireGuard(
           join(sandbox.hermesHome, 'profiles', receipts[0].profile),
@@ -1222,7 +1227,7 @@ for (const fault of ['failure', 'stale'] as const) {
           fault,
           faultObserved,
           sourceCapabilityNeverPublished: true,
-          activeProfile: fault === 'failure' ? 'default' : receipts[0].profile,
+          activeProfile: fault === 'failure' ? receipts[0].profile : 'default',
           rejectedProfile: receipts[1].profile,
           providerCalls: 0,
           externalAttempts: 0
