@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 import type { Locator } from '@playwright/test'
 
@@ -19,6 +20,7 @@ import { verifyKeyboardFocus } from './focus-visibility'
 import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer } from './mock-server'
 import { switchPython } from './organization-switch-fixture'
+import { cleanupAndReport, cleanupSubscriptionFixture, createSubscriptionLifecycle } from './subscription-native-lifecycle'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 // Keep native acceptance independent of the renderer dependency graph.
@@ -239,7 +241,7 @@ function guardRegressionExpected() {
 }
 
 async function setupCreationFixture() {
-  const sandbox = createSandbox('fresh-organization')
+  const sandbox = createSandbox('fresh-organization', realpathSync(tmpdir()))
   const mock = await startMockServer()
   const observer = join(sandbox.root, 'python-provider-guard')
   const guardRoot = join(sandbox.root, 'provider-guard-evidence')
@@ -247,15 +249,22 @@ async function setupCreationFixture() {
   const descriptors = new Map<string, ObservedDescriptor>()
   const verifiedGuards: object[] = []
   let launch: Awaited<ReturnType<typeof launchDesktop>> | undefined
-
-  const cleanup = async () => {
-    try {
-      await launch?.app.close()
-    } finally {
-      await mock.close()
-      sandbox.cleanup()
-    }
-  }
+  let lifecycle: ReturnType<typeof createSubscriptionLifecycle> | undefined
+  const cleanup = () => cleanupAndReport(
+    () => cleanupSubscriptionFixture({
+      capture: async () => {
+        if (launch && !lifecycle) throw new Error('creation_fixture_lifecycle_missing')
+        await lifecycle?.capture()
+      },
+      observer: async () => {},
+      app: async () => launch?.app.close(),
+      wait: async () => { await lifecycle?.wait() },
+      mock: () => mock.close(),
+      remove: () => sandbox.cleanup()
+    }),
+    () => test.info().attach('creation-lifecycle', { contentType: 'application/json',
+      body: JSON.stringify(lifecycle?.diagnostic() ?? { phase: 'not_launched' }) })
+  )
 
   try {
     for (const directory of [observer, guardRoot, regressionRoot]) {
@@ -278,6 +287,12 @@ async function setupCreationFixture() {
       .info()
       .attach('provider-guard-regression', { contentType: 'application/json', body: JSON.stringify(regression) })
     launch = await launchDesktop(env)
+    lifecycle = createSubscriptionLifecycle(launch.app.process(), {
+      python: switchPython,
+      script: join(import.meta.dirname, 'subscription-native-lifecycle.py'),
+      cwd: join(import.meta.dirname, '../../..')
+    })
+    await lifecycle.bind()
     const fixture: MockBackendFixture = { ...launch, mock, mockUrl: mock.url, sandbox, cleanup }
 
     const attempts = () =>
