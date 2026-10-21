@@ -1,3 +1,5 @@
+import type { SourceCapabilityCopy } from '@/i18n/organization-creation'
+
 /** Presentation only. Backend admission owns every grant and execution decision. */
 export interface SourceRuntimeCapability {
   version: 1
@@ -34,17 +36,14 @@ export function sourceRuntimeCapability(value: unknown): SourceRuntimeCapability
   return item
 }
 
-export function sourceCapabilityText(value: unknown): string {
+export function sourceCapabilityText(value: unknown, copy: SourceCapabilityCopy): string {
   const capability = sourceRuntimeCapability(value)
   if (!capability) {
-    return 'Current source-work capability is unknown or unavailable. This does not describe text-only organization work.'
+    return copy.unknown
   }
-  return (
-    'Scoped source work supported. Explicit folder and tool grants required. ' +
-    'This is not a readiness or permission check; backend admission checks current grants for every assignment. ' +
-    (capability.host.sourceReading === 'unsupported' ? 'Source reading is unsupported on this host. ' : '') +
-    (capability.host.projectValidation === 'unsupported'
-      ? 'Successful project validation and integration are unsupported on this host.'
-      : 'Project validation and integration require the supported sandbox and project dependencies; readiness has not been checked.')
-  )
+  return [
+    capability.host.sourceReading === 'unsupported' ? copy.sourceUnsupported : copy.available,
+    capability.host.projectValidation === 'unsupported' ? copy.validationUnsupported : copy.validationRequired,
+    copy.grants
+  ].join(' ')
 }

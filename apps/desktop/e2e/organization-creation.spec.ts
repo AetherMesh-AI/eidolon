@@ -890,6 +890,8 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
       ).toBeVisible()
       await creation.getByRole('button', { name: copy.switch, exact: true }).click()
       await expect(creation.getByText(copy.selected, { exact: true })).toBeVisible()
+      await expect(creation.getByText(/Scoped source-work implementation is available/)).toBeVisible()
+      await expect(creation.getByText(/Explicit folder and tool grants are required/)).toBeVisible()
       // Deliberately take Keys first; durable model setup must remain reachable afterward.
       await creation.getByRole('button', { name: copy.setupKeys, exact: true }).click()
       await expect(page).toHaveURL(/tab=providers.*pview=keys/)
@@ -1084,3 +1086,135 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
     }
   }
 })
+
+for (const fault of ['failure', 'stale'] as const) {
+  test(`keeps current source capability unknown after descriptor ${fault}`, async () => {
+    test.setTimeout(180_000)
+    const { fixture, attempts, descriptors, requireGuard } = await setupCreationFixture()
+    const { page, sandbox, mock } = fixture
+    const receipts: WorkspaceReceipt[] = []
+    let armed = false
+    let held: (() => void) | undefined
+    let faultObserved = false
+    const trigger = page.locator('.eid-workspace-header').getByRole('button', { name: / · Organizations$/ })
+    const directory = page.getByRole('dialog', { name: 'Organizations', exact: true })
+    const creation = page.getByRole('dialog', { name: copy.title, exact: true })
+    try {
+      await page.routeWebSocket(/.*/, socket => {
+        const server = socket.connectToServer()
+        const requests = new Map<string | number, string>()
+        const endpoint = new URL(socket.url())
+        let observed: ObservedDescriptor | undefined
+        socket.onClose((code, reason) => {
+          if (observed) observed.open = false
+          return server.close({ code, reason })
+        })
+        server.onClose((code, reason) => {
+          if (observed) observed.open = false
+          return socket.close({ code, reason })
+        })
+        socket.onMessage(message => {
+          const request = JSON.parse(message.toString())
+          if (request.id !== undefined) requests.set(request.id, request.method)
+          server.send(message)
+        })
+        server.onMessage(message => {
+          const response = JSON.parse(message.toString())
+          const method = requests.get(response.id)
+          requests.delete(response.id)
+          if (method === 'organization.createWorkspace' && response.result) receipts.push(response.result)
+          if (method === 'organization.descriptor' && response.result) {
+            const profile = response.result.scope?.profile
+            observed = { open: true, host: endpoint.hostname, port: Number(endpoint.port), descriptor: response.result }
+            if (profile) descriptors.set(profile, observed)
+            if (armed && profile === receipts.at(-1)?.profile) {
+              armed = false
+              faultObserved = true
+              if (fault === 'failure') {
+                socket.send(
+                  JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: response.id,
+                    error: { code: 5072, message: 'Synthetic descriptor unavailable' }
+                  })
+                )
+              } else {
+                held = () => socket.send(message)
+              }
+              return
+            }
+          }
+          socket.send(message)
+        })
+      })
+      await page.reload()
+      await waitForAppReady(fixture)
+      await requireGuard(sandbox.hermesHome)
+      await page
+        .getByRole('complementary', { name: 'Eidolon navigation', exact: true })
+        .getByRole('link', { name: 'Home', exact: true })
+        .click()
+      await page.getByRole('button', { name: 'Edit organization and owner names', exact: true }).click()
+      const editor = page.getByRole('dialog', { name: 'Organization and owner', exact: true })
+      await editor.getByLabel('Organization name', { exact: true }).fill('Descriptor Origin')
+      await editor.getByLabel('Your display name', { exact: true }).fill('Fixture Owner')
+      await editor.getByRole('button', { name: 'Save names', exact: true }).click()
+      await expect(editor).toHaveCount(0)
+      for (const name of ['Descriptor Destination A', 'Descriptor Destination B']) {
+        await trigger.click()
+        await directory.getByRole('button', { name: copy.title, exact: true }).click()
+        await creation.getByLabel(copy.organizationName, { exact: true }).fill(name)
+        await creation.getByLabel(copy.ownerName, { exact: true }).fill('Fixture Owner')
+        await creation.getByRole('button', { name: copy.create, exact: true }).click()
+        await expect(creation.getByRole('button', { name: copy.switch, exact: true })).toBeEnabled()
+        if (name.endsWith(' A')) await creation.getByRole('button', { name: 'Close', exact: true }).click()
+      }
+      expect(receipts).toHaveLength(2)
+      armed = true
+      await creation.getByRole('button', { name: copy.switch, exact: true }).click()
+      await expect.poll(() => faultObserved).toBe(true)
+      if (fault === 'failure') {
+        await expect(creation.getByRole('alert')).toBeVisible()
+        await expect(creation.getByText(/Current source-work capability is unknown/)).toBeVisible()
+        await expect(creation.getByRole('button', { name: copy.setupKeys, exact: true })).toHaveCount(0)
+        await expect(trigger).toHaveAccessibleName('Descriptor Origin · Organizations')
+        const error = await creation.getByRole('alert').textContent()
+        await creation.getByRole('button', { name: 'Close', exact: true }).click()
+        await acknowledgeExpectedErrorBanner(page, error!)
+      } else {
+        expect(held).toBeDefined()
+        await creation.getByRole('button', { name: 'Close', exact: true }).click()
+        await trigger.click()
+        await directory.getByRole('option').filter({ hasText: 'Descriptor Destination A' }).click()
+        await directory.getByRole('button', { name: 'Use selected organization', exact: true }).click()
+        await directory.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
+        await expect(directory.getByRole('status')).toHaveText('Selected organization verified.')
+        held!()
+        await directory.getByRole('button', { name: 'Close', exact: true }).click()
+        await expect(trigger).toHaveAccessibleName('Descriptor Destination A · Organizations')
+        await expect(creation).toHaveCount(0)
+        await requireGuard(
+          join(sandbox.hermesHome, 'profiles', receipts[0].profile),
+          receipts[0],
+          'after-stale-descriptor'
+        )
+      }
+      expect(mock.receivedPrompts).toHaveLength(0)
+      expect(attempts()).toEqual([])
+      await test.info().attach('source-capability-descriptor-boundary', {
+        contentType: 'application/json',
+        body: JSON.stringify({
+          fault,
+          faultObserved,
+          sourceCapabilityNeverPublished: true,
+          activeProfile: fault === 'failure' ? 'default' : receipts[0].profile,
+          rejectedProfile: receipts[1].profile,
+          providerCalls: 0,
+          externalAttempts: 0
+        })
+      })
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+}

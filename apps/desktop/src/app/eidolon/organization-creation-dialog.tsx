@@ -74,7 +74,7 @@ export function OrganizationCreationDialog({ client, onClose, onSetup }: Organiz
           <div className="grid gap-2 text-sm text-muted-foreground">
             <p>{copy.credentials}</p>
             <p>{copy.limits}</p>
-            <p role="status">{sourceCapabilityText(view.runtimeCapability)}</p>
+            <p role="status">{sourceCapabilityText(view.runtimeCapability, copy.sourceCapability)}</p>
           </div>
           {showNames && (
             <form

@@ -2,7 +2,17 @@ import type { OrganizationCreationView } from '@/app/eidolon/organization-creati
 
 import type { Locale } from './types'
 
+export interface SourceCapabilityCopy {
+  unknown: string
+  available: string
+  grants: string
+  sourceUnsupported: string
+  validationUnsupported: string
+  validationRequired: string
+}
+
 interface OrganizationCreationCopy {
+  sourceCapability: SourceCapabilityCopy
   title: string
   description: string
   credentials: string
@@ -34,6 +44,17 @@ interface OrganizationCreationCopy {
 
 export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> = {
   en: {
+    sourceCapability: {
+      unknown:
+        'Current source-work capability is unknown or unavailable. This does not describe text-only organization work.',
+      available: 'Scoped source-work implementation is available.',
+      grants:
+        'Explicit folder and tool grants are required. This does not confirm permission or readiness; current grants are checked for every assignment.',
+      sourceUnsupported: 'Source reading is unsupported on this host.',
+      validationUnsupported: 'Successful project validation and integration are unsupported on this host.',
+      validationRequired:
+        'Project validation and integration require the supported sandbox and project dependencies; readiness has not been checked.'
+    },
     title: 'Create organization',
     description: 'Create an organization with its own work and settings. You choose when to switch to it.',
     credentials:
@@ -91,6 +112,17 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ja: {
+    sourceCapability: {
+      unknown:
+        '現在のソース作業の対応状況は不明、または利用できません。テキストのみの組織作業の対応状況を示すものではありません。',
+      available: '範囲を限定したソース作業の実装が利用可能です。',
+      grants:
+        'フォルダーとツールへの明示的な許可が必要です。権限や実行準備の確認ではありません。各作業で現在の許可が確認されます。',
+      sourceUnsupported: 'このホストではソースの読み取りに対応していません。',
+      validationUnsupported: 'このホストではプロジェクトの検証成功と統合に対応していません。',
+      validationRequired:
+        'プロジェクトの検証と統合には対応するサンドボックスと依存関係が必要です。実行準備は確認されていません。'
+    },
     title: '組織を作成',
     description: '独自の作業と設定を持つ組織を作成します。切り替えるタイミングは自分で選べます。',
     credentials:
@@ -149,6 +181,14 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   zh: {
+    sourceCapability: {
+      unknown: '当前源代码工作能力未知或不可用。这不代表纯文本组织工作的支持情况。',
+      available: '限定范围的源代码工作实现可用。',
+      grants: '需要明确的文件夹和工具授权。这不确认权限或就绪状态；每项任务都会检查当前授权。',
+      sourceUnsupported: '此主机不支持读取源代码。',
+      validationUnsupported: '此主机不支持成功完成项目验证和集成。',
+      validationRequired: '项目验证和集成需要受支持的沙盒及项目依赖；尚未检查就绪状态。'
+    },
     title: '创建组织',
     description: '创建拥有独立工作和设置的组织。你可以自行选择何时切换。',
     credentials: '请为此组织单独配置 OpenAI API 密钥。凭据由应用程序隔离，并非操作系统沙盒。',
@@ -198,6 +238,14 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   'zh-hant': {
+    sourceCapability: {
+      unknown: '目前原始碼工作能力未知或無法使用。這不代表純文字組織工作的支援情況。',
+      available: '限定範圍的原始碼工作實作可用。',
+      grants: '需要明確的資料夾和工具授權。這不確認權限或就緒狀態；每項任務都會檢查目前授權。',
+      sourceUnsupported: '此主機不支援讀取原始碼。',
+      validationUnsupported: '此主機不支援成功完成專案驗證和整合。',
+      validationRequired: '專案驗證和整合需要受支援的沙箱及專案依賴；尚未檢查就緒狀態。'
+    },
     title: '建立組織',
     description: '建立擁有獨立工作和設定的組織。你可以自行選擇何時切換。',
     credentials: '請為此組織單獨設定 OpenAI API 金鑰。憑證由應用程式隔離，並非作業系統沙箱。',
@@ -247,6 +295,15 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ar: {
+    sourceCapability: {
+      unknown: 'قدرة العمل على المصدر حاليًا غير معروفة أو غير متاحة. هذا لا يصف عمل المؤسسة النصي فقط.',
+      available: 'يتوفر تنفيذ العمل على المصدر ضمن نطاق محدد.',
+      grants:
+        'يلزم منح صلاحيات صريحة للمجلدات والأدوات. هذا لا يؤكد الإذن أو الجاهزية؛ تُفحص الصلاحيات الحالية لكل مهمة.',
+      sourceUnsupported: 'قراءة المصدر غير مدعومة على هذا المضيف.',
+      validationUnsupported: 'إكمال التحقق من المشروع ودمجه بنجاح غير مدعوم على هذا المضيف.',
+      validationRequired: 'يتطلب التحقق من المشروع ودمجه بيئة العزل المدعومة واعتماديات المشروع؛ لم تُفحص الجاهزية.'
+    },
     title: 'إنشاء مؤسسة',
     description: 'أنشئ مؤسسة لها أعمالها وإعداداتها الخاصة. أنت تختار وقت التبديل إليها.',
     credentials:
@@ -302,6 +359,17 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ru: {
+    sourceCapability: {
+      unknown:
+        'Текущая поддержка работы с исходным кодом неизвестна или недоступна. Это не описывает текстовую работу организации.',
+      available: 'Реализация работы с исходным кодом в заданных границах доступна.',
+      grants:
+        'Нужны явные разрешения на папки и инструменты. Это не подтверждение доступа или готовности; текущие разрешения проверяются для каждого задания.',
+      sourceUnsupported: 'Чтение исходного кода на этом хосте не поддерживается.',
+      validationUnsupported: 'Успешная проверка и интеграция проекта на этом хосте не поддерживаются.',
+      validationRequired:
+        'Для проверки и интеграции проекта нужны поддерживаемая песочница и зависимости проекта; готовность не проверена.'
+    },
     title: 'Создать организацию',
     description:
       'Создайте организацию с собственными задачами и настройками. Вы сами выбираете, когда на неё переключиться.',

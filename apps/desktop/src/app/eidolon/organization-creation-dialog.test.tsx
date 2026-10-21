@@ -55,7 +55,7 @@ function receipt(intent: WorkspaceCreationIntent): CreatedWorkspace {
   }
 }
 
-function harness() {
+function harness(locale: keyof typeof organizationCreationCopy = 'en') {
   const data = new Map<string, string>()
 
   const storage = {
@@ -107,7 +107,7 @@ function harness() {
 
     const mounted = render(
       <StrictMode>
-        <I18nProvider configClient={null} initialLocale="en">
+        <I18nProvider configClient={null} initialLocale={locale}>
           <OrganizationCreationDialog
             client={client}
             onClose={() => {
@@ -264,15 +264,12 @@ it.each(['unknown', 'mac', 'windows'])(
     if (host === 'unknown') {
       expect(screen.getByText(/Current source-work capability is unknown/)).toBeTruthy()
     } else {
-      expect(screen.getByText(/Scoped source work supported/).textContent).toContain(
-        'Explicit folder and tool grants required'
+      const text = host === 'windows' ? copy.sourceCapability.sourceUnsupported : copy.sourceCapability.available
+      expect(screen.getByText(new RegExp(text)).textContent).toContain(copy.sourceCapability.grants)
+      expect(screen.getByText(new RegExp(text)).textContent).toContain('validation and integration are unsupported')
+      expect(screen.getByText(new RegExp(text)).textContent?.includes('Source reading is unsupported')).toBe(
+        host === 'windows'
       )
-      expect(screen.getByText(/Scoped source work supported/).textContent).toContain(
-        'validation and integration are unsupported'
-      )
-      expect(
-        screen.getByText(/Scoped source work supported/).textContent?.includes('Source reading is unsupported')
-      ).toBe(host === 'windows')
     }
     expect(h.activate).toHaveBeenCalledTimes(1)
     expect(h.setup).not.toHaveBeenCalled()
@@ -300,3 +297,11 @@ it.each(['unknown', 'mac', 'windows'])(
     await waitFor(() => expect(h.setup).toHaveBeenCalledTimes(1))
   }
 )
+
+it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('renders unknown capability in %s', async locale => {
+  const h = harness(locale)
+  h.request.mockResolvedValue(capability)
+  h.mount()
+  expect(await screen.findByText(organizationCreationCopy[locale].sourceCapability.unknown)).not.toBeNull()
+  expect(screen.queryByText(copy.sourceCapability.unknown)).toBeNull()
+})
