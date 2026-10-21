@@ -75,7 +75,7 @@ jobs:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: |
           git rev-parse HEAD HEAD^{tree}
-          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/eidolon_cli/test_managed_install_shapes.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/eidolon_cli/test_subscription_native_lifecycle.py tests/tui_gateway/test_subscription_native_journey.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py tests/agent/test_bounded_context.py -j 4
+          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/eidolon_cli/test_managed_install_shapes.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/eidolon_cli/test_subscription_native_recovery_faults.py tests/eidolon_cli/test_subscription_native_lifecycle.py tests/tui_gateway/test_subscription_native_journey.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py tests/agent/test_bounded_context.py tests/agent/test_improve_oneshot.py tests/tui_gateway/test_improve_oneshot.py -j 4
           .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization*.py
           .venv/bin/python scripts/check_compat_pointers.py
       - name: Verify profile export and consistent recovery backups

@@ -65,7 +65,7 @@ const labels = {
     manual: 'Set up manually',
     preset: 'Research and writing',
     validate: 'Review changes',
-    subscriptionIntro: 'Connect ChatGPT separately for Generate and Improve. Existing Codex sign-in is not used.',
+    subscriptionIntro: 'Connect ChatGPT separately for Generate. Existing Codex sign-in is not used.',
     subscriptionTitle: 'ChatGPT plan for setup',
     unsupportedPlatform:
       'This requires Eidolon running locally on a Mac. Linux, Windows and remote connections are not supported.'
@@ -94,7 +94,7 @@ const labels = {
     manual: 'إعداد يدوي',
     preset: 'البحث والكتابة',
     validate: 'مراجعة التغييرات',
-    subscriptionIntro: 'اربط ChatGPT بشكل منفصل للتوليد والتحسين. لن يُستخدم تسجيل دخول Codex الحالي.',
+    subscriptionIntro: 'اربط ChatGPT بشكل منفصل للتوليد. لن يُستخدم تسجيل دخول Codex الحالي.',
     subscriptionTitle: 'خطة ChatGPT للإعداد',
     unsupportedPlatform: 'يتطلب تشغيل Eidolon محلياً على Mac. لا يُدعم Linux أو Windows أو الاتصال البعيد.'
   }
@@ -128,6 +128,21 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
     generations: { idempotency_key: string; status: string; dispatched: number; reserved_tokens: number }[]
     savedTeams: number
   }
+}
+
+function history(f: MockBackendFixture) {
+  return JSON.parse(run(f, `
+import os,json,sqlite3
+from pathlib import Path
+p=Path(os.environ['HERMES_HOME'])/'state.db'
+result={}
+if p.exists():
+ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
+  for table in ('sessions','messages'):
+   if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone():
+    result[table]=c.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
+print(json.dumps(result))
+`))
 }
 
 async function openSetup(f: MockBackendFixture, locale: keyof typeof labels = 'en') {
@@ -348,7 +363,7 @@ async function captures(
 }
 
 for (const locale of ['en'] as const) {
-  test(`reviews two improvements before generating within the three-call allowance in ${locale}`, async () => {
+  test(`reviews two ordinary improvements before a separately budgeted generation in ${locale}`, async () => {
     const text = labels[locale]
     fixture = await setupMockBackend({
       modelContextLength: 128000,
@@ -378,6 +393,7 @@ for (const locale of ['en'] as const) {
     await goals.fill('A useful report')
     await dialog.getByLabel(text.naming, { exact: true }).fill('Short astronomy names')
     expect(f.mock.receivedPrompts).toHaveLength(0)
+    const historyBefore = history(f)
     await dialog.getByRole('button', { name: text.improveJobs, exact: true }).click()
     await expect(dialog.getByRole('region', { name: text.review, exact: true })).toBeVisible({ timeout: 60_000 })
     await expect(jobs).toHaveValue('Research product changes')
@@ -429,11 +445,13 @@ for (const locale of ['en'] as const) {
     await expect(goals).toBeFocused()
     await expect(goals).toHaveValue('A source-linked monthly report for my review.')
     expect(f.mock.receivedPrompts).toHaveLength(2)
+    expect(history(f)).toEqual(historyBefore)
+    expect(retained(f).generations).toEqual([])
     expect(retained(f).savedTeams).toBe(0)
     await dialog.getByRole('button', { name: text.generate, exact: true }).click()
     await expect(dialog.getByLabel(text.name, { exact: true }).first()).toHaveValue('Ash', { timeout: 60_000 })
     await expect(dialog.getByRole('button', { name: text.create, exact: true })).toBeEnabled()
-    await expect(dialog.getByRole('button', { name: text.regenerate, exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: text.regenerate, exact: true })).toBeEnabled()
     expect(f.mock.receivedPrompts).toHaveLength(3)
     expect(JSON.parse(f.mock.receivedPrompts[2])).toMatchObject({
       jobs: 'Research product changes',
@@ -441,7 +459,7 @@ for (const locale of ['en'] as const) {
     })
     const receipt = retained(f)
     expect(receipt.savedTeams).toBe(0)
-    expect(receipt.generations).toHaveLength(3)
+    expect(receipt.generations).toHaveLength(1)
     expect(
       receipt.generations.every(row => row.status === 'completed' && row.dispatched === 1 && row.reserved_tokens > 0)
     ).toBe(true)
@@ -625,7 +643,10 @@ p.write_text(yaml.safe_dump(config))
     await jobs.fill('Keep my research description')
     await dialog.getByLabel(text.goals, { exact: true }).fill('Keep my desired result')
     await expect(dialog.getByRole('button', { name: text.generate, exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: text.improveJobs, exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: text.improveJobs, exact: true })).toBeEnabled()
+    await dialog.getByRole('button', { name: text.improveJobs, exact: true }).click()
+    const unavailable = 'Improve could not use the selected ordinary chat provider/model. Check its connection and try again; no fallback provider was used.'
+    await expect(dialog.getByRole('alert')).toHaveText(unavailable, { timeout: 60_000 })
     await captures(
       f,
       dialog,
@@ -655,3 +676,101 @@ p.write_text(yaml.safe_dump(config))
     expect(retained(f).generations).toHaveLength(0)
   })
 }
+
+
+test('closing Improve discards a late response without retry, setup debt or conversation history', async () => {
+  fixture = await setupMockBackend({
+    modelContextLength: 128000,
+    mockServer: {
+      holdFirstCompletionContaining: 'HOLD_IMPROVE',
+      starterTeamInputReply: () => JSON.stringify({ suggestion: 'Late synthetic wording', assumptions: [] })
+    }
+  })
+  const f = fixture
+  await waitForAppReady(f)
+  const dialog = await openSetup(f)
+  await dialog.getByLabel(labels.en.jobs, { exact: true }).fill('HOLD_IMPROVE original wording')
+  const before = history(f)
+  const cdp = await f.page.context().newCDPSession(f.page)
+  await cdp.send('Network.enable')
+  let requestId: unknown
+  let finish!: (frame: { result?: { text?: string } }) => void
+  const completed = new Promise<{ result?: { text?: string } }>(resolve => { finish = resolve })
+  cdp.on('Network.webSocketFrameSent', event => {
+    const frame = JSON.parse(event.response.payloadData)
+
+    if (frame.method === 'llm.oneshot') {
+      requestId = frame.id
+    }
+  })
+  cdp.on('Network.webSocketFrameReceived', event => {
+    const frame = JSON.parse(event.response.payloadData)
+
+    if (requestId !== undefined && frame.id === requestId) {
+      finish(frame)
+    }
+  })
+  await dialog.getByRole('button', { name: labels.en.improveJobs, exact: true }).click()
+  await f.mock.waitForHeldCompletion()
+  expect(f.mock.receivedPrompts).toHaveLength(1)
+  await dialog.getByRole('button', { name: labels.en.cancel, exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  f.mock.releaseHeldStream()
+  expect((await completed).result?.text).toContain('Late synthetic wording')
+  await cdp.detach()
+  await f.page.locator('.eid-team-entry').getByRole('button', { name: labels.en.generate, exact: true }).click()
+  const reopened = f.page.getByRole('dialog', { name: labels.en.title, exact: true })
+  await expect(reopened).toBeVisible()
+  await expect(reopened.getByRole('region', { name: labels.en.review, exact: true })).toHaveCount(0)
+  expect(history(f)).toEqual(before)
+  expect(retained(f).generations).toEqual([])
+  expect(retained(f).savedTeams).toBe(0)
+  expect(f.mock.receivedPrompts).toHaveLength(1)
+})
+
+test('selected live chat lends its route to Improve without appending conversation history', async () => {
+  fixture = await setupMockBackend({
+    modelContextLength: 128000,
+    mockServer: { starterTeamInputReply: () => JSON.stringify({ suggestion: 'Clear reviewable work', assumptions: [] }) }
+  })
+  const f = fixture
+  await waitForAppReady(f)
+  // Establish identity before the chat so this case isolates borrowing a live
+  // session route. openSetup still verifies automatic first-save continuation.
+  const initialSetup = await openSetup(f)
+  await initialSetup.locator('[data-slot=dialog-close-button]').click()
+  await expect(initialSetup).not.toBeVisible()
+  const observed: { method: string; params?: Record<string, unknown> }[] = []
+  const cdp = await f.page.context().newCDPSession(f.page)
+  await cdp.send('Network.enable')
+  cdp.on('Network.webSocketFrameSent', event => {
+    const frame = JSON.parse(event.response.payloadData)
+
+    if (frame.method === 'llm.oneshot' || frame.method === 'prompt.submit') {
+      observed.push(frame)
+    }
+  })
+  await f.page.locator('.eid-rail-history > summary').click()
+  await f.page.getByRole('button', { name: 'New session', exact: true }).click()
+  const composer = f.page.locator('[contenteditable="true"]').first()
+  await composer.click()
+  await composer.pressSequentially('Hello, can you hear me?')
+  await f.page.keyboard.press('Enter')
+  await expect(f.page.getByText('Hello from the mock inference server! The full boot chain is working.', { exact: true })).toBeVisible({ timeout: 60_000 })
+  const sent = observed.find(frame => frame.method === 'prompt.submit')
+  expect(sent?.params?.session_id).toBeTruthy()
+  await f.page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+  await f.page.locator('.eid-team-entry').getByRole('button', { name: labels.en.generate, exact: true }).click()
+  const dialog = f.page.getByRole('dialog', { name: labels.en.title, exact: true })
+  await expect(dialog).toBeVisible()
+  const before = history(f)
+  await dialog.getByLabel(labels.en.jobs, { exact: true }).fill('Clear work')
+  await dialog.getByRole('button', { name: labels.en.improveJobs, exact: true }).click()
+  await expect(dialog.getByRole('region', { name: labels.en.review, exact: true })).toBeVisible({ timeout: 60_000 })
+  expect(observed.filter(frame => frame.method === 'llm.oneshot')).toHaveLength(1)
+  expect(observed.find(frame => frame.method === 'llm.oneshot')?.params?.session_id).toBe(sent?.params?.session_id)
+  expect(history(f)).toEqual(before)
+  expect(retained(f).generations).toEqual([])
+  expect(retained(f).savedTeams).toBe(0)
+  await cdp.detach()
+})

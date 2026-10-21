@@ -341,6 +341,8 @@ async function observeSubscriptionRpc(page: Page) {
     ].map(name => 'organization.' + name)
   )
 
+  methods.add('llm.oneshot')
+
   const reasons = new Set([
     'unavailable',
     'rejected',
@@ -417,6 +419,7 @@ async function observeSubscriptionRpc(page: Page) {
   let dropped = 0
   let malformed = 0
   let closed = false
+  let waitUnavailable: { closed: boolean; hasCompletionWaiter: boolean; isSequence: boolean; pendingCount: number } | null = null
   type CompletionWaiter = {
     method: string
     sequence?: { methods: string[]; rows: Row[]; seen: Set<string>; policyEpoch?: string; policyConnection?: string; source?: string; organization?: string; appliedGeneration?: number; connectionRevision?: number; preparedTicket?: string }
@@ -821,8 +824,14 @@ async function observeSubscriptionRpc(page: Page) {
     if (
       closed ||
       completionWaiter ||
-      (sequence ? pending.size !== 0 : !['organization.improveTeamInput', 'organization.generateTeam'].includes(method))
+      (sequence ? pending.size !== 0 : !['organization.improveTeamInput', 'organization.generateTeam', 'llm.oneshot'].includes(method))
     ) {
+      waitUnavailable = {
+        closed,
+        hasCompletionWaiter: Boolean(completionWaiter),
+        isSequence: Boolean(sequence),
+        pendingCount: pending.size
+      }
       throw new Error('subscription_operation_wait_unavailable')
     }
 
@@ -871,7 +880,7 @@ async function observeSubscriptionRpc(page: Page) {
 
   return {
     performOperation: (
-      method: 'organization.improveTeamInput' | 'organization.generateTeam',
+      method: 'organization.improveTeamInput' | 'organization.generateTeam' | 'llm.oneshot',
       action: () => Promise<unknown>
     ) => performObserved(method, action),
     performSetupAction: (kind: 'checkConfiguration' | 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) => {
@@ -920,6 +929,7 @@ async function observeSubscriptionRpc(page: Page) {
       dropped,
       malformed,
       pending: pending.size,
+      waitUnavailable: waitUnavailable ? { ...waitUnavailable } : null,
       rpc: structuredClone(rpc)
     }),
     close: async () => {
@@ -962,6 +972,7 @@ function python(code: string, home: string, args: string[] = []) {
 export async function setupNativeSubscription(
   options: {
     legacy?: boolean
+    ordinaryImprove?: boolean
     hostMigration?: 'cancel_once'
     uncertain?: boolean
     recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once' | 'acl_open_recheck_once'
@@ -1095,7 +1106,7 @@ export async function setupNativeSubscription(
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}, availability_probe=${options.availabilityProbe ? JSON.stringify(options.availabilityProbe) : 'None'}${options.hostMigration ? `, host_migration=${JSON.stringify(options.hostMigration)}` : ''}).install()\n${options.ordinaryImprove ? ` runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'ordinary-improve-edge.py'))})['install'](subscription_fixture)\n` : ''}except BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -1153,7 +1164,7 @@ export async function setupNativeSubscription(
       evidence,
       cleanupDiagnostic,
       performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
-        rpcObserver!.performOperation(`organization.${method}`, action),
+        rpcObserver!.performOperation(method === 'improveTeamInput' ? 'llm.oneshot' : `organization.${method}`, action),
       performSetupAction: (kind: 'checkConfiguration' | 'models' | 'disconnect' | 'policy' | 'inspect' | 'begin' | 'migration' | 'cancel' | 'recover' | 'settingsDisconnect', action: () => Promise<unknown>) =>
         rpcObserver!.performSetupAction(kind, action),
       diagnostic: () => {

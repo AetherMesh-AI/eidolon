@@ -3,12 +3,12 @@ import type { Locale } from './types'
 const messages = {
   title: ['ChatGPT setup connection', 'ChatGPTセットアップ接続', 'ChatGPT 设置连接', 'ChatGPT 設定連線', 'اتصال ChatGPT للإعداد', 'Подключение ChatGPT для настройки'],
   purpose: [
-    'This organization’s dedicated ChatGPT connection is only for starter-team Generate and Improve. It does not power ongoing organization work. Currently available only to a verified local owner on macOS.',
-    'この組織専用のChatGPT接続は、初期チームの生成と改善にのみ使用します。組織の継続的な業務には使用しません。現在はmacOSの確認済みローカル所有者のみ利用できます。',
-    '此组织的专用 ChatGPT 连接仅用于初始团队的生成和润色，不用于组织的持续工作。目前仅适用于 macOS 上经过验证的本地所有者。',
-    '此組織的專用 ChatGPT 連線僅用於初始團隊的產生與潤飾，不用於組織的持續工作。目前僅適用於 macOS 上經過驗證的本機擁有者。',
-    'اتصال ChatGPT المخصص لهذه المؤسسة مخصص فقط لتوليد الفريق الأولي وتحسينه. ولا يشغّل أعمال المؤسسة المستمرة. متاح حالياً فقط للمالك المحلي المُتحقق منه على macOS.',
-    'Отдельное подключение ChatGPT этой организации используется только для генерации и улучшения начальной команды. Оно не обеспечивает текущую работу организации. Сейчас доступно только подтверждённому локальному владельцу на macOS.'
+    'This organization’s dedicated ChatGPT connection is only for starter-team Generate. It does not power ongoing organization work. Currently available only to a verified local owner on macOS.',
+    'この組織専用のChatGPT接続は、初期チームの生成にのみ使用します。組織の継続的な業務には使用しません。現在はmacOSの確認済みローカル所有者のみ利用できます。',
+    '此组织的专用 ChatGPT 连接仅用于初始团队的生成，不用于组织的持续工作。目前仅适用于 macOS 上经过验证的本地所有者。',
+    '此組織的專用 ChatGPT 連線僅用於初始團隊的產生，不用於組織的持續工作。目前僅適用於 macOS 上經過驗證的本機擁有者。',
+    'اتصال ChatGPT المخصص لهذه المؤسسة مخصص فقط لتوليد الفريق الأولي. ولا يشغّل أعمال المؤسسة المستمرة. متاح حالياً فقط للمالك المحلي المُتحقق منه على macOS.',
+    'Отдельное подключение ChatGPT этой организации используется только для генерации начальной команды. Оно не обеспечивает текущую работу организации. Сейчас доступно только подтверждённому локальному владельцу на macOS.'
   ],
   loading: ['Checking setup connection…', 'セットアップ接続を確認中…', '正在检查设置连接…', '正在檢查設定連線…', 'جارٍ فحص اتصال الإعداد…', 'Проверка подключения для настройки…'],
   unknown: ['Connection status is unknown. Check again or explicitly recover retained state.', '接続状態は不明です。再確認するか、保持された状態を明示的に復旧してください。', '连接状态未知。请重新检查或明确恢复保留的状态。', '連線狀態未知。請重新檢查或明確復原保留的狀態。', 'حالة الاتصال غير معروفة. افحصها مجدداً أو استعد الحالة المحفوظة صراحةً.', 'Состояние подключения неизвестно. Проверьте снова или явно восстановите сохранённое состояние.'],

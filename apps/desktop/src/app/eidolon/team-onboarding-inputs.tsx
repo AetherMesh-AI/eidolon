@@ -70,11 +70,9 @@ export function TeamOnboardingInputs({
             <div className="eid-team-input-heading">
               <label htmlFor={`${id}-${field}`}>{copy[field]}</label>
               <Button
-                aria-describedby={modelBlocked ? readinessId : `${id}-improve-help`}
+                aria-describedby={`${id}-improve-help`}
                 aria-label={improveName}
-                disabled={
-                  disabled || modelBlocked || !improvementSupported || !canImprove[field] || !inputs[field].trim()
-                }
+                disabled={disabled || !improvementSupported || !canImprove[field] || !inputs[field].trim()}
                 onClick={() => onImprove(field)}
                 size="sm"
                 variant="secondary"

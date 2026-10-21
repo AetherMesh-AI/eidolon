@@ -502,8 +502,16 @@ export function startMockServer(options: MockServerOptions = {}): Promise<MockSe
             return
           }
           if (options.starterTeamInputReply && messages.some(message =>
-            message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_TEAM_INPUT_IMPROVEMENT_V1'))) {
-            nonStreamingTextResponse(res, model, options.starterTeamInputReply(userText))
+            message?.role === 'system' && typeof message.content === 'string' && (message.content.includes('EIDOLON_TEAM_INPUT_IMPROVEMENT_V1') || message.content.startsWith('Improve only the selected field,')))) {
+            const reply = options.starterTeamInputReply(userText)
+            const respond = () => nonStreamingTextResponse(res, model, reply)
+            if (holdThisCompletion) {
+              heldCompletionCount++
+              resolveHeldStreamStarted?.()
+              void heldStreamReleased.then(respond)
+            } else {
+              respond()
+            }
             return
           }
           const isInterimTrigger = userText.includes('E2E_INTERIM_TRIGGER')

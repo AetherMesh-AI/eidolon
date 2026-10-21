@@ -1031,10 +1031,78 @@ def _(rid, params: dict, session: dict) -> dict:
     return _ok(rid, {"row_id": int(row_id), "reactions": reactions})
 
 
+def _improve_oneshot(rid, params):
+    """Text-only helper on the selected ordinary route; no organization storage."""
+    from agent.oneshot import run_oneshot, render_template
+    from agent.auxiliary_client import aux_interrupt_protection, AuxiliaryExplicitCancellation
+    from eidolon_cli.config import load_config
+    from eidolon_cli.organization_team_generation import parse_improvement
+    transport = current_transport()
+    if transport is None or getattr(transport, 'closed', False):
+        return _err(rid, 4001, 'Improve requires a connected backend.')
+    if set(params) - {'template', 'variables', 'session_id'}:
+        return _err(rid, -32602, 'Unsupported Improve parameters.')
+    variables = params.get('variables')
+    if not isinstance(variables, dict) or set(variables) - {'field', 'jobs', 'goals', 'namingStyle'}:
+        return _err(rid, -32602, 'Unsupported Improve input.')
+    sid = params.get('session_id')
+    if sid is not None and not isinstance(sid, str):
+        return _err(rid, -32602, 'Invalid session ID.')
+    session = None
+    if sid:
+        owner, session = _current_session_steer_authority(sid)
+        if owner is not transport or session is None:
+            return _err(rid, 4001, 'The selected chat session is unavailable. Reconnect it and try again.')
+    home = Path(_eidolon_home).resolve()
+    if session and Path(session.get('profile_home') or home).resolve() != home:
+        return _err(rid, 4001, 'Improve cannot use another profile’s session.')
+    def cancelled():
+        return (getattr(transport, 'closed', False) or Path(_eidolon_home).resolve() != home
+                or bool(sid and (_sessions.get(sid) is not session
+                                 or not _session_transport_contains(session, transport))))
+    def selected_runtime():
+        selected = load_config().get('model', {})
+        if not isinstance(selected, dict):
+            selected = {}
+        result = {key: selected[key] for key in ('provider', 'base_url', 'api_mode') if selected.get(key)}
+        result['model'] = selected.get('default')
+        return result
+
+    try:
+        render_template('improve_team_input', variables)  # Validate before credential resolution.
+        with _profile_build_scope(home):
+            runtime = _main_runtime_from_agent(session.get('agent')) if session else None
+            if session and not runtime:
+                raise ValueError('The selected chat model is not ready. Reconnect the session and try again.')
+            if not session:
+                runtime = selected_runtime()
+            if cancelled():
+                raise AuxiliaryExplicitCancellation()
+            with aux_interrupt_protection(cancel_check=cancelled):
+                text = run_oneshot(template='improve_team_input', variables=variables,
+                    main_runtime=runtime, strict_runtime=True, max_tokens=2048, timeout=120)
+            if (cancelled() or (session and _main_runtime_from_agent(session.get('agent')) != runtime)
+                    or (not session and selected_runtime() != runtime)):
+                raise AuxiliaryExplicitCancellation()
+            # Reuse the established bounded suggestion validator, never its inference/admission path.
+            parse_improvement(text)
+            return _ok(rid, {'text': text})
+    except AuxiliaryExplicitCancellation:
+        return _err(rid, 4001, 'Improve was cancelled or its session changed. No text was applied.')
+    except ValueError as exc:
+        return _err(rid, 4032, str(exc))
+    except Exception:
+        logger.warning('Selected-route Improve failed', exc_info=True)
+        return _err(rid, 5030, 'Improve could not use the selected ordinary chat provider/model. '
+                    'Check its connection and try again; no fallback provider was used.')
+
+
 @method("llm.oneshot")
 def _(rid, params: dict) -> dict:
     """Stateless one-shot LLM request; a live ``session_id`` lends its model, else the ``task`` backend."""
     template = (params.get("template") or "").strip() or None
+    if template == "improve_team_input":
+        return _improve_oneshot(rid, params)
     instructions = params.get("instructions") or ""
     user_input = params.get("input") or ""
     variables = params.get("variables") if isinstance(params.get("variables"), dict) else {}

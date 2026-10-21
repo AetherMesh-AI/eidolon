@@ -343,7 +343,7 @@ function ledger(f: MockBackendFixture) {
 import os,json,sqlite3
 from pathlib import Path
 from eidolon_cli.organization_team_budget import budget_policy
-home=Path(os.environ['HERMES_HOME']); p=home/'organization'/'state.db'
+home=Path(os.environ['HERMES_HOME']).resolve(); p=home/'organization'/'state.db'
 with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
  c.row_factory=sqlite3.Row
  from eidolon_cli.organization_metadata import _inspect
@@ -416,9 +416,10 @@ test('owner explicitly adopts split setup limits while legacy debt, text and key
   const goals = dialog.getByLabel(labels.en.goals, { exact: true })
   await jobs.fill('Research product changes')
   await goals.fill('A useful source-linked report')
-  await dialog.getByRole('button', { name: labels.en.improveJobs, exact: true }).click()
-  await expect(dialog.getByRole('region', { name: labels.en.review, exact: true })).toBeVisible({ timeout: 60_000 })
-  await dialog.getByRole('button', { name: labels.en.discard, exact: true }).click()
+  // Preserve genuine legacy setup debt using Generate; ordinary Improve no longer reserves setup calls.
+  await dialog.getByRole('button', { name: labels.en.generate, exact: true }).click()
+  await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash', { timeout: 60_000 })
+  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
   const before = ledger(f)
   expect(before.state.setupBudget.usage.total).toBe(1)
   expect(before.state.configuration).toBeNull()
@@ -503,8 +504,8 @@ test('owner explicitly adopts split setup limits while legacy debt, text and key
   await dialog.getByRole('button', { name: labels.en.generate, exact: true }).click()
   await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash', { timeout: 60_000 })
   const after = ledger(f)
-  expect(after.state.setupBudget.usage).toEqual({ legacy: 1, improveTeamInput: 1, generateTeam: 1, total: 3 })
-  expect(after.state.setupBudget.remaining).toEqual({ improveCalls: 3, generationCalls: 2, totalCalls: 4 })
+  expect(after.state.setupBudget.usage).toEqual({ legacy: 1, improveTeamInput: 0, generateTeam: 1, total: 2 })
+  expect(after.state.setupBudget.remaining).toEqual({ improveCalls: 4, generationCalls: 2, totalCalls: 5 })
   expect(f.mock.receivedPrompts).toHaveLength(3)
   expect(after.savedTeams).toBe(0)
   expect(JSON.parse(f.mock.receivedPrompts[2])).toMatchObject({
@@ -707,7 +708,7 @@ test('source conflicts and an uncertain physical send never permit policy refill
   // Editing the goal clears that old intent; an uncertain charge blocks a fresh one.
   await goals.fill('Keep the updated uncertain goal description')
   await expect(generate).toBeDisabled()
-  await expect(dialog.getByRole('button', { name: labels.en.improveJobs, exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: labels.en.improveJobs, exact: true })).toBeEnabled()
   await expect(goals).toHaveValue('Keep the updated uncertain goal description')
   expect(ledger(f)).toEqual(uncertain)
   expect(physicalPosts).toBe(1)
