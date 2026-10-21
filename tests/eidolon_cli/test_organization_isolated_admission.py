@@ -143,6 +143,8 @@ def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
     w = workspace
     if change == 'actual_root_revocation':
         register_owned_root(w)
+    support = profile_isolation.source_runtime_capability(w.home)
+    assert support['grantsIncluded'] is False
     objective, claim = claim_work(w, 'work.inspect')
     calls, agents = [], []
     original_turn = conversation_loop.run_conversation
@@ -166,6 +168,7 @@ def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
                 'grantHash': grant['grantHash'], 'confirmed': True, 'idempotencyKey': 'revoke-source'})
             assert receipt['receipt']['accessRevoked']
             assert folder_access(w.home, ident)['grants'][0]['revoked']
+            assert profile_isolation.source_runtime_capability(w.home) == support
         elif change == 'grant_removal':
             from dataclasses import replace
             cfg = json.loads((w.home / 'config.yaml').read_text())
@@ -174,6 +177,7 @@ def test_between_round_change_blocks_next_send(workspace, monkeypatch, change):
             config._LOAD_CONFIG_CACHE.clear()
             changed = OrganizationStore(w.store.path, replace(w.settings, tool_grants=()))
             assert changed.settings.tool_grants == ()
+            assert profile_isolation.source_runtime_capability(w.home) == support
         elif change == 'root_replacement':
             w.source.rename(w.source.with_name('old-project'))
             w.source.mkdir()

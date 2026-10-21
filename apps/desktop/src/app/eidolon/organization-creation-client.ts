@@ -12,10 +12,12 @@ import {
   type WorkspaceCreationCapability,
   type WorkspaceCreationIntent
 } from './organization-creation-contract'
+import { sourceRuntimeCapability, type SourceRuntimeCapability } from './organization-source-capability'
 import type { DirectorySource } from './organization-directory'
 import { organizationEndpointIdentity } from './organization-owner'
 
 export interface OrganizationCreationView {
+  runtimeCapability?: SourceRuntimeCapability | null
   stage:
     'loading' | 'ready' | 'unavailable' | 'creating' | 'uncertain' | 'checking' | 'created' | 'switching' | 'selected'
   canRetry: boolean
@@ -56,7 +58,7 @@ export function createOrganizationCreationClient(deps: OrganizationCreationDepen
       return
     }
 
-    view = { ...view, ...next }
+    view = { ...view, ...next, ...(next.stage && next.stage !== 'selected' ? { runtimeCapability: null } : {}) }
 
     for (const listener of listeners) {
       listener()
@@ -358,7 +360,9 @@ export function createOrganizationCreationClient(deps: OrganizationCreationDepen
           return
         }
 
-        verifyCreatedWorkspace(await live.scope.request('organization.descriptor', {}), expected)
+        const descriptor = await live.scope.request<{ runtimeCapability?: unknown }>('organization.descriptor', {})
+        verifyCreatedWorkspace(descriptor, expected)
+        const runtimeCapability = sourceRuntimeCapability(descriptor.runtimeCapability)
         const final = deps.readSource().current
 
         if (!final?.scope.eligible || final.scope.key !== live.scope.key) {
@@ -381,12 +385,12 @@ export function createOrganizationCreationClient(deps: OrganizationCreationDepen
         try {
           deps.storage.removeItem(storageKey)
         } catch {
-          update({ stage: 'selected', error: 'storage' })
+          update({ stage: 'selected', error: 'storage', runtimeCapability })
 
           return
         }
 
-        update({ stage: 'selected', error: null })
+        update({ stage: 'selected', error: null, runtimeCapability })
       } catch {
         update({ stage: 'created', error: 'selection' })
       } finally {

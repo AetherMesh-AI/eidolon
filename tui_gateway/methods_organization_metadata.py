@@ -53,10 +53,11 @@ def _metadata_method(name, allowed):
 @_metadata_method('organization.descriptor', set())
 def _(path, params):
     from eidolon_cli.organization_metadata import read_descriptor
-    from eidolon_cli.profile_isolation import isolation_view
+    from eidolon_cli.profile_isolation import isolation_view, source_runtime_capability
     result = read_descriptor(path)
     isolation = isolation_view(path.parent.parent)
-    return {**result, 'isolation': isolation} if isolation else result
+    return {**result, 'isolation': isolation,
+            'runtimeCapability': source_runtime_capability(path.parent.parent)} if isolation else result
 
 
 @_metadata_method('organization.saveMetadata', {

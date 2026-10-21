@@ -10,6 +10,7 @@ import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 import { organizationCreationCopy } from '@/i18n/organization-creation'
 
+import { sourceCapabilityText } from './organization-source-capability'
 import type { OrganizationCreationClient } from './organization-creation-client'
 import { validWorkspaceModel, validWorkspaceName } from './organization-creation-contract'
 
@@ -73,6 +74,7 @@ export function OrganizationCreationDialog({ client, onClose, onSetup }: Organiz
           <div className="grid gap-2 text-sm text-muted-foreground">
             <p>{copy.credentials}</p>
             <p>{copy.limits}</p>
+            <p role="status">{sourceCapabilityText(view.runtimeCapability)}</p>
           </div>
           {showNames && (
             <form

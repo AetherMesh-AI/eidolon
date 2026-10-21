@@ -143,6 +143,19 @@ def isolation_view(home: Path) -> dict | None:
              'executionMode': 'tool-free-organization'} if value else None)
 
 
+def source_runtime_capability(home: Path) -> dict | None:
+    """Current implementation support, never effective grants or execution authority."""
+    import os
+    import sys
+    if verify_isolation(home) is None:
+        return None
+    return {'version': 1, 'mode': 'scheduler-scoped-organization',
+            'requestTypes': ['work.inspect', 'work.edit'], 'provider': PROVIDER,
+            'credentialScope': 'profile-local', 'grantsIncluded': False,
+            'host': {'sourceReading': 'supported' if os.name == 'posix' else 'unsupported',
+                     'projectValidation': 'requires-sandbox' if sys.platform == 'linux' else 'unsupported'}}
+
+
 def profile_secrets(home: Path) -> dict[str, str]:
     from agent.secret_scope import load_env_file
     return load_env_file(local_path(Path(home) / '.env'))

@@ -39,7 +39,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     credentials:
       'Configure a separate OpenAI API key for this organization. Credentials are separated by the application; this is not an operating-system sandbox.',
     limits:
-      'Version 1 supports direct OpenAI API access and tool-free organization work only. Normal agent chat, tools, OAuth or subscription sign-in, other providers, and custom endpoints are not supported.',
+      'This isolated organization uses its own direct OpenAI API route. Current source-work support is checked separately after selection; creation does not grant folder or tool access.',
     organizationName: 'Organization name',
     ownerName: 'Your display name',
     namesHint: 'Both names are required: up to 160 characters each, without control characters.',
@@ -96,7 +96,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     credentials:
       'この組織専用の OpenAI API キーを設定してください。認証情報はアプリケーションで分離されますが、OS のサンドボックスではありません。',
     limits:
-      'バージョン 1 は OpenAI API への直接アクセスと、ツールを使わない組織の作業のみに対応しています。通常のエージェントチャット、ツール、OAuth やサブスクリプションでのログイン、他のプロバイダー、カスタムエンドポイントには対応していません。',
+      'この分離された組織は独自の OpenAI API 接続を使用します。ソース作業の対応状況は選択後に別途確認されます。作成によってフォルダーやツールへのアクセスが許可されることはありません。',
     organizationName: '組織名',
     ownerName: 'あなたの表示名',
     namesHint: '両方の名前が必要です。それぞれ 160 文字以内で、制御文字は使用できません。',
@@ -153,7 +153,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     description: '创建拥有独立工作和设置的组织。你可以自行选择何时切换。',
     credentials: '请为此组织单独配置 OpenAI API 密钥。凭据由应用程序隔离，并非操作系统沙盒。',
     limits:
-      '版本 1 仅支持直接访问 OpenAI API 及不使用工具的组织工作。不支持常规智能体聊天、工具、OAuth 或订阅登录、其他提供商和自定义端点。',
+      '此隔离组织使用自己的 OpenAI API 连接。选择后将单独检查当前源代码工作的支持情况；创建组织不会授予文件夹或工具访问权限。',
     organizationName: '组织名称',
     ownerName: '你的显示名称',
     namesHint: '两个名称均为必填，每个最多 160 个字符，不能包含控制字符。',
@@ -202,7 +202,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     description: '建立擁有獨立工作和設定的組織。你可以自行選擇何時切換。',
     credentials: '請為此組織單獨設定 OpenAI API 金鑰。憑證由應用程式隔離，並非作業系統沙箱。',
     limits:
-      '版本 1 僅支援直接存取 OpenAI API 及不使用工具的組織工作。不支援一般代理聊天、工具、OAuth 或訂閱登入、其他供應商和自訂端點。',
+      '此隔離組織使用自己的 OpenAI API 連線。選取後將另行檢查目前原始碼工作的支援情況；建立組織不會授予資料夾或工具存取權限。',
     organizationName: '組織名稱',
     ownerName: '你的顯示名稱',
     namesHint: '兩個名稱皆為必填，每個最多 160 個字元，不可包含控制字元。',
@@ -252,7 +252,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     credentials:
       'أعدّ مفتاح OpenAI API منفصلًا لهذه المؤسسة. يعزل التطبيق بيانات الاعتماد؛ وهذا ليس عزلًا على مستوى نظام التشغيل.',
     limits:
-      'يدعم الإصدار 1 الوصول المباشر إلى OpenAI API وأعمال المؤسسة دون أدوات فقط. لا يدعم دردشة الوكلاء المعتادة أو الأدوات أو تسجيل الدخول عبر OAuth أو الاشتراكات أو المزوّدين الآخرين أو نقاط الاتصال المخصصة.',
+      'تستخدم هذه المؤسسة المعزولة اتصال OpenAI API الخاص بها. يُتحقق من دعم العمل على المصدر بعد اختيارها؛ لا يمنح الإنشاء صلاحية الوصول إلى المجلدات أو الأدوات.',
     organizationName: 'اسم المؤسسة',
     ownerName: 'اسمك المعروض',
     namesHint: 'الاسمان مطلوبان: حتى 160 محرفًا لكل اسم، دون محارف تحكم.',
@@ -308,7 +308,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     credentials:
       'Настройте отдельный ключ OpenAI API для этой организации. Учётные данные разделены приложением; это не песочница операционной системы.',
     limits:
-      'Версия 1 поддерживает только прямой доступ к OpenAI API и работу организации без инструментов. Обычный чат с агентом, инструменты, вход через OAuth или подписку, другие провайдеры и пользовательские адреса API не поддерживаются.',
+      'Эта изолированная организация использует собственное подключение к OpenAI API. Поддержка работы с исходным кодом проверяется отдельно после выбора; создание не предоставляет доступ к папкам или инструментам.',
     organizationName: 'Название организации',
     ownerName: 'Ваше отображаемое имя',
     namesHint: 'Оба поля обязательны: до 160 символов в каждом, без управляющих символов.',

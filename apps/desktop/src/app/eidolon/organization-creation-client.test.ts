@@ -235,3 +235,64 @@ it('persists one exact creation intent, reconciles a lost reply on reload and re
   expect(reloaded.canSetup()).toBe(false)
   reloaded.dispose()
 })
+
+const sourceSupport = {
+  version: 1,
+  mode: 'scheduler-scoped-organization',
+  requestTypes: ['work.inspect', 'work.edit'],
+  provider: 'openai-api',
+  credentialScope: 'profile-local',
+  grantsIncluded: false,
+  host: { sourceReading: 'supported', projectValidation: 'unsupported' }
+}
+
+it('loads current source capability after creation without deriving it from the receipt', async () => {
+  const h = setup()
+  const client = h.client()
+  await client.load()
+  await client.create(intent.displayName, intent.ownerDisplayName)
+  expect(client.getSnapshot().runtimeCapability).toBeNull()
+  h.request.mockResolvedValueOnce({ ...liveDescriptor, runtimeCapability: sourceSupport })
+  await client.select()
+  expect(client.getSnapshot().stage).toBe('selected')
+  expect(client.getSnapshot().runtimeCapability).toEqual(sourceSupport)
+  expect(client.getSnapshot().result).toEqual(receipt)
+  client.dispose()
+})
+
+it.each([undefined, null, { ...sourceSupport, version: 2 }, { ...sourceSupport, grantsIncluded: true }])(
+  'does not infer current source support from historical mode for %j',
+  async runtimeCapability => {
+    const h = setup()
+    const client = h.client()
+    await client.load()
+    await client.create(intent.displayName, intent.ownerDisplayName)
+    h.request.mockResolvedValueOnce({ ...liveDescriptor, runtimeCapability })
+    await client.select()
+    expect(client.getSnapshot().stage).toBe('selected')
+    expect(client.getSnapshot().runtimeCapability).toBeNull()
+    client.dispose()
+  }
+)
+
+it.each(['failure', 'switch'])('discards current capability on descriptor %s', async change => {
+  const h = setup()
+  const client = h.client()
+  await client.load()
+  await client.create(intent.displayName, intent.ownerDisplayName)
+  const response = deferred<unknown>()
+  h.request.mockReturnValueOnce(response.promise)
+  const selecting = client.select()
+  await Promise.resolve()
+  if (change === 'switch') {
+    h.source.current = { ...h.origin, scope: { ...h.origin.scope, key: 'other-profile' } }
+    response.resolve({ ...liveDescriptor, runtimeCapability: sourceSupport })
+  } else {
+    response.reject(new Error('unavailable'))
+  }
+  await selecting
+  expect(client.getSnapshot().stage).not.toBe('selected')
+  expect(client.getSnapshot().runtimeCapability).toBeNull()
+  expect(client.canSetup()).toBe(false)
+  client.dispose()
+})
