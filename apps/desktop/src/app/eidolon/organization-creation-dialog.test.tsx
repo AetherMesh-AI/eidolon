@@ -55,7 +55,7 @@ function receipt(intent: WorkspaceCreationIntent): CreatedWorkspace {
   }
 }
 
-function harness() {
+function harness(locale: keyof typeof organizationCreationCopy = 'en') {
   const data = new Map<string, string>()
 
   const storage = {
@@ -107,7 +107,7 @@ function harness() {
 
     const mounted = render(
       <StrictMode>
-        <I18nProvider configClient={null} initialLocale="en">
+        <I18nProvider configClient={null} initialLocale={locale}>
           <OrganizationCreationDialog
             client={client}
             onClose={() => {
@@ -187,85 +187,121 @@ it('keeps names and the pending request across errors and dismissal, and only of
   expect(h.activate).not.toHaveBeenCalled()
 })
 
-it('requires separate creation, verified switching, and explicit setup clicks without automatic activation or probes', async () => {
-  const h = harness()
-  let created: CreatedWorkspace
-  h.request.mockImplementation(async (method, params) => {
-    if (method === 'organization.workspaceCreation') {
-      return capability
-    }
-
-    if (method === 'organization.createWorkspace') {
-      created = receipt(params as unknown as WorkspaceCreationIntent)
-
-      return created
-    }
-
-    if (method === 'organization.descriptor') {
-      return {
-        capabilityVersion: 1,
-        state: 'ready',
-        metadata: created.descriptor,
-        scope: { kind: 'served-profile', profile: created.profile },
-        isolation: { ...created, supportedProviders: ['openai-api'] }
+it.each(['unknown', 'mac', 'windows'])(
+  'requires verified switching and presents current source limits: %s',
+  async host => {
+    const h = harness()
+    let created: CreatedWorkspace
+    h.request.mockImplementation(async (method, params) => {
+      if (method === 'organization.workspaceCreation') {
+        return capability
       }
-    }
 
-    throw new Error(`Unexpected request: ${method}`)
-  })
-  h.activate.mockImplementation(async (connectionId, profile, verify) => {
-    const descriptor = await h.request('organization.descriptor', {})
-    verify(descriptor)
-    h.source.current = {
-      ...h.source.current!,
-      scope: { ...h.source.current!.scope, key: 'created-socket', ownerKey: 'created-owner', profile }
-    }
+      if (method === 'organization.createWorkspace') {
+        created = receipt(params as unknown as WorkspaceCreationIntent)
 
-    return {
-      status: 'committed',
-      reason: 'selected',
-      requested: { connectionId, profile },
-      observedRoute: { connectionId, profile },
-      resetStarted: true,
-      published: true
+        return created
+      }
+
+      if (method === 'organization.descriptor') {
+        return {
+          capabilityVersion: 1,
+          state: 'ready',
+          metadata: created.descriptor,
+          scope: { kind: 'served-profile', profile: created.profile },
+          isolation: { ...created, supportedProviders: ['openai-api'] },
+          runtimeCapability:
+            host === 'unknown'
+              ? undefined
+              : {
+                  version: 1,
+                  mode: 'scheduler-scoped-organization',
+                  requestTypes: ['work.inspect', 'work.edit'],
+                  provider: 'openai-api',
+                  credentialScope: 'profile-local',
+                  grantsIncluded: false,
+                  host: {
+                    sourceReading: host === 'windows' ? 'unsupported' : 'supported',
+                    projectValidation: 'unsupported'
+                  }
+                }
+        }
+      }
+
+      throw new Error(`Unexpected request: ${method}`)
+    })
+    h.activate.mockImplementation(async (connectionId, profile, verify) => {
+      const descriptor = await h.request('organization.descriptor', {})
+      verify(descriptor)
+      h.source.current = {
+        ...h.source.current!,
+        scope: { ...h.source.current!.scope, key: 'created-socket', ownerKey: 'created-owner', profile }
+      }
+
+      return {
+        status: 'committed',
+        reason: 'selected',
+        requested: { connectionId, profile },
+        observedRoute: { connectionId, profile },
+        resetStarted: true,
+        published: true
+      }
+    })
+    h.mount()
+    await screen.findByRole('button', { name: copy.create })
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.request.mock.calls.map(([method]) => method)).toEqual(['organization.workspaceCreation'])
+    enterNames()
+    fireEvent.click(screen.getByRole('button', { name: copy.create }))
+    await screen.findByRole('button', { name: copy.switch })
+    const result = screen.getByRole('region', { name: copy.receipt })
+    expect(within(result).getByText('Research')).not.toBeNull()
+    expect(within(result).getByText('Alex')).not.toBeNull()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: copy.setupKeys })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: copy.switch }))
+    await screen.findByRole('button', { name: copy.setupKeys })
+    if (host === 'unknown') {
+      expect(screen.getByText(/Current source-work capability is unknown/)).toBeTruthy()
+    } else {
+      const text = host === 'windows' ? copy.sourceCapability.sourceUnsupported : copy.sourceCapability.available
+      expect(screen.getByText(new RegExp(text)).textContent).toContain(copy.sourceCapability.grants)
+      expect(screen.getByText(new RegExp(text)).textContent).toContain('validation and integration are unsupported')
+      expect(screen.getByText(new RegExp(text)).textContent?.includes('Source reading is unsupported')).toBe(
+        host === 'windows'
+      )
     }
-  })
+    expect(h.activate).toHaveBeenCalledTimes(1)
+    expect(h.setup).not.toHaveBeenCalled()
+    expect(h.storage.removeItem).toHaveBeenCalledOnce()
+    const requestsAfterSelection = h.request.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: copy.setupKeys }))
+    fireEvent.click(screen.getByRole('button', { name: copy.setupModel }))
+    expect(h.setup.mock.calls).toEqual([[created!.profile]])
+    expect(h.request).toHaveBeenCalledTimes(requestsAfterSelection)
+    expect(h.saveModel).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText(copy.modelId), { target: { value: 'explicit-test-model' } })
+    h.saveModel.mockRejectedValueOnce(new Error('Synthetic configuration save failure'))
+    fireEvent.click(screen.getByRole('button', { name: copy.saveModel }))
+    await screen.findByText(copy.modelStatus.failed)
+    expect((screen.getByLabelText(copy.modelId) as HTMLInputElement).value).toBe('explicit-test-model')
+    fireEvent.click(screen.getByRole('button', { name: copy.saveModel }))
+    await screen.findByText(copy.modelStatus.saved)
+    expect(h.saveModel.mock.calls).toEqual([
+      [created!.profile, 'explicit-test-model'],
+      [created!.profile, 'explicit-test-model']
+    ])
+
+    h.source.current!.scope.eligible = false
+    fireEvent.click(screen.getByRole('button', { name: copy.setupKeys }))
+    await waitFor(() => expect(h.setup).toHaveBeenCalledTimes(1))
+  }
+)
+
+it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('renders unknown capability in %s', async locale => {
+  const h = harness(locale)
+  h.request.mockResolvedValue(capability)
   h.mount()
-  await screen.findByRole('button', { name: copy.create })
-  expect(h.activate).not.toHaveBeenCalled()
-  expect(h.request.mock.calls.map(([method]) => method)).toEqual(['organization.workspaceCreation'])
-  enterNames()
-  fireEvent.click(screen.getByRole('button', { name: copy.create }))
-  await screen.findByRole('button', { name: copy.switch })
-  const result = screen.getByRole('region', { name: copy.receipt })
-  expect(within(result).getByText('Research')).not.toBeNull()
-  expect(within(result).getByText('Alex')).not.toBeNull()
-  expect(h.activate).not.toHaveBeenCalled()
-  expect(screen.queryByRole('button', { name: copy.setupKeys })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: copy.switch }))
-  await screen.findByRole('button', { name: copy.setupKeys })
-  expect(h.activate).toHaveBeenCalledTimes(1)
-  expect(h.setup).not.toHaveBeenCalled()
-  expect(h.storage.removeItem).toHaveBeenCalledOnce()
-  const requestsAfterSelection = h.request.mock.calls.length
-  fireEvent.click(screen.getByRole('button', { name: copy.setupKeys }))
-  fireEvent.click(screen.getByRole('button', { name: copy.setupModel }))
-  expect(h.setup.mock.calls).toEqual([[created!.profile]])
-  expect(h.request).toHaveBeenCalledTimes(requestsAfterSelection)
-  expect(h.saveModel).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByLabelText(copy.modelId), { target: { value: 'explicit-test-model' } })
-  h.saveModel.mockRejectedValueOnce(new Error('Synthetic configuration save failure'))
-  fireEvent.click(screen.getByRole('button', { name: copy.saveModel }))
-  await screen.findByText(copy.modelStatus.failed)
-  expect((screen.getByLabelText(copy.modelId) as HTMLInputElement).value).toBe('explicit-test-model')
-  fireEvent.click(screen.getByRole('button', { name: copy.saveModel }))
-  await screen.findByText(copy.modelStatus.saved)
-  expect(h.saveModel.mock.calls).toEqual([
-    [created!.profile, 'explicit-test-model'],
-    [created!.profile, 'explicit-test-model']
-  ])
-
-  h.source.current!.scope.eligible = false
-  fireEvent.click(screen.getByRole('button', { name: copy.setupKeys }))
-  await waitFor(() => expect(h.setup).toHaveBeenCalledTimes(1))
+  expect(await screen.findByText(organizationCreationCopy[locale].sourceCapability.unknown)).not.toBeNull()
+  expect(screen.queryByText(copy.sourceCapability.unknown)).toBeNull()
 })

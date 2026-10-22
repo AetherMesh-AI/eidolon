@@ -854,11 +854,11 @@ def is_runtime_provider_routable(provider_id: str) -> bool:
         return False
     if normalized in {"auto", "openrouter", "custom", "moa"} or normalized.startswith("custom:"):
         return True
-    try:
-        resolve_provider(normalized)
-    except AuthError:
-        return False
-    return True
+    # Match explicit identity normalization without resolving a configured route.
+    # In an isolated workspace resolve_provider also validates local credentials;
+    # inventory must remain available before those credentials are configured.
+    normalized = _plugin_aliases().get(normalized, normalized)
+    return normalized in ("openrouter", "custom") or normalized in PROVIDER_REGISTRY
 
 
 def read_credential_pool(provider_id: Optional[str] = None) -> Dict[str, Any]:

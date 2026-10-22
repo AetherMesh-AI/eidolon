@@ -199,10 +199,10 @@ export function deleteCustomEndpoint(id: string): Promise<CustomEndpointsRespons
   })
 }
 
-export function listOAuthProviders(profile?: null | string): Promise<OAuthProvidersResponse> {
+export function listOAuthProviders(profile?: null | string, executionOnly = false): Promise<OAuthProvidersResponse> {
   return hermesApi<OAuthProvidersResponse>({
     ...profileScoped(profile),
-    path: '/api/providers/oauth'
+    path: executionOnly ? '/api/providers/oauth?execution_only=true' : '/api/providers/oauth'
   })
 }
 

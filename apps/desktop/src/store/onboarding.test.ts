@@ -90,7 +90,7 @@ describe('refreshOnboarding', () => {
     installApiMock(async request => {
       requests.push(request)
 
-      if (request.path === '/api/providers/oauth') {
+      if (request.path === '/api/providers/oauth?execution_only=true') {
         return { providers: [] }
       }
 
@@ -174,8 +174,8 @@ describe('refreshOnboarding', () => {
 
   it('refreshes OAuth providers again when onboarding was explicitly requested', async () => {
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
-        return { providers: [makeOAuthProvider('fresh')] }
+      if (path === '/api/providers/oauth?execution_only=true') {
+        return { providers: [makeOAuthProvider('fresh')], supportedProviders: ['openai-api'] }
       }
 
       throw new Error(`unexpected api path: ${path}`)
@@ -190,13 +190,14 @@ describe('refreshOnboarding', () => {
     expect(ready).toBe(false)
     expect(api).toHaveBeenCalledTimes(1)
     expect($desktopOnboarding.get().providers?.map(p => p.id)).toEqual(['fresh'])
+    expect($desktopOnboarding.get().supportedProviders).toEqual(['openai-api'])
     expect($desktopOnboarding.get().reason).toContain('No usable credentials found for openrouter.')
     expect($desktopOnboarding.get().reason).toContain('setup.status reports configured credentials')
   })
 
   it('keeps cached providers when onboarding was not re-requested', async () => {
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
+      if (path === '/api/providers/oauth?execution_only=true') {
         return { providers: [makeOAuthProvider('fresh')] }
       }
 
@@ -215,7 +216,7 @@ describe('refreshOnboarding', () => {
 
   it('does not downgrade configured=true on fallback-only readiness failures', async () => {
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
+      if (path === '/api/providers/oauth?execution_only=true') {
         return { providers: [makeOAuthProvider('fresh')] }
       }
 
@@ -340,7 +341,7 @@ describe('refreshOnboarding', () => {
 
   it('does not preserve configured when onboarding was explicitly requested', async () => {
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
+      if (path === '/api/providers/oauth?execution_only=true') {
         return { providers: [makeOAuthProvider('fresh')] }
       }
 
@@ -367,7 +368,7 @@ describe('refreshOnboarding', () => {
 
   it('still surfaces onboarding when fallback failure happens before configured state', async () => {
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
+      if (path === '/api/providers/oauth?execution_only=true') {
         return { providers: [makeOAuthProvider('fresh')] }
       }
 
@@ -432,7 +433,7 @@ describe('refreshOnboarding', () => {
     })
 
     const api = vi.fn(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/oauth') {
+      if (path === '/api/providers/oauth?execution_only=true') {
         return providersPromise
       }
 

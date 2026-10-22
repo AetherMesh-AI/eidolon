@@ -1034,7 +1034,9 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
   const subscriptionSelected =
     setup.setupSubscriptionVersion === 1 &&
     (setup.generationAllowance?.policyVersion === 3 ||
-      setup.readiness.blockers.includes('subscription_generation_unsupported'))
+      setup.readiness.blockers.includes('subscription_generation_unsupported') ||
+      (setup.state === 'available' && setup.setupSubscriptionState === 'available' &&
+        setup.readiness.blockers.includes('model_not_configured')))
 
   const readinessId = useId()
   const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)

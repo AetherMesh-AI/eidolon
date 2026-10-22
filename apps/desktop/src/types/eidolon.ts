@@ -81,6 +81,7 @@ export interface OAuthProvider {
 }
 
 export interface OAuthProvidersResponse {
+  supportedProviders?: string[]
   providers: OAuthProvider[]
 }
 

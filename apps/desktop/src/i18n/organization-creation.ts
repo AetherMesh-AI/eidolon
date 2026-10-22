@@ -2,7 +2,17 @@ import type { OrganizationCreationView } from '@/app/eidolon/organization-creati
 
 import type { Locale } from './types'
 
+export interface SourceCapabilityCopy {
+  unknown: string
+  available: string
+  grants: string
+  sourceUnsupported: string
+  validationUnsupported: string
+  validationRequired: string
+}
+
 interface OrganizationCreationCopy {
+  sourceCapability: SourceCapabilityCopy
   title: string
   description: string
   credentials: string
@@ -34,12 +44,23 @@ interface OrganizationCreationCopy {
 
 export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> = {
   en: {
+    sourceCapability: {
+      unknown:
+        'Current source-work capability is unknown or unavailable. This does not describe text-only organization work.',
+      available: 'Scoped source-work implementation is available.',
+      grants:
+        'Explicit folder and tool grants are required. This does not confirm permission or readiness; current grants are checked for every assignment.',
+      sourceUnsupported: 'Source reading is unsupported on this host.',
+      validationUnsupported: 'Successful project validation and integration are unsupported on this host.',
+      validationRequired:
+        'Project validation and integration require the supported sandbox and project dependencies; readiness has not been checked.'
+    },
     title: 'Create organization',
     description: 'Create an organization with its own work and settings. You choose when to switch to it.',
     credentials:
       'Configure a separate OpenAI API key for this organization. Credentials are separated by the application; this is not an operating-system sandbox.',
     limits:
-      'Version 1 supports direct OpenAI API access and tool-free organization work only. Normal agent chat, tools, OAuth or subscription sign-in, other providers, and custom endpoints are not supported.',
+      'This isolated organization uses its own direct OpenAI API route. Current source-work support is checked separately after selection; creation does not grant folder or tool access.',
     organizationName: 'Organization name',
     ownerName: 'Your display name',
     namesHint: 'Both names are required: up to 160 characters each, without control characters.',
@@ -91,12 +112,23 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ja: {
+    sourceCapability: {
+      unknown:
+        '現在のソース作業の対応状況は不明、または利用できません。テキストのみの組織作業の対応状況を示すものではありません。',
+      available: '範囲を限定したソース作業の実装が利用可能です。',
+      grants:
+        'フォルダーとツールへの明示的な許可が必要です。権限や実行準備の確認ではありません。各作業で現在の許可が確認されます。',
+      sourceUnsupported: 'このホストではソースの読み取りに対応していません。',
+      validationUnsupported: 'このホストではプロジェクトの検証成功と統合に対応していません。',
+      validationRequired:
+        'プロジェクトの検証と統合には対応するサンドボックスと依存関係が必要です。実行準備は確認されていません。'
+    },
     title: '組織を作成',
     description: '独自の作業と設定を持つ組織を作成します。切り替えるタイミングは自分で選べます。',
     credentials:
       'この組織専用の OpenAI API キーを設定してください。認証情報はアプリケーションで分離されますが、OS のサンドボックスではありません。',
     limits:
-      'バージョン 1 は OpenAI API への直接アクセスと、ツールを使わない組織の作業のみに対応しています。通常のエージェントチャット、ツール、OAuth やサブスクリプションでのログイン、他のプロバイダー、カスタムエンドポイントには対応していません。',
+      'この分離された組織は独自の OpenAI API 接続を使用します。ソース作業の対応状況は選択後に別途確認されます。作成によってフォルダーやツールへのアクセスが許可されることはありません。',
     organizationName: '組織名',
     ownerName: 'あなたの表示名',
     namesHint: '両方の名前が必要です。それぞれ 160 文字以内で、制御文字は使用できません。',
@@ -149,11 +181,19 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   zh: {
+    sourceCapability: {
+      unknown: '当前源代码工作能力未知或不可用。这不代表纯文本组织工作的支持情况。',
+      available: '限定范围的源代码工作实现可用。',
+      grants: '需要明确的文件夹和工具授权。这不确认权限或就绪状态；每项任务都会检查当前授权。',
+      sourceUnsupported: '此主机不支持读取源代码。',
+      validationUnsupported: '此主机不支持成功完成项目验证和集成。',
+      validationRequired: '项目验证和集成需要受支持的沙盒及项目依赖；尚未检查就绪状态。'
+    },
     title: '创建组织',
     description: '创建拥有独立工作和设置的组织。你可以自行选择何时切换。',
     credentials: '请为此组织单独配置 OpenAI API 密钥。凭据由应用程序隔离，并非操作系统沙盒。',
     limits:
-      '版本 1 仅支持直接访问 OpenAI API 及不使用工具的组织工作。不支持常规智能体聊天、工具、OAuth 或订阅登录、其他提供商和自定义端点。',
+      '此隔离组织使用自己的 OpenAI API 连接。选择后将单独检查当前源代码工作的支持情况；创建组织不会授予文件夹或工具访问权限。',
     organizationName: '组织名称',
     ownerName: '你的显示名称',
     namesHint: '两个名称均为必填，每个最多 160 个字符，不能包含控制字符。',
@@ -198,11 +238,19 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   'zh-hant': {
+    sourceCapability: {
+      unknown: '目前原始碼工作能力未知或無法使用。這不代表純文字組織工作的支援情況。',
+      available: '限定範圍的原始碼工作實作可用。',
+      grants: '需要明確的資料夾和工具授權。這不確認權限或就緒狀態；每項任務都會檢查目前授權。',
+      sourceUnsupported: '此主機不支援讀取原始碼。',
+      validationUnsupported: '此主機不支援成功完成專案驗證和整合。',
+      validationRequired: '專案驗證和整合需要受支援的沙箱及專案依賴；尚未檢查就緒狀態。'
+    },
     title: '建立組織',
     description: '建立擁有獨立工作和設定的組織。你可以自行選擇何時切換。',
     credentials: '請為此組織單獨設定 OpenAI API 金鑰。憑證由應用程式隔離，並非作業系統沙箱。',
     limits:
-      '版本 1 僅支援直接存取 OpenAI API 及不使用工具的組織工作。不支援一般代理聊天、工具、OAuth 或訂閱登入、其他供應商和自訂端點。',
+      '此隔離組織使用自己的 OpenAI API 連線。選取後將另行檢查目前原始碼工作的支援情況；建立組織不會授予資料夾或工具存取權限。',
     organizationName: '組織名稱',
     ownerName: '你的顯示名稱',
     namesHint: '兩個名稱皆為必填，每個最多 160 個字元，不可包含控制字元。',
@@ -247,12 +295,21 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ar: {
+    sourceCapability: {
+      unknown: 'قدرة العمل على المصدر حاليًا غير معروفة أو غير متاحة. هذا لا يصف عمل المؤسسة النصي فقط.',
+      available: 'يتوفر تنفيذ العمل على المصدر ضمن نطاق محدد.',
+      grants:
+        'يلزم منح صلاحيات صريحة للمجلدات والأدوات. هذا لا يؤكد الإذن أو الجاهزية؛ تُفحص الصلاحيات الحالية لكل مهمة.',
+      sourceUnsupported: 'قراءة المصدر غير مدعومة على هذا المضيف.',
+      validationUnsupported: 'إكمال التحقق من المشروع ودمجه بنجاح غير مدعوم على هذا المضيف.',
+      validationRequired: 'يتطلب التحقق من المشروع ودمجه بيئة العزل المدعومة واعتماديات المشروع؛ لم تُفحص الجاهزية.'
+    },
     title: 'إنشاء مؤسسة',
     description: 'أنشئ مؤسسة لها أعمالها وإعداداتها الخاصة. أنت تختار وقت التبديل إليها.',
     credentials:
       'أعدّ مفتاح OpenAI API منفصلًا لهذه المؤسسة. يعزل التطبيق بيانات الاعتماد؛ وهذا ليس عزلًا على مستوى نظام التشغيل.',
     limits:
-      'يدعم الإصدار 1 الوصول المباشر إلى OpenAI API وأعمال المؤسسة دون أدوات فقط. لا يدعم دردشة الوكلاء المعتادة أو الأدوات أو تسجيل الدخول عبر OAuth أو الاشتراكات أو المزوّدين الآخرين أو نقاط الاتصال المخصصة.',
+      'تستخدم هذه المؤسسة المعزولة اتصال OpenAI API الخاص بها. يُتحقق من دعم العمل على المصدر بعد اختيارها؛ لا يمنح الإنشاء صلاحية الوصول إلى المجلدات أو الأدوات.',
     organizationName: 'اسم المؤسسة',
     ownerName: 'اسمك المعروض',
     namesHint: 'الاسمان مطلوبان: حتى 160 محرفًا لكل اسم، دون محارف تحكم.',
@@ -302,13 +359,24 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     }
   },
   ru: {
+    sourceCapability: {
+      unknown:
+        'Текущая поддержка работы с исходным кодом неизвестна или недоступна. Это не описывает текстовую работу организации.',
+      available: 'Реализация работы с исходным кодом в заданных границах доступна.',
+      grants:
+        'Нужны явные разрешения на папки и инструменты. Это не подтверждение доступа или готовности; текущие разрешения проверяются для каждого задания.',
+      sourceUnsupported: 'Чтение исходного кода на этом хосте не поддерживается.',
+      validationUnsupported: 'Успешная проверка и интеграция проекта на этом хосте не поддерживаются.',
+      validationRequired:
+        'Для проверки и интеграции проекта нужны поддерживаемая песочница и зависимости проекта; готовность не проверена.'
+    },
     title: 'Создать организацию',
     description:
       'Создайте организацию с собственными задачами и настройками. Вы сами выбираете, когда на неё переключиться.',
     credentials:
       'Настройте отдельный ключ OpenAI API для этой организации. Учётные данные разделены приложением; это не песочница операционной системы.',
     limits:
-      'Версия 1 поддерживает только прямой доступ к OpenAI API и работу организации без инструментов. Обычный чат с агентом, инструменты, вход через OAuth или подписку, другие провайдеры и пользовательские адреса API не поддерживаются.',
+      'Эта изолированная организация использует собственное подключение к OpenAI API. Поддержка работы с исходным кодом проверяется отдельно после выбора; создание не предоставляет доступ к папкам или инструментам.',
     organizationName: 'Название организации',
     ownerName: 'Ваше отображаемое имя',
     namesHint: 'Оба поля обязательны: до 160 символов в каждом, без управляющих символов.',

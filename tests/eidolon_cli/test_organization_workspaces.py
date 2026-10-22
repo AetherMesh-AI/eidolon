@@ -866,3 +866,39 @@ def test_real_organization_agent_uses_only_owned_route_without_tools_or_probe(or
     assert str(request.url) == isolation.ENDPOINT + '/chat/completions'
     assert request.headers['authorization'] == 'Bearer workspace-owned-synthetic-key'
     assert not body.get('tools') and not body.get('functions')
+
+
+@pytest.mark.parametrize('platform_name,os_name,reading,validation', [
+    ('linux', 'posix', 'supported', 'requires-sandbox'),
+    ('darwin', 'posix', 'supported', 'unsupported'),
+    ('win32', 'nt', 'unsupported', 'unsupported'),
+])
+def test_current_source_capability_preserves_historical_receipt(origin, monkeypatch,
+        platform_name, os_name, reading, validation):
+    home, receipt = create(origin)
+    marker = (home / isolation.MARKER).read_bytes()
+    operation = origin.home / isolation.WORKSPACES / 'operations' / isolation.read_isolation(home)['operation'] / 'operation.json'
+    historical = operation.read_bytes()
+    import tui_gateway.server as server
+    from tests.tui_gateway.test_organization_metadata import call
+    monkeypatch.setattr(server, '_eidolon_home', home)
+    descriptor = call()['result']
+    assert descriptor['runtimeCapability'] == isolation.source_runtime_capability(home)
+    assert descriptor['isolation']['executionMode'] == 'tool-free-organization'
+    assert descriptor['scope']['profile'] == receipt['profile']
+    # Only the pure host classification is simulated; registration uses the real host.
+    with monkeypatch.context() as patch:
+        patch.setattr(isolation, 'verify_isolation', lambda path: {'registered': True})
+        patch.setattr(sys, 'platform', platform_name)
+        patch.setattr(os, 'name', os_name)
+        capability = isolation.source_runtime_capability(home)
+    assert capability == {'version': 1, 'mode': 'scheduler-scoped-organization',
+        'requestTypes': ['work.inspect', 'work.edit'], 'provider': 'openai-api',
+        'credentialScope': 'profile-local', 'grantsIncluded': False,
+        'host': {'sourceReading': reading, 'projectValidation': validation}}
+    assert workspaces.create_workspace(origin.home, params(origin)) == receipt
+    assert receipt['executionMode'] == 'tool-free-organization'
+    assert 'runtimeCapability' not in receipt
+    assert operation.read_bytes() == historical
+    assert (home / isolation.MARKER).read_bytes() == marker
+    assert isolation.source_runtime_capability(origin.home) is None

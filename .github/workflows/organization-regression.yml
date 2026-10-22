@@ -222,7 +222,12 @@ jobs:
             tests/tui_gateway/test_organization_outcomes.py
           )
           projects_config_tests=(
+            tests/eidolon_cli/test_isolated_provider_inventory.py
+            tests/eidolon_cli/test_isolated_provider_presentation.py
             tests/eidolon_cli/test_organization_workspaces.py
+            tests/eidolon_cli/test_organization_reuse_contract_evidence.py
+            tests/eidolon_cli/test_organization_isolated_admission.py
+            tests/eidolon_cli/test_organization_isolated_project_e2e.py
             tests/tui_gateway/test_organization_workspaces.py
             tests/eidolon_cli/test_organization_project_registry.py
             tests/eidolon_cli/test_organization_milestones.py
@@ -574,6 +579,7 @@ jobs:
           const required = [
             ['subscription-native-journey.spec.ts', 'fresh profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
             ['subscription-native-journey.spec.ts', 'legacy-empty profile consents, chooses policy, reviews Improve, generates and explicitly creates'],
+            ['subscription-native-journey.spec.ts', 'empty isolated workspace connects dedicated ChatGPT without an ordinary model and creates once'],
             ['subscription-native-journey.spec.ts', 'uncertain synthetic inference blocks a new intent without retry or refund'],
             ['subscription-native-journey.spec.ts', 'known unsent inference recovers through one explicit retry without losing debt'],
             ['subscription-native-journey.spec.ts', 'initial publication refusal recovers locally before explicit new consent'],

@@ -940,3 +940,59 @@ it('lets a restarted no-catalog request be checked locally before explicit model
   expect(vi.mocked(h.client.generate).mock.calls[0]![1].idempotencyKey).not.toBe(saved.idempotencyKey)
   expect(h.client.reconcileSubscriptionRequest).toHaveBeenCalledTimes(1)
 })
+
+it('connects dedicated ChatGPT from an empty workspace through consent, policy, Generate and Create', async () => {
+  const h = harness({
+    ...subscriptionSetup,
+    readiness: { ...subscriptionSetup.readiness, blockers: ['generation_route_unsupported', 'model_not_configured'] }
+  })
+
+  expect(h.client.beginSubscription).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText(teamCopy.jobs), { target: { value: 'Research changes' } })
+  fireEvent.change(screen.getByLabelText(teamCopy.goals), { target: { value: 'Reliable weekly summary' } })
+  expect((screen.getByRole('button', { name: teamCopy.generate }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+  await screen.findByLabelText(copy.consentCheck)
+  fireEvent.click(screen.getByLabelText(copy.consentCheck))
+  fireEvent.click(screen.getByRole('button', { name: copy.continue }))
+  await screen.findByRole('button', { name: copy.loadModels })
+  fireEvent.click(screen.getByRole('button', { name: copy.loadModels }))
+  await screen.findByLabelText(copy.model)
+  fireEvent.change(screen.getByLabelText(copy.model), { target: { value: subscriptionPolicy.modelSlug } })
+  fireEvent.click(screen.getByRole('button', { name: copy.review }))
+  await screen.findByLabelText(copy.ack)
+  fireEvent.click(screen.getByLabelText(copy.ack))
+  fireEvent.click(screen.getByRole('button', { name: copy.apply }))
+  await screen.findByText(copy.changed)
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.improve).not.toHaveBeenCalled()
+  expect((screen.getByRole('button', { name: teamCopy.generate }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: copy.loadModels }))
+  await waitFor(() => expect((screen.getByRole('button', { name: teamCopy.generate }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+  await screen.findByRole('button', { name: teamCopy.create })
+  expect(h.client.generate).toHaveBeenCalledTimes(1)
+  expect(h.client.create).not.toHaveBeenCalled()
+  expect(h.client.improve).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.create }))
+  await waitFor(() => expect(h.onCreated).toHaveBeenCalledTimes(1))
+  expect(h.client.beginSubscription).toHaveBeenCalledTimes(1)
+  expect(h.client.applySubscriptionPolicy).toHaveBeenCalledTimes(1)
+  expect(h.client.create).toHaveBeenCalledTimes(1)
+})
+
+it.each(['unsupported_platform', 'local_owner_required'] as const)(
+  'does not offer the empty-workspace connection when capability is %s',
+  async setupSubscriptionState => {
+    const h = harness({
+      ...subscriptionSetup,
+      setupSubscriptionState,
+      readiness: { ...subscriptionSetup.readiness, blockers: ['generation_route_unsupported', 'model_not_configured'] }
+    })
+
+    expect(screen.queryByRole('button', { name: copy.inspect })).toBeNull()
+    expect(h.client.subscriptionStatus).not.toHaveBeenCalled()
+    expect(h.client.beginSubscription).not.toHaveBeenCalled()
+    expect(h.client.generate).not.toHaveBeenCalled()
+  }
+)

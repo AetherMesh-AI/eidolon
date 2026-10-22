@@ -77,6 +77,41 @@ def pytest_runtest_logreport(report):
              "outcome": report.outcome, "nodeid": report.nodeid})
 
 
+def record_policy_exception(exc, phase):
+    """Retain frame locations before worker cleanup; never serialize error values."""
+    if _output_directory is None:
+        return
+    chain, seen = [], set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        frames, tb = [], exc.__traceback__
+        while tb is not None:
+            code = tb.tb_frame.f_code
+            frames.append({'file': re.split(r'[/\\]', code.co_filename)[-1],
+                           'line': tb.tb_lineno, 'function': code.co_name})
+            tb = tb.tb_next
+        reason = getattr(exc, 'reason', None)
+        chain.append({'type': type(exc).__name__, 'frames': frames,
+                      'reason': reason if type(reason) is str and reason in {
+                          'locked', 'deadline', 'cancelled', 'reentrant', 'queue_full'
+                      } else None})
+        # OwnerPolicyError suppresses display of the underlying gate error.
+        exc = exc.__cause__ if exc.__cause__ is not None else exc.__context__
+    try:
+        _record({'event': 'concurrent-policy-exception', 'phase': phase,
+                 'thread': threading.get_ident(), 'chain': chain})
+    except OSError:
+        pass  # A failed evidence write must not replace the original exception.
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    if (item.name == 'test_same_key_concurrent_apply_returns_one_receipt_and_one_generation'
+            and call.excinfo is not None):
+        record_policy_exception(call.excinfo.value, call.when)
+    return (yield)
+
+
 @pytest.hookimpl(wrapper=True)
 def pytest_fixture_setup(fixturedef, request):
     started = time.monotonic()

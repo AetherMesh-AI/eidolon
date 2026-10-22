@@ -129,7 +129,7 @@ const API_KEY_OPTIONS: ApiKeyOption[] = [
 // other api_key provider is appended with a generic "paste {KEY}" affordance.
 // OAuth / external providers are intentionally excluded here — they go through
 // the OAuth picker / sign-in flow, not a pasted key.
-function useApiKeyCatalog(): ApiKeyOption[] {
+function useApiKeyCatalog(supportedProviders?: string[], profile?: string): ApiKeyOption[] {
   const [rows, setRows] = useState<ModelOptionProvider[]>([])
 
   useEffect(() => {
@@ -139,7 +139,7 @@ function useApiKeyCatalog(): ApiKeyOption[] {
     // Promise.resolve().then so a synchronous throw (e.g. no desktop bridge in
     // tests) is funneled into the same .catch instead of escaping.
     void Promise.resolve()
-      .then(() => getGlobalModelOptions({ includeUnconfigured: true, explicitOnly: false }))
+      .then(() => getGlobalModelOptions({ includeUnconfigured: true, explicitOnly: false }, profile))
       .then(res => {
         if (!cancelled) {
           setRows(res.providers ?? [])
@@ -152,7 +152,7 @@ function useApiKeyCatalog(): ApiKeyOption[] {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [profile])
 
   return useMemo(() => {
     const curatedByEnv = new Map(API_KEY_OPTIONS.map(o => [o.envKey, o]))
@@ -162,7 +162,8 @@ function useApiKeyCatalog(): ApiKeyOption[] {
     for (const row of rows) {
       // Only api_key providers can be activated with a pasted key. Skip OAuth /
       // external / managed flows and anything missing an env var to write to.
-      if (row.auth_type && row.auth_type !== 'api_key') {
+      if ((supportedProviders && !supportedProviders.includes(row.slug)) ||
+          (row.auth_type && row.auth_type !== 'api_key')) {
         continue
       }
 
@@ -186,8 +187,9 @@ function useApiKeyCatalog(): ApiKeyOption[] {
     // long tail is scannable.
     derived.sort((a, b) => a.name.localeCompare(b.name))
 
-    return [...API_KEY_OPTIONS.filter(o => curatedByEnv.has(o.envKey)), ...derived]
-  }, [rows])
+    return [...API_KEY_OPTIONS.filter(o => curatedByEnv.has(o.envKey) &&
+      (!supportedProviders || supportedProviders.includes(o.id === 'openai' ? 'openai-api' : o.id))), ...derived]
+  }, [rows, supportedProviders])
 }
 
 // Exit choreography, mirroring the gateway "connecting" overlay's timing:
@@ -488,7 +490,7 @@ const persistShowAll = (value: boolean) => {
 
 export function Picker({ ctx }: { ctx: OnboardingContext }) {
   const { t } = useI18n()
-  const { localEndpoint, manual, mode, providers } = useStore($desktopOnboarding)
+  const { localEndpoint, manual, mode, providers, supportedProviders } = useStore($desktopOnboarding)
   const [showAll, setShowAll] = useState(readShowAll)
   // Which key-form option to preselect when we flip to 'apikey' mode. The
   // OpenRouter row selects its key; the generic link lands on the first option.
@@ -501,7 +503,18 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
 
   const ordered = useMemo(() => (providers ? sortProviders(providers) : []), [providers])
   const hasOauth = ordered.length > 0
-  const apiKeyOptions = useApiKeyCatalog()
+  const apiKeyOptions = useApiKeyCatalog(supportedProviders, ctx.profile)
+
+  if (providers === null) {
+    return <Status>{t.onboarding.lookingUpProviders}</Status>
+  }
+
+  if (!hasOauth && apiKeyOptions.length === 0) {
+    return <div className="grid gap-3">
+      <Status>{t.settings.toolsets.noProviderOptions}</Status>
+      {!manual && <ChooseLaterLink />}
+    </div>
+  }
 
   // localEndpoint forces the key form regardless of `mode` (which a manual
   // provider refresh may flip back to 'oauth'); it preselects the local option
@@ -526,9 +539,6 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
     )
   }
 
-  if (providers === null) {
-    return <Status>{t.onboarding.lookingUpProviders}</Status>
-  }
 
   const select = (p: OAuthProvider) => void startProviderOAuth(p, ctx)
   const featured = ordered.find(p => p.id === FEATURED_ID) ?? null

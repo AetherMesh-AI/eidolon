@@ -1254,3 +1254,46 @@ test.describe('host-native subscription setup', () => {
     })
   })
 })
+
+test('empty isolated workspace connects dedicated ChatGPT without an ordinary model and creates once', async () => {
+  test.skip(process.platform !== 'darwin', 'Dedicated subscription setup requires the native Mac owner')
+  fixture = await setupNativeSubscription({ emptyIsolated: true })
+  const dialog = await openSetup(true)
+  expect(fixture.snapshot().model).toEqual({})
+  await dialog.getByRole('button', { name: 'Model settings', exact: true }).click()
+  await expect(fixture.page.getByText('OpenAI', { exact: true })).toBeVisible()
+  await expect(fixture.page.getByText('ChatGPT or Codex Subscription', { exact: true })).toHaveCount(0)
+  await expect(fixture.page.getByText('Fireworks AI', { exact: true })).toHaveCount(0)
+  // Closing Model settings triggers one existing teamSetup refresh. Own that
+  // exact UI action/reply before starting the separate connection sequence.
+  const returned = await fixture.performSetupAction('checkConfiguration', () =>
+    fixture!.page.getByRole('button', { name: 'Close', exact: true }).last().click())
+  expect(returned.steps).toMatchObject([{ method: 'organization.teamSetup', phase: 'result',
+    shape: { state: 'available', organizationMatches: true, sourceMatchesAction: true } }])
+  await expect(dialog).toBeVisible()
+  const before = await activate(dialog, false)
+  await completeInference(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }), 'generateTeam')
+  await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash')
+  expect(fixture.snapshot().teams).toEqual([])
+  await dialog.getByLabel('Name', { exact: true }).first().fill('Ash Reviewed')
+  await expect(dialog.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Review changes', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Create team', exact: true }).click()
+  await expect(fixture.page.getByRole('dialog', { name: 'Team saved', exact: true })).toBeVisible()
+  const after = fixture.snapshot()
+  expect(after.model).toEqual(before.model)
+  expect(after.teams).toHaveLength(1)
+  expect(after.generations).toHaveLength(1)
+  expect(after.dispatches).toHaveLength(1)
+  expect(fixture.events().filter(row => row.kind === 'responses').map(row => row.operation)).toEqual(['generate'])
+  expect(fixture.events().filter(row => row.kind === 'ordinary-responses')).toEqual([])
+  expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
+  fixture.assertQuiet(1)
+  await fixture.page.getByRole('dialog', { name: 'Team saved', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(fixture.page.locator('.eid-team-entry')).toHaveCount(0)
+  await test.info().attach('empty-isolated-setup-proof', { contentType: 'application/json',
+    body: JSON.stringify({ ordinaryModel: after.model, teams: after.teams.length,
+      generates: after.generations.length, dispatches: after.dispatches.length,
+      improve: 0, executionCounts: after.counts, nonFreshEntryRemoved: true }) })
+})

@@ -55,6 +55,7 @@ export interface DesktopOnboardingState {
   flow: OnboardingFlow
   mode: OnboardingMode
   providers: null | OAuthProvider[]
+  supportedProviders?: string[]
   reason: null | string
   requested: boolean
   /** True when the user explicitly chose "I'll choose a provider later" on the
@@ -153,6 +154,7 @@ const INITIAL: DesktopOnboardingState = {
   flow: { status: 'idle' },
   mode: 'oauth',
   providers: null,
+  supportedProviders: undefined,
   reason: null,
   requested: false,
   firstRunSkipped: readCachedSkipped(),
@@ -434,6 +436,7 @@ async function refreshProviders(ctx?: OnboardingContext) {
   const owner = ctx?.shouldPublish
   const profile = ctx?.profile ?? $desktopOnboarding.get().targetProfile
   const generation = flowGeneration
+  const managementProvider = $desktopOnboarding.get().manual ? pendingProviderOAuthId : null
 
   if (owner && !owner()) {return}
 
@@ -448,13 +451,18 @@ async function refreshProviders(ctx?: OnboardingContext) {
 
   const promise = Promise.resolve().then(async () => {
     try {
-      const { providers } = await listOAuthProviders(profile)
+      const response = await listOAuthProviders(profile, managementProvider === null)
+
+      const providers = managementProvider === null ? response.providers :
+        response.providers.filter(provider => provider.id === managementProvider)
+
+      const supportedProviders = response.supportedProviders
 
       if (generation !== flowGeneration || (owner && !owner())) {return}
-      patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers })
+      patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers, supportedProviders })
     } catch {
       if (generation !== flowGeneration || (owner && !owner())) {return}
-      patch({ mode: 'apikey', providers: [] })
+      patch({ mode: 'apikey', providers: [], supportedProviders: [] })
     } finally {
       if (providersRefresh?.token === token) {providersRefresh = null}
     }
@@ -510,10 +518,12 @@ export function consumePendingCredentialWarning(): null | string {
 export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONBOARDING_REASON, profile?: string) {
   cancelOnboardingFlow()
   providersRefresh = null
+  pendingProviderOAuthId = null
   patch({
     manual: true,
     targetProfile: profile,
     providers: null,
+    supportedProviders: undefined,
     requested: true,
     localEndpoint: false,
     // `null` opts out of the prompt banner entirely (e.g. when the user already
@@ -537,6 +547,7 @@ export function startManualLocalEndpoint(reason: null | string = null, profile?:
     manual: true,
     targetProfile: profile,
     providers: null,
+    supportedProviders: undefined,
     requested: true,
     localEndpoint: true,
     mode: 'apikey',
@@ -554,8 +565,8 @@ export function startManualLocalEndpoint(reason: null | string = null, profile?:
 let pendingProviderOAuthId: null | string = null
 
 export function startManualProviderOAuth(providerId: string, profile?: string) {
-  pendingProviderOAuthId = providerId
   startManualOnboarding(null, profile)
+  pendingProviderOAuthId = providerId
 }
 
 // Read the pending provider id without clearing it. The overlay only clears it
@@ -592,6 +603,7 @@ export function completeDesktopOnboarding() {
     flow: { status: 'idle' },
     mode: 'oauth',
     providers: null,
+    supportedProviders: undefined,
     reason: null,
     requested: false,
     firstRunSkipped: false,
