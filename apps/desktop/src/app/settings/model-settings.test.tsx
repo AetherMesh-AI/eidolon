@@ -890,3 +890,46 @@ it('keeps explicit primary scope pinned while the ambient profile changes', asyn
     $activeGatewayProfile.set(previous)
   }
 })
+
+it('distinguishes a sibling fallback catalog retry from one explicit model refresh', async () => {
+  const { ModelSettings } = await import('./model-settings')
+  const { FallbackModelsField } = await import('./fallback-models-field')
+  const client = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 60_000 } } })
+  const catalog = { providers: [{ name: 'Nous', slug: 'nous', models: ['hermes-4'], authenticated: true }] }
+  getGlobalModelOptions.mockRejectedValueOnce(new Error('synthetic unavailable'))
+    .mockRejectedValueOnce(new Error('synthetic unavailable'))
+
+  vi.useFakeTimers()
+  try {
+    await act(async () => {
+      render(<MemoryRouter><QueryClientProvider client={client}>
+        <ModelSettings />
+        <FallbackModelsField onChange={vi.fn()} value={[]} />
+      </QueryClientProvider></MemoryRouter>)
+    })
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(2)
+    expect(client.getQueryState(['model-options', 'global'])?.fetchFailureCount).toBe(1)
+    let resolveCatalog!: (value: unknown) => void
+    getGlobalModelOptions.mockReturnValueOnce(new Promise(resolve => { resolveCatalog = resolve }))
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    fireEvent.click(refresh)
+    fireEvent.click(refresh)
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(3)
+    await act(async () => resolveCatalog(catalog))
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(3)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    // The fallback query retries independently; the explicit refresh still sent
+    // exactly one options request and one of each companion request.
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(4)
+    expect(client.getQueryState(['model-options', 'global'])?.status).toBe('success')
+    expect(getGlobalModelInfo).toHaveBeenCalledTimes(2)
+    expect(getAuxiliaryModels).toHaveBeenCalledTimes(2)
+    expect(getMoaModels).toHaveBeenCalledTimes(2)
+    expect(setModelAssignment).not.toHaveBeenCalled()
+    expect(saveHermesConfig).not.toHaveBeenCalled()
+  } finally {
+    cleanup()
+    client.clear()
+    vi.useRealTimers()
+  }
+})
