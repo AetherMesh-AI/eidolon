@@ -11,9 +11,12 @@ import { useI18n } from '@/i18n'
 import { ExternalLink, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
+  $desktopOnboarding,
   cancelOnboardingFlow,
+  closeManualOnboarding,
   copyDeviceCode,
   copyExternalCommand,
+  dismissFirstRunOnboarding,
   type OnboardingContext,
   type OnboardingFlow,
   recheckExternalSignin,
@@ -53,6 +56,22 @@ export function FlowPanel({
 
   if (flow.status === 'confirming_model') {
     return <ConfirmingModelPanel flow={flow} leaving={leaving} onBegin={onBegin} profile={ctx.profile} />
+  }
+
+  if (flow.status === 'authenticated_unavailable') {
+    return (
+      <Step title={t.onboarding.accountAuthenticated(title)}>
+        <p className="text-sm text-muted-foreground">{t.onboarding.accountRuntimeUnavailable}</p>
+        {flow.reason && <p className="text-sm text-muted-foreground">{flow.reason}</p>}
+        <div className="flex justify-end">
+          <Button
+            onClick={() => ($desktopOnboarding.get().manual ? closeManualOnboarding() : dismissFirstRunOnboarding())}
+          >
+            {t.common.close}
+          </Button>
+        </div>
+      </Step>
+    )
   }
 
   if (flow.status === 'error') {

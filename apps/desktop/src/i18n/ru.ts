@@ -3181,6 +3181,9 @@ export const ru = defineLocale({
     startingSignIn: provider => `Начинаем вход для ${provider}...`,
     verifyingCode: provider => `Проверяем ваш код через ${provider}...`,
     connectedProvider: provider => `${provider} подключён`,
+    accountAuthenticated: provider => `Аккаунт ${provider} подключён`,
+    accountRuntimeUnavailable:
+      'Вход выполнен, но эта рабочая область ещё не готова использовать провайдера. Проверьте провайдера и модель в настройках. Повторять вход только из-за недоступной настройки выполнения не нужно.',
     connectedPicking: provider => `${provider} подключён. Выбираем модель по умолчанию...`,
     signInFailed: 'Вход не удался. Попробуйте снова.',
     pickDifferentProvider: 'Выбрать другого провайдера',

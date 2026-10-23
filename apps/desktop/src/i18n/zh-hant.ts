@@ -2751,6 +2751,9 @@ export const zhHant = defineLocale({
     startingSignIn: provider => `正在為 ${provider} 啟動登入...`,
     verifyingCode: provider => `正在透過 ${provider} 驗證您的代碼...`,
     connectedProvider: provider => `${provider} 已連線`,
+    accountAuthenticated: provider => `${provider} 帳號已連線`,
+    accountRuntimeUnavailable:
+      '登入成功，但此工作區尚無法使用該提供方。請在設定中檢查提供方和模型。無需僅因執行設定不可用而重複登入。',
     connectedPicking: provider => `${provider} 已連線。正在選擇預設模型...`,
     signInFailed: '登入失敗，請重試。',
     signInExpired:
