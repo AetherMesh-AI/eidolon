@@ -294,6 +294,11 @@ class ClientLifecycleMixin:
         return True
 
     def _ensure_primary_openai_client(self, *, reason: str) -> Any:
+        if getattr(self, '_isolated_codex_auth', None) is not None:
+            from eidolon_cli.profile_codex_auth import refresh_agent_auth
+            if refresh_agent_auth(self):
+                if not self._replace_primary_openai_client(reason='profile_owned_codex_refresh'):
+                    raise RuntimeError('The workspace Codex client could not be rebuilt after refresh')
         with self._openai_client_lock():
             client = getattr(self, "client", None)
             if client is not None and not self._is_openai_client_closed(client):
@@ -547,6 +552,13 @@ class ClientLifecycleMixin:
         return self._replace_primary_openai_client(reason=reason)
 
     def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
+        if getattr(self, '_isolated_workspace_home', None) is not None:
+            from eidolon_cli.profile_codex_auth import refresh_agent_auth
+            if self.provider != 'openai-codex' or not refresh_agent_auth(self, force=force):
+                return False
+            if not self._replace_primary_openai_client(reason='profile_owned_codex_refresh'):
+                raise RuntimeError('The workspace Codex client could not be rebuilt after refresh')
+            return True
         if self.api_mode != "codex_responses" or self.provider not in {"openai-codex", "xai-oauth"}:
             return False
         # No silent account swap: a non-singleton credential (manual pool entry, explicit api_key=) must not be

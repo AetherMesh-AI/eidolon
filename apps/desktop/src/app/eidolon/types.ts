@@ -500,7 +500,16 @@ export interface OrganizationUsage {
   outputTokens: number
   inputTokens: number
   usageComplete: boolean
-  perCallOutputLimit: number
+  perCallOutputLimit: number | null
+  subscriptionBudget?: {
+    version: 1
+    calls: number
+    outputContract: 'reservation-only'
+    providerOutputCeiling: false
+    reportedInputTokens: number | null
+    reportedOutputTokens: number | null
+    usageComplete: boolean
+  }
   modelCalls?: number
   modelCallLimit?: number
   reservedTokens?: number

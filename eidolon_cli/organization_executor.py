@@ -901,10 +901,11 @@ class _ToolFreeBoundary:
         if any(type(cap) is not int or not 0 < cap <= output for cap in caps):
             self._organization_intervention = 'The provider request exceeds the configured organization output-token limit.'
             raise OrganizationExecutionError(self._organization_intervention)
-        if not caps:
+        subscription = getattr(self, '_isolated_codex_auth', None) is not None and self.provider == 'openai-codex'
+        if not caps and not subscription:
             self._organization_intervention = 'This provider request has no enforceable output-token cap; select a direct API transport that supports one.'
             raise OrganizationExecutionError(self._organization_intervention)
-        output = max(caps)
+        output = max(caps) if caps else output
         # OpenAI/Anthropic SDK clients disable their own retries. Responses may
         # reconnect once; Anthropic may retry once without streaming. Reserve
         # both potential sends conservatively; unused reservations are retained.
@@ -912,7 +913,7 @@ class _ToolFreeBoundary:
             attempts = 2 if self.api_mode in {'codex_responses', 'anthropic_messages', 'bedrock_converse'} else 1
         for _ in range(attempts):
             try:
-                reserve(provider=str(self.provider or ''), model=str(options.get('model') or options.get('modelId') or self.model),
+                self._organization_last_call_id = reserve(provider=str(self.provider or ''), model=str(options.get('model') or options.get('modelId') or self.model),
                         input_limit=wire_input_bound(options) + CONTEXT_RESERVE_TOKENS, output_limit=output)
             except OrganizationPacingDeferred as wait:
                 self._organization_pacing_wait = wait
@@ -928,7 +929,8 @@ class _ToolFreeBoundary:
         from agent.chat_completion_nonstream import _NonStreamRequest
 
         _check_stale_giveup(self)
-        self._organization_reserve_call(api_kwargs)
+        if getattr(self, '_isolated_codex_auth', None) is None:
+            self._organization_reserve_call(api_kwargs)
         request = (_bounded_bedrock_request(self, api_kwargs)
                    if self.api_mode == 'bedrock_converse' and getattr(self, '_organization_reserve', None)
                    else _NonStreamRequest(self, api_kwargs))
@@ -1226,6 +1228,8 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                 agent._organization_record_observation = context.get('recordModelObservation')
             else:
                 agent._organization_reserve = reserve
+                if getattr(agent, '_isolated_codex_auth', None) is not None:
+                    agent._organization_record_observation = context.get('recordModelObservation')
             _guard_plugin_integrations(tool_mode=execution is not None)
             agent._organization_check()
             result = agent.run_conversation(user_message=content)

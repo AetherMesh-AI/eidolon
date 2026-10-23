@@ -2252,7 +2252,7 @@ def init_agent(
     from eidolon_cli.profile_isolation import initialize_agent
     initialize_agent(agent, platform=platform, provider=provider, model=model, api_key=api_key,
                      base_url=base_url, api_mode=api_mode, enabled_toolsets=enabled_toolsets,
-                     fallback_model=fallback_model)
+                     fallback_model=fallback_model, credential_pool=credential_pool)
     _install_safe_stdio()
 
     _params = locals()

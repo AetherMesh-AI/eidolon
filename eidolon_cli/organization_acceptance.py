@@ -76,12 +76,16 @@ def final_artifact(conn, identifier):
 def usage_view(conn, control, settings):
     rows = conn.execute('SELECT * FROM objective_usage WHERE objective_id=?', (control['objective_id'],)).fetchall()
     from eidolon_cli.organization_budget import budget_view
-    return {**budget_view(conn, control['objective_id'], settings), 'stages': len(rows), 'stageLimit': min(control['max_stages'], settings.max_stages),
+    budget = budget_view(conn, control['objective_id'], settings)
+    subscription = budget.get('subscriptionBudget')
+    return {**budget, 'stages': len(rows), 'stageLimit': min(control['max_stages'], settings.max_stages),
             'inputTokens': sum(row['input_tokens'] or 0 for row in rows),
             'outputTokens': sum(row['output_tokens'] or 0 for row in rows),
-            'usageComplete': all(row['input_tokens'] is not None and row['output_tokens'] is not None for row in rows),
-            'perCallOutputLimit': settings.max_output_tokens,
-            'scope': 'Observed token totals; interrupted or unreported usage is unknown. Stage admission and per-call output are bounded; this is not a spending cap.'}
+            'usageComplete': all(row['input_tokens'] is not None and row['output_tokens'] is not None for row in rows)
+                             and (subscription is None or subscription['usageComplete']),
+            'perCallOutputLimit': None if subscription else settings.max_output_tokens,
+            'scope': ('Subscription output is reserved for admission but has no guaranteed provider-enforced ceiling. Reported per-attempt usage may exceed reservations; missing usage remains unknown. This is not a spending cap.' if subscription else
+                      'Observed token totals; interrupted or unreported usage is unknown. Stage admission and per-call output are bounded; this is not a spending cap.')}
 
 
 def validate_acceptance_result(result, criteria, expected):

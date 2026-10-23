@@ -46,6 +46,12 @@ const mode = (value: { isolationVersion?: unknown; credentialMode?: unknown; exe
 
 const providers = (value: unknown) => Array.isArray(value) && value.length === 1 && value[0] === 'openai-api'
 
+// Creation capability and receipts retain their historical contract. A current
+// destination descriptor may additionally advertise profile-owned Codex support.
+const destinationProviders = (value: unknown) => providers(value) || (
+  Array.isArray(value) && value.length === 2 && value[0] === 'openai-api' && value[1] === 'openai-codex'
+)
+
 export function creationCapability(value: unknown, profile: string): WorkspaceCreationCapability {
   const item = value as WorkspaceCreationCapability
 
@@ -156,7 +162,7 @@ export function verifyCreatedWorkspace(
     item.metadata.owner?.ownerId !== expected.ownerId ||
     !isolation ||
     !mode(isolation) ||
-    !providers(isolation.supportedProviders) ||
+    !destinationProviders(isolation.supportedProviders) ||
     isolation.profile !== expected.profile ||
     isolation.organizationId !== expected.organizationId ||
     isolation.ownerId !== expected.ownerId

@@ -7,15 +7,21 @@ from tests.eidolon_cli.test_isolated_provider_inventory import origin, workspace
 
 def test_empty_isolated_workspace_lists_only_supported_ordinary_provider(workspace):
     result = options()
-    assert {row['slug'] for row in result['providers']} == {'openai-api'}
+    assert {row['slug'] for row in result['providers']} == {'openai-api', 'openai-codex'}
 
 
 def test_isolated_oauth_catalog_does_not_offer_unsupported_signin(workspace, monkeypatch):
     from eidolon_cli.web_routers import oauth
-    status = Mock(side_effect=AssertionError('Unsupported OAuth status must not be inspected'))
+    def supported_status(provider, _function):
+        assert provider == 'openai-codex', 'Other OAuth providers must remain excluded'
+        return {'logged_in': False}
+    status = Mock(side_effect=supported_status)
     monkeypatch.setattr(oauth, '_resolve_provider_status', status)
-    assert asyncio.run(oauth.list_oauth_providers(execution_only=True)) == {'providers': [], 'supportedProviders': ['openai-api']}
-    status.assert_not_called()
+    result = asyncio.run(oauth.list_oauth_providers(execution_only=True))
+    assert result['supportedProviders'] == ['openai-api', 'openai-codex']
+    assert [row['id'] for row in result['providers']] == ['openai-codex']
+    assert result['providers'][0]['status'] == {'logged_in': False}
+    status.assert_called_once()
 
 
 def test_empty_workspace_already_has_dedicated_setup_capability(workspace, monkeypatch):

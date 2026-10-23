@@ -6,6 +6,7 @@ import { createOrganizationCreationClient } from './organization-creation-client
 import {
   createdWorkspace,
   creationCapability,
+  isolatedWorkspaceIdentity,
   restoreCreationIntent,
   verifyCreatedWorkspace,
   type WorkspaceCreationIntent
@@ -62,6 +63,28 @@ const liveDescriptor = {
   scope: { kind: 'served-profile', profile: receipt.profile },
   isolation: { ...receipt, supportedProviders: ['openai-api'] }
 }
+
+it('verifies current and historical destination providers without changing creation receipts', () => {
+  for (const supportedProviders of [['openai-api'], ['openai-api', 'openai-codex']]) {
+    const descriptor = { ...liveDescriptor, isolation: { ...liveDescriptor.isolation, supportedProviders } }
+    expect(() => verifyCreatedWorkspace(descriptor, receipt)).not.toThrow()
+    expect(isolatedWorkspaceIdentity(descriptor, receipt.profile)).toEqual({
+      profile: receipt.profile, organizationId: receipt.organizationId, ownerId: receipt.ownerId
+    })
+    expect(() => verifyCreatedWorkspace(descriptor, { ...receipt, ownerId: id(9) })).toThrow()
+    expect(() => isolatedWorkspaceIdentity(descriptor, 'default')).toThrow()
+  }
+
+  for (const supportedProviders of [undefined, [], ['openai-codex'], ['openai-codex', 'openai-api'],
+    ['openai-api', 'openai-api'], ['openai-api', 'other'], ['openai-api', 'openai-codex', 'other']]) {
+    const descriptor = { ...liveDescriptor, isolation: { ...liveDescriptor.isolation, supportedProviders } }
+    expect(() => verifyCreatedWorkspace(descriptor, receipt)).toThrow()
+    expect(() => isolatedWorkspaceIdentity(descriptor, receipt.profile)).toThrow()
+  }
+
+  expect(() => creationCapability({ ...capability, supportedProviders: ['openai-api', 'openai-codex'] }, 'default')).toThrow()
+  expect(createdWorkspace(receipt, intent)).toEqual(receipt)
+})
 
 function setup() {
   const data = new Map<string, string>()

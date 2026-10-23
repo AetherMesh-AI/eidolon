@@ -1261,9 +1261,12 @@ test('empty isolated workspace connects dedicated ChatGPT without an ordinary mo
   const dialog = await openSetup(true)
   expect(fixture.snapshot().model).toEqual({})
   await dialog.getByRole('button', { name: 'Model settings', exact: true }).click()
-  await expect(fixture.page.getByText('OpenAI', { exact: true })).toBeVisible()
-  await expect(fixture.page.getByText('ChatGPT or Codex Subscription', { exact: true })).toHaveCount(0)
+  await expect(fixture.page.getByText('ChatGPT or Codex Subscription', { exact: true })).toBeVisible()
   await expect(fixture.page.getByText('Fireworks AI', { exact: true })).toHaveCount(0)
+  await expect(fixture.page.getByRole('button', { name: /OpenRouter/ })).toHaveCount(0)
+  await expect(fixture.page.getByRole('button', { name: /Run models locally/ })).toHaveCount(0)
+  await fixture.page.getByRole('button', { name: 'I have an API key', exact: true }).click()
+  await expect(fixture.page.getByText('OpenAI', { exact: true })).toBeVisible()
   // Closing Model settings triggers one existing teamSetup refresh. Own that
   // exact UI action/reply before starting the separate connection sequence.
   const returned = await fixture.performSetupAction('checkConfiguration', () =>

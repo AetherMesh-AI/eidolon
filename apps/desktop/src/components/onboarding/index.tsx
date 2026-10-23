@@ -502,6 +502,7 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   }
 
   const ordered = useMemo(() => (providers ? sortProviders(providers) : []), [providers])
+  const supports = (id: string) => supportedProviders === undefined || supportedProviders.includes(id)
   const hasOauth = ordered.length > 0
   const apiKeyOptions = useApiKeyCatalog(supportedProviders, ctx.profile)
 
@@ -545,7 +546,7 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   const rest = ordered
   // Keep the existing provider disclosure preference. The network preview
   // is informational; every real OAuth provider remains in the catalog. The
-  // Fireworks/OpenRouter key rows always live behind the disclosure, so the
+  // Supported Fireworks/OpenRouter key rows live behind the disclosure, so the
   // toggle is warranted even when there are no other OAuth providers.
   const collapsible = Boolean(featured)
   const showRest = !collapsible || showAll
@@ -572,16 +573,16 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
         {/* The no-account path: everything runs on this machine. Shipped
             behind the --local launch flag. (Fireworks moved into the
             expanded list on main.) */}
-        {$localModelsEnabled.get() ? <LocalModelsProviderRow onClick={openLocalModels} /> : null}
+        {$localModelsEnabled.get() && supports('local') ? <LocalModelsProviderRow onClick={openLocalModels} /> : null}
         {showRest ? (
           <>
             {/* Fireworks leads the expanded list, matching CANONICAL_PROVIDERS
                 (Nous → Fireworks), but stays hidden until the user opens it. */}
-            <FireworksProviderRow onClick={() => openKeyForm('FIREWORKS_API_KEY')} />
+            {supports('fireworks') ? <FireworksProviderRow onClick={() => openKeyForm('FIREWORKS_API_KEY')} /> : null}
             {rest.map(p => (
               <ProviderRow key={p.id} onSelect={select} provider={p} />
             ))}
-            <OpenRouterProviderRow onClick={() => openKeyForm('OPENROUTER_API_KEY')} />
+            {supports('openrouter') ? <OpenRouterProviderRow onClick={() => openKeyForm('OPENROUTER_API_KEY')} /> : null}
           </>
         ) : null}
       </div>

@@ -290,7 +290,8 @@ def _codex_refresh_failure_error(response: "httpx.Response") -> AuthError:
 
 
 def refresh_codex_oauth_pure(
-    access_token: str, refresh_token: str, *, timeout_seconds: float = 20.0) -> Dict[str, Any]:
+    access_token: str, refresh_token: str, *, timeout_seconds: float = 20.0,
+    private_transport: bool = False) -> Dict[str, Any]:
     """Refresh Codex OAuth tokens without mutating Eidolon auth state."""
     from eidolon_cli.auth import _nonempty_str, _utc_now_z
     del access_token  # Access token is only used by callers to decide whether to refresh.
@@ -298,6 +299,7 @@ def refresh_codex_oauth_pure(
         raise _codex_err(
             _MISSING_REFRESH_TOKEN_MSG, "codex_auth_missing_refresh_token", relogin=True)
     with _codex_http_client(
+        **({"trust_env": False, "follow_redirects": False} if private_transport else {}),
         timeout=httpx.Timeout(max(5.0, float(timeout_seconds))),
         headers={"Accept": "application/json", "User-Agent": CODEX_OAUTH_USER_AGENT}) as client:
         response = client.post(

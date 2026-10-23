@@ -892,8 +892,9 @@ def test_current_source_capability_preserves_historical_receipt(origin, monkeypa
         patch.setattr(sys, 'platform', platform_name)
         patch.setattr(os, 'name', os_name)
         capability = isolation.source_runtime_capability(home)
-    assert capability == {'version': 1, 'mode': 'scheduler-scoped-organization',
-        'requestTypes': ['work.inspect', 'work.edit'], 'provider': 'openai-api',
+    assert capability == {'version': 2, 'mode': 'scheduler-scoped-organization',
+        'requestTypes': ['work.inspect', 'work.edit'], 'providers': ['openai-api', 'openai-codex'],
+        'outputContracts': {'openai-api': 'provider-cap', 'openai-codex': 'subscription-reservation'},
         'credentialScope': 'profile-local', 'grantsIncluded': False,
         'host': {'sourceReading': reading, 'projectValidation': validation}}
     assert workspaces.create_workspace(origin.home, params(origin)) == receipt

@@ -1,5 +1,6 @@
 import type { OrganizationCreationView } from '@/app/eidolon/organization-creation-client'
 
+import { subscriptionBudgetCopy } from './organization-subscription-budget'
 import type { Locale } from './types'
 
 export interface SourceCapabilityCopy {
@@ -9,6 +10,8 @@ export interface SourceCapabilityCopy {
   sourceUnsupported: string
   validationUnsupported: string
   validationRequired: string
+  subscriptionSupport: string
+  subscriptionLimitation: string
 }
 
 interface OrganizationCreationCopy {
@@ -45,6 +48,8 @@ interface OrganizationCreationCopy {
 export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> = {
   en: {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['en'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['en'].limitation,
       unknown:
         'Current source-work capability is unknown or unavailable. This does not describe text-only organization work.',
       available: 'Scoped source-work implementation is available.',
@@ -58,9 +63,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     title: 'Create organization',
     description: 'Create an organization with its own work and settings. You choose when to switch to it.',
     credentials:
-      'Configure a separate OpenAI API key for this organization. Credentials are separated by the application; this is not an operating-system sandbox.',
-    limits:
-      'This isolated organization uses its own direct OpenAI API route. Current source-work support is checked separately after selection; creation does not grant folder or tool access.',
+      'Configure this organization’s own OpenAI API key or Codex subscription connection in Settings. Credentials are separated by the application, not an operating-system sandbox.',
+    limits: subscriptionBudgetCopy['en'].support,
     organizationName: 'Organization name',
     ownerName: 'Your display name',
     namesHint: 'Both names are required: up to 160 characters each, without control characters.',
@@ -72,7 +76,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: 'Organization created. Switch explicitly when you are ready.',
     selected: 'Selected organization verified.',
     setupNote:
-      'Add its OpenAI API key in Settings. Choose a model here, or reopen model setup from Organizations. Opening setup does not check a provider connection or start work.',
+      'For a subscription, connect this organization in Settings → Accounts and select its Codex model in Model Settings. The shortcut below configures a direct API model. Configuration does not start work.',
     setupKeys: 'Set up OpenAI API key',
     setupModel: 'Set up OpenAI API model',
     modelId: 'OpenAI API model ID',
@@ -113,6 +117,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
   },
   ja: {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['ja'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['ja'].limitation,
       unknown:
         '現在のソース作業の対応状況は不明、または利用できません。テキストのみの組織作業の対応状況を示すものではありません。',
       available: '範囲を限定したソース作業の実装が利用可能です。',
@@ -126,9 +132,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     title: '組織を作成',
     description: '独自の作業と設定を持つ組織を作成します。切り替えるタイミングは自分で選べます。',
     credentials:
-      'この組織専用の OpenAI API キーを設定してください。認証情報はアプリケーションで分離されますが、OS のサンドボックスではありません。',
-    limits:
-      'この分離された組織は独自の OpenAI API 接続を使用します。ソース作業の対応状況は選択後に別途確認されます。作成によってフォルダーやツールへのアクセスが許可されることはありません。',
+      '設定で、この組織専用の OpenAI API キーまたは Codex サブスクリプションを接続してください。認証情報はアプリで分離され、OS のサンドボックスではありません。',
+    limits: subscriptionBudgetCopy['ja'].support,
     organizationName: '組織名',
     ownerName: 'あなたの表示名',
     namesHint: '両方の名前が必要です。それぞれ 160 文字以内で、制御文字は使用できません。',
@@ -140,7 +145,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: '組織を作成しました。準備ができたら切り替えてください。',
     selected: '選択した組織を確認しました。',
     setupNote:
-      '設定で組織専用の OpenAI API キーを追加してください。モデルはここで選択するか、「組織」からモデル設定を開いて選択できます。設定を開いてもプロバイダーの接続確認や作業は開始されません。',
+      'サブスクリプションは「設定 → アカウント」でこの組織に接続し、モデル設定で Codex モデルを選択します。下のショートカットは直接 API モデル用です。設定だけでは作業を開始しません。',
     setupKeys: 'OpenAI API キーを設定',
     setupModel: 'OpenAI API モデルを設定',
     modelId: 'OpenAI API モデル ID',
@@ -182,6 +187,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
   },
   zh: {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['zh'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['zh'].limitation,
       unknown: '当前源代码工作能力未知或不可用。这不代表纯文本组织工作的支持情况。',
       available: '限定范围的源代码工作实现可用。',
       grants: '需要明确的文件夹和工具授权。这不确认权限或就绪状态；每项任务都会检查当前授权。',
@@ -191,9 +198,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     },
     title: '创建组织',
     description: '创建拥有独立工作和设置的组织。你可以自行选择何时切换。',
-    credentials: '请为此组织单独配置 OpenAI API 密钥。凭据由应用程序隔离，并非操作系统沙盒。',
-    limits:
-      '此隔离组织使用自己的 OpenAI API 连接。选择后将单独检查当前源代码工作的支持情况；创建组织不会授予文件夹或工具访问权限。',
+    credentials: '在设置中配置此组织自己的 OpenAI API 密钥或 Codex 订阅连接。凭据由应用程序隔离，并非操作系统沙盒。',
+    limits: subscriptionBudgetCopy['zh'].support,
     organizationName: '组织名称',
     ownerName: '你的显示名称',
     namesHint: '两个名称均为必填，每个最多 160 个字符，不能包含控制字符。',
@@ -205,7 +211,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: '组织已创建。准备好后请手动切换。',
     selected: '已验证所选组织。',
     setupNote:
-      '在设置中添加此组织的 OpenAI API 密钥。在此处选择模型，或从“组织”重新打开模型设置。打开设置不会检查服务连接或开始工作。',
+      '订阅请在“设置 → 账户”连接此组织，并在模型设置中选择 Codex 模型。下方快捷方式配置直接 API 模型。配置不会启动工作。',
     setupKeys: '设置 OpenAI API 密钥',
     setupModel: '设置 OpenAI API 模型',
     modelId: 'OpenAI API 模型 ID',
@@ -239,6 +245,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
   },
   'zh-hant': {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['zh-hant'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['zh-hant'].limitation,
       unknown: '目前原始碼工作能力未知或無法使用。這不代表純文字組織工作的支援情況。',
       available: '限定範圍的原始碼工作實作可用。',
       grants: '需要明確的資料夾和工具授權。這不確認權限或就緒狀態；每項任務都會檢查目前授權。',
@@ -248,9 +256,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     },
     title: '建立組織',
     description: '建立擁有獨立工作和設定的組織。你可以自行選擇何時切換。',
-    credentials: '請為此組織單獨設定 OpenAI API 金鑰。憑證由應用程式隔離，並非作業系統沙箱。',
-    limits:
-      '此隔離組織使用自己的 OpenAI API 連線。選取後將另行檢查目前原始碼工作的支援情況；建立組織不會授予資料夾或工具存取權限。',
+    credentials: '在設定中配置此組織自己的 OpenAI API 金鑰或 Codex 訂閱連線。憑據由應用程式隔離，並非作業系統沙盒。',
+    limits: subscriptionBudgetCopy['zh-hant'].support,
     organizationName: '組織名稱',
     ownerName: '你的顯示名稱',
     namesHint: '兩個名稱皆為必填，每個最多 160 個字元，不可包含控制字元。',
@@ -262,7 +269,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: '組織已建立。準備好後請手動切換。',
     selected: '已驗證所選組織。',
     setupNote:
-      '在設定中新增此組織的 OpenAI API 金鑰。在此處選擇模型，或從「組織」重新開啟模型設定。開啟設定不會檢查服務連線或開始工作。',
+      '訂閱請在「設定 → 帳戶」連接此組織，並在模型設定中選擇 Codex 模型。下方捷徑配置直接 API 模型。設定不會啟動工作。',
     setupKeys: '設定 OpenAI API 金鑰',
     setupModel: '設定 OpenAI API 模型',
     modelId: 'OpenAI API 模型 ID',
@@ -296,6 +303,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
   },
   ar: {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['ar'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['ar'].limitation,
       unknown: 'قدرة العمل على المصدر حاليًا غير معروفة أو غير متاحة. هذا لا يصف عمل المؤسسة النصي فقط.',
       available: 'يتوفر تنفيذ العمل على المصدر ضمن نطاق محدد.',
       grants:
@@ -307,9 +316,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     title: 'إنشاء مؤسسة',
     description: 'أنشئ مؤسسة لها أعمالها وإعداداتها الخاصة. أنت تختار وقت التبديل إليها.',
     credentials:
-      'أعدّ مفتاح OpenAI API منفصلًا لهذه المؤسسة. يعزل التطبيق بيانات الاعتماد؛ وهذا ليس عزلًا على مستوى نظام التشغيل.',
-    limits:
-      'تستخدم هذه المؤسسة المعزولة اتصال OpenAI API الخاص بها. يُتحقق من دعم العمل على المصدر بعد اختيارها؛ لا يمنح الإنشاء صلاحية الوصول إلى المجلدات أو الأدوات.',
+      'اضبط مفتاح OpenAI API أو اتصال اشتراك Codex الخاص بهذه المؤسسة في الإعدادات. يعزل التطبيق بيانات الاعتماد، وليس صندوق حماية لنظام التشغيل.',
+    limits: subscriptionBudgetCopy['ar'].support,
     organizationName: 'اسم المؤسسة',
     ownerName: 'اسمك المعروض',
     namesHint: 'الاسمان مطلوبان: حتى 160 محرفًا لكل اسم، دون محارف تحكم.',
@@ -321,7 +329,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: 'تم إنشاء المؤسسة. بدّل إليها عندما تكون مستعدًا.',
     selected: 'تم التحقق من المؤسسة المحددة.',
     setupNote:
-      'أضف مفتاح OpenAI API الخاص بها في الإعدادات. اختر النموذج هنا، أو أعد فتح إعداد النموذج من المؤسسات. فتح الإعداد لا يفحص اتصال المزود ولا يبدأ العمل.',
+      'للاشتراك، اربط هذه المؤسسة في الإعدادات ← الحسابات واختر نموذج Codex في إعدادات النموذج. الاختصار أدناه يضبط نموذج API مباشرًا. الإعداد لا يبدأ العمل.',
     setupKeys: 'إعداد مفتاح OpenAI API',
     setupModel: 'إعداد نموذج OpenAI API',
     modelId: 'معرّف نموذج OpenAI API',
@@ -360,6 +368,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
   },
   ru: {
     sourceCapability: {
+      subscriptionSupport: subscriptionBudgetCopy['ru'].support,
+      subscriptionLimitation: subscriptionBudgetCopy['ru'].limitation,
       unknown:
         'Текущая поддержка работы с исходным кодом неизвестна или недоступна. Это не описывает текстовую работу организации.',
       available: 'Реализация работы с исходным кодом в заданных границах доступна.',
@@ -374,9 +384,8 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     description:
       'Создайте организацию с собственными задачами и настройками. Вы сами выбираете, когда на неё переключиться.',
     credentials:
-      'Настройте отдельный ключ OpenAI API для этой организации. Учётные данные разделены приложением; это не песочница операционной системы.',
-    limits:
-      'Эта изолированная организация использует собственное подключение к OpenAI API. Поддержка работы с исходным кодом проверяется отдельно после выбора; создание не предоставляет доступ к папкам или инструментам.',
+      'Настройте собственный ключ OpenAI API или подключение подписки Codex этой организации в настройках. Учётные данные разделены приложением, а не песочницей ОС.',
+    limits: subscriptionBudgetCopy['ru'].support,
     organizationName: 'Название организации',
     ownerName: 'Ваше отображаемое имя',
     namesHint: 'Оба поля обязательны: до 160 символов в каждом, без управляющих символов.',
@@ -388,7 +397,7 @@ export const organizationCreationCopy: Record<Locale, OrganizationCreationCopy> 
     created: 'Организация создана. Переключитесь на неё, когда будете готовы.',
     selected: 'Выбранная организация проверена.',
     setupNote:
-      'Добавьте её ключ OpenAI API в настройках. Выберите модель здесь или откройте настройку модели снова из списка организаций. Открытие настройки не проверяет подключение к провайдеру и не запускает работу.',
+      'Для подписки подключите эту организацию в разделе «Настройки → Аккаунты» и выберите модель Codex в настройках модели. Кнопка ниже настраивает прямой API. Настройка не запускает работу.',
     setupKeys: 'Настроить ключ OpenAI API',
     setupModel: 'Настроить модель OpenAI API',
     modelId: 'Идентификатор модели OpenAI API',
