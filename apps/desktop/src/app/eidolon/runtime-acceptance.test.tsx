@@ -135,3 +135,37 @@ it('shows durable reservation ceilings and unknown cost without inventing billin
   expect(screen.queryByText('Objective deadline (includes owner wait)')).toBeNull()
   expect(screen.getByText('8 / 16')).toBeTruthy()
 })
+
+it('distinguishes subscription reservations from reported usage and a provider output cap', () => {
+  const objective: Objective = {
+    id: 'subscription',
+    title: 'Inspect',
+    description: 'Inspect',
+    ownerId: 'executive',
+    status: 'active',
+    source: 'runtime',
+    createdAt: '2026-10-23T00:00:00Z',
+    usage: {
+      stages: 1,
+      stageLimit: 8,
+      inputTokens: 0,
+      outputTokens: 0,
+      usageComplete: false,
+      perCallOutputLimit: null,
+      subscriptionBudget: {
+        version: 1,
+        calls: 2,
+        outputContract: 'reservation-only',
+        providerOutputCeiling: false,
+        reportedInputTokens: null,
+        reportedOutputTokens: 900,
+        usageComplete: false
+      }
+    }
+  }
+
+  render(<RuntimeAcceptance objective={objective} onOpenEvidence={vi.fn()} />)
+  expect(screen.getByText(/not a guaranteed provider-enforced token ceiling/)).toBeTruthy()
+  expect(screen.getByText(/Subscription attempts: reported input \/ output tokens/).textContent).toContain('≥ 900')
+  expect(screen.getByText(/Subscription attempts: reported input \/ output tokens/).textContent).toContain('Unknown')
+})

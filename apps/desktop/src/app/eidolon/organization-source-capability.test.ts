@@ -1,8 +1,11 @@
-import { organizationCreationCopy } from '@/i18n/organization-creation'
 import { expect, it } from 'vitest'
-import { sourceRuntimeCapability, sourceCapabilityText } from './organization-source-capability'
+
+import { organizationCreationCopy } from '@/i18n/organization-creation'
+
+import { sourceCapabilityText, sourceRuntimeCapability } from './organization-source-capability'
 
 const copy = organizationCreationCopy.en.sourceCapability
+
 const capability = {
   version: 1,
   mode: 'scheduler-scoped-organization',
@@ -12,6 +15,7 @@ const capability = {
   grantsIncluded: false,
   host: { sourceReading: 'supported', projectValidation: 'requires-sandbox' }
 }
+
 it.each([
   undefined,
   null,
@@ -57,5 +61,23 @@ it.each(Object.entries(organizationCreationCopy))(
       [copy.sourceUnsupported, copy.validationUnsupported, copy.grants].join(' ')
     )
     expect(sourceCapabilityText(windows, copy)).not.toContain(copy.available)
+  }
+)
+
+it.each(Object.entries(organizationCreationCopy))(
+  'discloses the v2 subscription output contract in %s',
+  (_locale, translation) => {
+    const current = {
+      ...capability,
+      version: 2,
+      providers: ['openai-api', 'openai-codex'],
+      outputContracts: { 'openai-api': 'provider-cap', 'openai-codex': 'subscription-reservation' }
+    }
+
+    expect(sourceRuntimeCapability(current)).toEqual(current)
+    expect(sourceCapabilityText(current, translation.sourceCapability)).toContain(
+      translation.sourceCapability.subscriptionLimitation
+    )
+    expect(sourceRuntimeCapability({ ...current, outputContracts: { 'openai-codex': 'provider-cap' } })).toBeNull()
   }
 )

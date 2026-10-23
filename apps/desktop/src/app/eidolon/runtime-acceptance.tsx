@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
 import { outcomeContractCopy } from '@/i18n/organization-outcome-contracts'
+import { subscriptionBudgetCopy } from '@/i18n/organization-subscription-budget'
 
 import { LocalizedTime } from './localized-time'
 import { RuntimeAdaptivePacing } from './runtime-adaptive-pacing'
@@ -130,6 +131,23 @@ export function RuntimeAcceptance({
               </>
             )}
           </dl>
+          {usage.subscriptionBudget?.version === 1 && (
+            <>
+              <p className="eid-note">{subscriptionBudgetCopy[locale].limitation}</p>
+              <p>
+                {subscriptionBudgetCopy[locale].reported}
+                {!usage.subscriptionBudget.usageComplete && ` (${copy.unknownUsage})`}:{' '}
+                {!usage.subscriptionBudget.usageComplete &&
+                  usage.subscriptionBudget.reportedInputTokens != null &&
+                  '≥ '}
+                {usage.subscriptionBudget.reportedInputTokens ?? copy.unknownUsage} /{' '}
+                {!usage.subscriptionBudget.usageComplete &&
+                  usage.subscriptionBudget.reportedOutputTokens != null &&
+                  '≥ '}
+                {usage.subscriptionBudget.reportedOutputTokens ?? copy.unknownUsage}
+              </p>
+            </>
+          )}
           {usage.completionReserve && <RuntimeCompletionReserve costEnabled={usage.configuredCostLimitUsd != null} reserve={usage.completionReserve} />}
           {usage.adaptivePacing && <RuntimeAdaptivePacing costEnabled={usage.configuredCostLimitUsd != null} pacing={usage.adaptivePacing} />}
           <p className="eid-note">{usage.usageComplete ? copy.usageNote : copy.incompleteUsage}</p>
