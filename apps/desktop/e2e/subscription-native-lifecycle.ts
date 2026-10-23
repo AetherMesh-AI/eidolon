@@ -14,6 +14,20 @@ const reasons = [
 ] as const
 
 type Reason = (typeof reasons)[number]
+type CaptureDiagnostic = { check: string; scope: string; component: string }
+
+function captureDiagnostic(value: unknown): value is CaptureDiagnostic {
+  return record(value) && keys(value, ['check', 'scope', 'component']) &&
+    ['parent_link', 'snapshot', 'verify', 'duplicate', 'listed_child', 'post_walk', 'unhandled_disappearance'].includes(value.check as string) &&
+    ['root', 'descendant', 'unknown'].includes(value.scope as string) &&
+    ['birth', 'uid', 'pid', 'ppid', 'presence', 'identity'].includes(value.component as string)
+}
+type InspectionDiagnostic = { stage: string; category: string }
+function inspectionDiagnostic(value: unknown): value is InspectionDiagnostic {
+  return record(value) && keys(value, ['stage', 'category']) &&
+    ['unspecified', 'process', 'birth', 'uid', 'parent', 'status', 'children', 'child_pid', 'listed_birth', 'observe'].includes(value.stage as string) &&
+    ['permission', 'process_lookup', 'os_error', 'attribute', 'type', 'value', 'other', 'access_denied'].includes(value.category as string)
+}
 type Summary = {
   capturedCount: number
   initialLive: number | null
@@ -51,8 +65,8 @@ function same(left: Identity, right: Identity): boolean {
 }
 
 class LifecycleFailure extends Error {
-  constructor(readonly reason: Reason) {
-    super(`subscription_fixture_lifecycle_${reason}`)
+  constructor(readonly reason: Reason, diagnostic?: CaptureDiagnostic | InspectionDiagnostic) {
+    super(`subscription_fixture_lifecycle_${reason}${diagnostic ? ` [${'check' in diagnostic ? `${diagnostic.check}/${diagnostic.scope}/${diagnostic.component}` : `${diagnostic.stage}/${diagnostic.category}`}]` : ''}`)
   }
 }
 
@@ -66,13 +80,13 @@ export function createSubscriptionLifecycle(
   let reason: Reason = 'none'
   let summary: Summary = { capturedCount: 0, initialLive: null, remainingLive: null, rootExited: null }
 
-  const fail = (value: Reason): never => {
+  const fail = (value: Reason, diagnostic?: CaptureDiagnostic | InspectionDiagnostic): never => {
     if (phase !== 'refused') {
       reason = value
     }
 
     phase = 'refused'
-    throw new LifecycleFailure(value)
+    throw new LifecycleFailure(value, diagnostic)
   }
 
   const liveHandle = () => integer(child.pid) && child.pid > 0 && child.exitCode === null && child.signalCode === null
@@ -129,7 +143,18 @@ export function createSubscriptionLifecycle(
     }
   }
 
-  const refusal = (result: Record<string, unknown>) => {
+  const refusal = (result: Record<string, unknown>, capture = false) => {
+    if (capture && result.ok === false && result.reason === 'identity_changed' &&
+      keys(result, ['ok', 'reason', 'diagnostic']) && captureDiagnostic(result.diagnostic)) {
+      return fail('identity_changed', result.diagnostic)
+    }
+
+    if (capture && result.ok === false &&
+      (result.reason === 'inspection_failed' || result.reason === 'inspection_denied') &&
+      keys(result, ['ok', 'reason', 'diagnostic']) && inspectionDiagnostic(result.diagnostic)) {
+      return fail(result.reason, result.diagnostic)
+    }
+
     if (
       result.ok === false &&
       keys(result, ['ok', 'reason']) &&
@@ -186,7 +211,7 @@ export function createSubscriptionLifecycle(
       }
 
       if (result.ok !== true) {
-        return refusal(result)
+        return refusal(result, true)
       }
 
       if (

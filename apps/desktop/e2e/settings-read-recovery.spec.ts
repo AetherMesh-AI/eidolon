@@ -221,6 +221,10 @@ test('Model reads recover without replacing drafts or writing settings at every 
   await fault(current, '/api/config', { kind: 'success', data: { display: { language: 'en' } } })
   const { page } = current
   const path = '/api/model/options'
+  // The sibling fallback editor retries this shared catalog independently.
+  // Count the main editor's refresh batch, not all consumers of the catalog.
+  // Component coverage retains exact options-call counts with that retry active.
+  const refreshPath = '/api/model/info'
   const errorText = 'Could not load models'
 
   for (const size of sizes) {
@@ -246,15 +250,15 @@ test('Model reads recover without replacing drafts or writing settings at every 
     current.focusChecks.push(await verifyKeyboardFocus(page, refresh, `${label} Refresh`))
     await expect(refresh).toBeInViewport({ ratio: 1 })
     await captureGallery(current, `${label}-unavailable-focus`, scope)
-    const before = await reads(current, path)
+    const before = await reads(current, refreshPath)
     await fault(current, path, { kind: 'pending' })
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await expect(refresh).toBeDisabled()
-    await expect.poll(() => reads(current, path)).toBe(before + 1)
+    await expect.poll(() => reads(current, refreshPath)).toBe(before + 1)
     await fault(current, path, { kind: 'success', data: samples.model.options }, true)
     await expect(status).toHaveAttribute('data-settings-read-state', 'ready')
-    expect(await reads(current, path)).toBe(before + 1)
+    expect(await reads(current, refreshPath)).toBe(before + 1)
     await acknowledgeExpectedErrorBanner(page, errorText)
     const model = editor.getByRole('combobox').nth(1)
     await model.click()

@@ -147,6 +147,20 @@ def wait_request(identities=None, *, milliseconds=500):
 
 def assert_failure(result, reason, *, count=None):
     expected = {"ok", "reason"}
+    if "diagnostic" in result:
+        expected.add("diagnostic")
+        detail = result["diagnostic"]
+        assert count is None
+        if reason in {"inspection_failed", "inspection_denied"}:
+            assert set(detail) == {"stage", "category"}
+            assert detail["stage"] in {"unspecified", "process", "birth", "uid", "parent", "status", "children", "child_pid", "listed_birth", "observe"}
+            assert detail["category"] in {"permission", "process_lookup", "os_error", "attribute", "type", "value", "other", "access_denied"}
+        else:
+            assert reason == "identity_changed" and count is None
+            assert set(detail) == {"check", "scope", "component"}
+            assert detail["check"] in {"parent_link", "snapshot", "verify", "duplicate", "listed_child", "post_walk", "unhandled_disappearance"}
+            assert detail["scope"] in {"root", "descendant", "unknown"}
+            assert detail["component"] in {"birth", "uid", "pid", "ppid", "presence", "identity"}
     if count is not None:
         expected |= {"capturedCount", "initialLive", "remainingLive", "rootExited"}
         assert result["capturedCount"] == count
@@ -527,7 +541,23 @@ def test_real_subprocess_descendants_capture_and_wait(posix_host):
         root_result = invoke({"mode": "root", "pid": root.pid, "uid": os.getuid()})
         assert root_result["ok"] is True
         captured = invoke({"mode": "capture", "root": root_result["root"]})
-        assert captured["ok"] is True
+        # Retain only closed diagnostic labels on failure, never process identities.
+        detail = captured.get("diagnostic")
+        detail = detail if isinstance(detail, dict) else {}
+        allowed = {
+            "reason": lifecycle.REASONS,
+            "stage": {"unspecified", "process", "birth", "uid", "parent", "status", "children", "child_pid", "listed_birth", "observe"},
+            "category": {"permission", "process_lookup", "os_error", "attribute", "type", "value", "other", "access_denied"},
+            "check": {"parent_link", "snapshot", "verify", "duplicate", "listed_child",
+                      "post_walk", "unhandled_disappearance"},
+            "scope": {"root", "descendant", "unknown"},
+            "component": {"birth", "uid", "pid", "ppid", "presence", "identity"},
+        }
+        labels = {"reason": captured.get("reason"),
+                  **{key: detail.get(key) for key in ("check", "scope", "component", "stage", "category")}}
+        refusal = {key: value if isinstance(value, str) and value in allowed[key] else "unavailable"
+                   for key, value in labels.items()}
+        assert captured["ok"] is True, f"Owned subprocess capture refused: {refusal}"
         assert {item["pid"] for item in captured["identities"]} == {root.pid, child_pid, grandchild_pid}
         # All three owned processes remain blocked on their input pipes. This
         # independent observation must refuse cleanup while any survivor lives.
@@ -563,3 +593,76 @@ def test_real_subprocess_descendants_capture_and_wait(posix_host):
         root.wait(timeout=7)
         stdout, stderr = root.communicate(timeout=1)
         assert root.returncode == 0 and stderr == b""
+
+
+@pytest.mark.parametrize("scenario,expected", [
+    ("root_birth", ("verify", "root", "birth")),
+    ("root_uid", ("verify", "root", "uid")),
+    ("root_gone", ("verify", "root", "presence")),
+    ("child_link", ("parent_link", "descendant", "ppid")),
+    ("child_uid", ("listed_child", "descendant", "uid")),
+    ("snapshot_birth", ("snapshot", "descendant", "birth")),
+    ("listed_birth", ("listed_child", "descendant", "birth")),
+    ("duplicate", ("duplicate", "descendant", "pid")),
+    ("post_walk", ("post_walk", "descendant", "birth")),
+    ("during_enumeration", ("unhandled_disappearance", "unknown", "presence")),
+])
+def test_capture_refusal_reports_only_check_scope_and_component(posix_host, scenario, expected):
+    fake = FakePsutil().add(10, children=[20]).add(20, ppid=10)
+    if scenario == "root_birth":
+        fake.records[10]["birth"] = 991.0
+    elif scenario == "root_uid":
+        fake.records[10]["uid"] = 1001
+    elif scenario == "root_gone":
+        del fake.records[10]
+    elif scenario == "child_link":
+        fake.records[20]["ppid"] = 99
+    elif scenario == "child_uid":
+        fake.records[20]["uid"] = 1001
+    elif scenario == "duplicate":
+        fake.records[10]["children"] = [20, 20]
+    walked = False
+
+    def mutate(pid, method):
+        nonlocal walked
+        if scenario == "snapshot_birth" and (pid, method) == (20, "uid"):
+            fake.records[20]["birth"] = 991.0
+        if scenario == "listed_birth" and (pid, method) == (20, "listed_birth"):
+            fake.records[20]["birth"] = 991.0
+        if scenario == "post_walk":
+            if (pid, method) == (20, "children"):
+                walked = True
+            if walked and (pid, method) == (10, "birth"):
+                fake.records[20]["birth"] = 991.0
+        if scenario == "during_enumeration" and (pid, method) == (10, "children"):
+            del fake.records[10]
+
+    fake.hook = mutate
+    result = run({"mode": "capture", "root": identity()}, fake)
+    assert_failure(result, "identity_changed")
+    assert result["diagnostic"] == dict(zip(("check", "scope", "component"), expected))
+    assert set(result) == {"ok", "reason", "diagnostic"}
+    assert not fake.forbidden_calls
+    assert "991" not in json.dumps(result) and "1001" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("error,category,reason", [
+    (PermissionError("private"), "permission", "inspection_failed"),
+    (OSError("private"), "os_error", "inspection_failed"),
+    (RuntimeError("private"), "other", "inspection_failed"),
+    (FakePsutil.AccessDenied("private"), "access_denied", "inspection_denied"),
+])
+def test_capture_inspection_diagnostic_is_fixed_and_capture_only(posix_host, error, category, reason):
+    observer = lifecycle.Observer(FakePsutil(), lifecycle.Deadline(2, started=time.monotonic()))
+    def refused():
+        raise error
+    observer.capture_root_pid = 10
+    with pytest.raises(lifecycle.Refusal) as caught:
+        observer.inspect(refused, "children")
+    assert caught.value.reason == reason
+    assert caught.value.diagnostic == {"stage": "children", "category": category}
+    observer.capture_root_pid = None
+    with pytest.raises(lifecycle.Refusal) as caught:
+        observer.inspect(refused, "children")
+    assert caught.value.reason == reason
+    assert caught.value.diagnostic is None
