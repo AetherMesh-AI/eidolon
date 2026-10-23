@@ -759,14 +759,19 @@ export async function startProviderOAuth(provider: OAuthProvider, ctx: Onboardin
 
 // Poll a session-backed device-code flow until it resolves.
 async function pollSession(provider: OAuthProvider, start: DeviceStart, ctx: OnboardingContext, generation: number) {
+  let authenticated = false
+
   try {
     const { error_message, status } = await pollOAuthSession(provider.id, start.session_id, ctx.profile)
 
-    if (generation !== flowGeneration) {
+    const active = $desktopOnboarding.get().flow
+
+    if (generation !== flowGeneration || active.status !== 'polling' || active.start.session_id !== start.session_id) {
       return
     }
 
     if (status === 'approved') {
+      authenticated = true
       clearPoll()
       setFlow({ status: 'success', provider })
       await completeWithModelConfirm(ctx, provider.name, [provider.id], reason =>
@@ -782,6 +787,18 @@ async function pollSession(provider: OAuthProvider, start: DeviceStart, ctx: Onb
     }
   } catch (error) {
     if (generation !== flowGeneration) {
+      return
+    }
+
+    if (authenticated) {
+      setFlow({ status: 'authenticated_unavailable', provider, reason: errMessage(error) })
+
+      return
+    }
+
+    const active = $desktopOnboarding.get().flow
+
+    if (active.status !== 'polling' || active.start.session_id !== start.session_id) {
       return
     }
 

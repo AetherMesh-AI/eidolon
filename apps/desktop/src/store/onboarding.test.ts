@@ -640,6 +640,56 @@ describe('OAuth onboarding', () => {
     }
   })
 
+  it.each([[false, false], [true, false], [false, true], [false, 'approved']])('ignores repeated or retired device-code completions (retired=%s, rejected=%s)', async (retired, rejected) => {
+    const { startProviderOAuth, cancelOnboardingFlow } = await import('./onboarding')
+    vi.useFakeTimers()
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const polls: Array<(value: unknown) => void> = []
+    const failures: Array<(error: Error) => void> = []
+    installApiMock(async ({ path }) => {
+      if (path.endsWith('/start')) {
+        return { flow: 'device_code', session_id: 'synthetic', user_code: 'SYNTHETIC',
+          verification_url: 'https://example.test', expires_in: 600 }
+      }
+
+      if (path.includes('/poll/')) { return new Promise((resolve, reject) => { polls.push(resolve); failures.push(reject) }) }
+
+      if (path.startsWith('/api/model/options')) { return { providers: [] } }
+
+      if (path.endsWith('/cancel')) { return { ok: true } }
+      throw new Error(`unexpected api path: ${path}`)
+    })
+
+    const gateway = vi.fn(async (method: string) => {
+      if (method === 'reload.env') { return {} }
+
+      if (method === 'setup.status') { return { provider_configured: false } }
+
+      if (method === 'setup.runtime_check') { return { ok: false, error: 'Unavailable route' } }
+      throw new Error(`unexpected method: ${method}`)
+    })
+
+    try {
+      await startProviderOAuth({ ...makeOAuthProvider('openai-codex'), flow: 'device_code' },
+        { requestGateway: gateway as OnboardingContext['requestGateway'] })
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(polls).toHaveLength(2)
+
+      if (retired) { cancelOnboardingFlow() }
+      polls[0]({ status: 'approved' })
+      await vi.advanceTimersByTimeAsync(0)
+
+      if (rejected === true) { failures[1](new Error('Synthetic late polling failure')) } else { polls[1]({ status: rejected === 'approved' ? 'approved' : 'expired' }) }
+      await vi.advanceTimersByTimeAsync(0)
+      expect($desktopOnboarding.get().flow.status).toBe(retired ? 'idle' : 'authenticated_unavailable')
+      expect(gateway.mock.calls.filter(([method]) => method === 'setup.runtime_check')).toHaveLength(retired ? 0 : 1)
+      expect($desktopOnboarding.get().configured).toBe(false)
+    } finally {
+      cancelOnboardingFlow()
+      vi.useRealTimers()
+    }
+  })
+
   it('does not advance when the default model assignment is not persisted', async () => {
     const model = 'openai/gpt-5.5-pro'
     installApiMock(async ({ path }: { path: string }) => {
