@@ -76,6 +76,17 @@ beforeEach(() => {
   $organizationObservationSwitching.set(false)
 })
 
+it('retains dedicated setup precedence for the current API and Codex destination descriptor', async () => {
+  const current = { ...descriptor, isolation: { ...descriptor.isolation, supportedProviders: ['openai-api', 'openai-codex'] } }
+  const gateway = { request: vi.fn().mockResolvedValue(current), connectionState: 'open', generation: 1 }
+  $gateway.set(gateway as never)
+  const view = renderHook(useOrganizationSetupOwner)
+  await waitFor(() => expect(view.result.current).toBe(true))
+  await act(async () => $gatewayState.set('closed'))
+  expect(view.result.current).toBe(false)
+  view.unmount()
+})
+
 it.each(['owner', 'generation'])('requires fresh proof and then restores supported setup after a %s change', async change => {
   const response = deferred<unknown>()
   const gateway = { request: vi.fn().mockResolvedValue(descriptor), connectionState: 'open', generation: 1 }
