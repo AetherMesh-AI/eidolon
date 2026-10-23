@@ -3372,6 +3372,9 @@ export const zh: Translations = {
     startingSignIn: provider => `正在为 ${provider} 启动登录...`,
     verifyingCode: provider => `正在通过 ${provider} 验证你的代码...`,
     connectedProvider: provider => `${provider} 已连接`,
+    accountAuthenticated: provider => `${provider} 账号已连接`,
+    accountRuntimeUnavailable:
+      '登录成功，但此工作区尚无法使用该提供方。请在设置中检查提供方和模型。无需仅因运行配置不可用而重复登录。',
     connectedPicking: provider => `${provider} 已连接。正在选择默认模型...`,
     signInFailed: '登录失败，请重试。',
     signInExpired:

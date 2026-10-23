@@ -31,6 +31,7 @@ export type OnboardingFlow =
   | { provider: OAuthProvider; start: OAuthStartResponse; status: 'submitting' }
   | { copied: boolean; provider: OAuthProvider; status: 'external_pending' }
   | { provider: OAuthProvider; status: 'success' }
+  | { provider: OAuthProvider; reason: null | string; status: 'authenticated_unavailable' }
   | {
       // After successful credential acquisition, before completing
       // onboarding: show the user which model they're getting and let
@@ -291,13 +292,14 @@ async function fetchProviderDefaultModel(
     return null
   }
 
-  // Try each preferred slug (lowercased), fall back to the first provider
-  // returned (model.options orders by recency / authenticated state, so
-  // the just-authenticated provider is usually first anyway).
+  // Authentication never authorizes selecting a different provider.
   const lower = preferredSlugs.map(s => s.toLowerCase())
 
-  const matched =
-    providers.find((p: ModelOptionProvider) => lower.includes(String(p.slug).toLowerCase())) ?? providers[0]
+  const matched = providers.find((p: ModelOptionProvider) => lower.includes(String(p.slug).toLowerCase()))
+
+  if (!matched) {
+    return null
+  }
 
   const models = matched.models ?? []
 
@@ -422,14 +424,6 @@ async function completeWithModelConfirm(
     label: providerLabel,
     saving: false
   })
-}
-
-function providerResolutionFailure(reason: null | string) {
-  const detail = reason?.trim()
-
-  return detail
-    ? `Connected, but Eidolon still cannot resolve a usable provider. ${detail}`
-    : 'Connected, but Eidolon still cannot resolve a usable provider.'
 }
 
 async function refreshProviders(ctx?: OnboardingContext) {
@@ -777,9 +771,9 @@ async function pollSession(provider: OAuthProvider, start: DeviceStart, ctx: Onb
       setFlow({ status: 'success', provider })
       await completeWithModelConfirm(ctx, provider.name, [provider.id], reason =>
         setFlow({
-          status: 'error',
+          status: 'authenticated_unavailable',
           provider,
-          message: providerResolutionFailure(reason)
+          reason
         })
       )
     } else if (status !== 'pending') {
@@ -828,9 +822,9 @@ export async function submitOnboardingCode(ctx: OnboardingContext) {
       setFlow({ status: 'success', provider })
       await completeWithModelConfirm(ctx, provider.name, [provider.id], reason =>
         setFlow({
-          status: 'error',
+          status: 'authenticated_unavailable',
           provider,
-          message: providerResolutionFailure(reason)
+          reason
         })
       )
     } else {

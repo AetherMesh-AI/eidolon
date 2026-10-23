@@ -3229,6 +3229,9 @@ export const en: Translations = {
     startingSignIn: provider => `Starting sign-in for ${provider}...`,
     verifyingCode: provider => `Verifying your code with ${provider}...`,
     connectedProvider: provider => `${provider} connected`,
+    accountAuthenticated: provider => `${provider} account connected`,
+    accountRuntimeUnavailable:
+      'Sign-in succeeded, but this workspace is not ready to use that provider. Review the provider and model in Settings. You do not need to repeat sign-in just because runtime setup is unavailable.',
     connectedPicking: provider => `${provider} connected. Picking a default model...`,
     signInFailed: 'Sign-in failed. Try again.',
     signInExpired:

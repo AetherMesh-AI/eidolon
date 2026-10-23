@@ -2744,6 +2744,8 @@ export interface Translations {
     startingSignIn: (provider: string) => string
     verifyingCode: (provider: string) => string
     connectedProvider: (provider: string) => string
+    accountAuthenticated: (provider: string) => string
+    accountRuntimeUnavailable: string
     connectedPicking: (provider: string) => string
     signInFailed: string
     signInExpired: string

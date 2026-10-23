@@ -2858,6 +2858,9 @@ export const ja = defineLocale({
     startingSignIn: provider => `${provider} のサインインを開始中...`,
     verifyingCode: provider => `${provider} でコードを確認中...`,
     connectedProvider: provider => `${provider} が接続されました`,
+    accountAuthenticated: provider => `${provider} アカウントに接続しました`,
+    accountRuntimeUnavailable:
+      'ログインは成功しましたが、このワークスペースではまだそのプロバイダーを使用できません。設定でプロバイダーとモデルを確認してください。実行設定が利用できないだけで再ログインする必要はありません。',
     connectedPicking: provider => `${provider} が接続されました。デフォルトモデルを選択中...`,
     signInFailed: 'サインインに失敗しました。再試行してください。',
     signInExpired:
