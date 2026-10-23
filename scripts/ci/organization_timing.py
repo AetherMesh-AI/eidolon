@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 import time
-import faulthandler
+import sys
 import threading
 import re
 
@@ -15,6 +15,43 @@ _diagnostic_restore = None
 _trace_stop = None
 _trace_thread = None
 _trace_output = None
+_STACK_INTERVAL_SECONDS = 30
+
+
+def _write_python_stacks(output):
+    """Observe Python frames only; never retain locals, source text or host paths."""
+    frames = sys._current_frames()
+    frame = None
+    lines = ["Python frame snapshot (not a native stack dump)\n"]
+    try:
+        for thread_id, frame in frames.items():
+            lines.append(f"Thread {thread_id}:\n")
+            while frame is not None:
+                code = frame.f_code
+                basename = re.split(r'[/\\]', code.co_filename)[-1]
+                lines.append(f'  File "{basename}", line {frame.f_lineno} in {code.co_name}\n')
+                frame = frame.f_back
+    finally:
+        # Release frames before potentially slow or failing file I/O.
+        frame = None
+        frames.clear()
+    output.write(''.join(lines))
+    output.flush()
+
+
+def _capture_stacks(stop, output):
+    try:
+        while not stop.wait(_STACK_INTERVAL_SECONDS):
+            try:
+                _write_python_stacks(output)
+            except Exception:
+                pass  # Optional evidence must not change the test outcome.
+    finally:
+        # The writer owns closure, including when shutdown's bounded join expires.
+        try:
+            output.close()
+        except Exception:
+            pass
 
 
 def pytest_addoption(parser):
@@ -33,12 +70,9 @@ def pytest_configure(config):
         # A separate watchdog retains stacks without replacing pytest's timer.
         _trace_output = (_output_directory / f'organization-stacks-{os.getpid()}.txt').open('w')
         _trace_stop = threading.Event()
-        stop, output = _trace_stop, _trace_output
-        def capture():
-            while not stop.wait(30):
-                faulthandler.dump_traceback(file=output, all_threads=True)
-                output.flush()
-        _trace_thread = threading.Thread(target=capture, name='organization-diagnostic-stacks', daemon=True)
+        _trace_thread = threading.Thread(
+            target=_capture_stacks, args=(_trace_stop, _trace_output),
+            name='organization-diagnostic-stacks', daemon=True)
         _trace_thread.start()
 
 
@@ -50,8 +84,6 @@ def pytest_unconfigure(config):
     if _trace_stop is not None:
         _trace_stop.set()
         _trace_thread.join(timeout=1)
-        if not _trace_thread.is_alive():
-            _trace_output.close()
         _trace_stop = _trace_thread = _trace_output = None
     _output_directory = None
 

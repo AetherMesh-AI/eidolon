@@ -75,3 +75,72 @@ def test_retained_stacks_print_without_host_paths(tmp_path, capsys):
     assert 'organization_store.py' in output and 'line 174' in output
     assert 'private' not in output and 'home' not in output
     assert 'private' not in (tmp_path/'sanitized'/'organization-stacks-1.txt').read_text()
+
+
+def test_python_snapshot_observes_blocked_worker_without_private_values():
+    import io
+    import threading
+    from scripts.ci import organization_timing as timing
+
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked_worker():
+        private_value = 'synthetic-secret-not-for-evidence'
+        entered.set()
+        release.wait(5)
+        return private_value
+
+    worker = threading.Thread(target=blocked_worker)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        output = io.StringIO()
+        timing._write_python_stacks(output)
+        evidence = output.getvalue()
+        assert str(worker.ident) in evidence
+        assert 'blocked_worker' in evidence
+        assert 'test_organization_sqlite_diagnostics.py' in evidence
+        assert 'synthetic-secret-not-for-evidence' not in evidence
+        assert str(__file__) not in evidence
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+
+
+def test_snapshot_worker_owns_output_until_capture_finishes(monkeypatch):
+    import io
+    import threading
+    import importlib.util
+    from scripts.ci import organization_timing
+
+    # The canonical Windows lane already runs the real plugin. Keep injected
+    # failures and interval changes isolated from its active evidence writer.
+    spec = importlib.util.spec_from_file_location('isolated_timing', organization_timing.__file__)
+    timing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(timing)
+
+    entered, release, stop = threading.Event(), threading.Event(), threading.Event()
+    output = io.StringIO()
+
+    def interrupted_write(stream):
+        entered.set()
+        assert release.wait(5)
+        assert not stream.closed
+        raise OSError('synthetic evidence write failure')
+
+    monkeypatch.setattr(timing, '_write_python_stacks', interrupted_write)
+    monkeypatch.setattr(timing, '_STACK_INTERVAL_SECONDS', 0)
+    worker = threading.Thread(target=timing._capture_stacks, args=(stop, output))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        stop.set()
+        worker.join(timeout=0)
+        assert worker.is_alive()
+        assert not output.closed
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert output.closed
