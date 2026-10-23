@@ -355,3 +355,21 @@ test('diagnostic replies reject extra, unknown and misplaced fields without leak
   await wrongReason.lifecycle.bind()
   await assert.rejects(wrongReason.lifecycle.capture(), /^Error: subscription_fixture_lifecycle_invalid$/)
 })
+
+test('inspection diagnostics remain capture-only closed labels and refuse cleanup', async () => {
+  for (const reason of ['inspection_failed', 'inspection_denied']) {
+    const h = harness([{ ok: true, root }, { ok: false, reason,
+      diagnostic: { stage: 'children', category: 'permission' } }])
+    await h.lifecycle.bind()
+    await assert.rejects(h.lifecycle.capture(), new RegExp(`subscription_fixture_lifecycle_${reason} \\[children/permission\\]`))
+    await assert.rejects(h.lifecycle.wait())
+    assert.equal(h.lifecycle.diagnostic().rootExited, null)
+    assert.deepEqual(h.requests.map(x => x.input.mode), ['root', 'capture'])
+  }
+  for (const diagnostic of [{ stage: 'secret', category: 'other' },
+    { stage: 'children', category: 'secret' }, { stage: 'children', category: 'other', pid: 123 }]) {
+    const h = harness([{ ok: true, root }, { ok: false, reason: 'inspection_failed', diagnostic }])
+    await h.lifecycle.bind()
+    await assert.rejects(h.lifecycle.capture(), /^Error: subscription_fixture_lifecycle_invalid$/)
+  }
+})

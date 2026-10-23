@@ -22,6 +22,12 @@ function captureDiagnostic(value: unknown): value is CaptureDiagnostic {
     ['root', 'descendant', 'unknown'].includes(value.scope as string) &&
     ['birth', 'uid', 'pid', 'ppid', 'presence', 'identity'].includes(value.component as string)
 }
+type InspectionDiagnostic = { stage: string; category: string }
+function inspectionDiagnostic(value: unknown): value is InspectionDiagnostic {
+  return record(value) && keys(value, ['stage', 'category']) &&
+    ['unspecified', 'process', 'birth', 'uid', 'parent', 'status', 'children', 'child_pid', 'listed_birth', 'observe'].includes(value.stage as string) &&
+    ['permission', 'process_lookup', 'os_error', 'attribute', 'type', 'value', 'other', 'access_denied'].includes(value.category as string)
+}
 type Summary = {
   capturedCount: number
   initialLive: number | null
@@ -59,8 +65,8 @@ function same(left: Identity, right: Identity): boolean {
 }
 
 class LifecycleFailure extends Error {
-  constructor(readonly reason: Reason, diagnostic?: CaptureDiagnostic) {
-    super(`subscription_fixture_lifecycle_${reason}${diagnostic ? ` [${diagnostic.check}/${diagnostic.scope}/${diagnostic.component}]` : ''}`)
+  constructor(readonly reason: Reason, diagnostic?: CaptureDiagnostic | InspectionDiagnostic) {
+    super(`subscription_fixture_lifecycle_${reason}${diagnostic ? ` [${'check' in diagnostic ? `${diagnostic.check}/${diagnostic.scope}/${diagnostic.component}` : `${diagnostic.stage}/${diagnostic.category}`}]` : ''}`)
   }
 }
 
@@ -74,7 +80,7 @@ export function createSubscriptionLifecycle(
   let reason: Reason = 'none'
   let summary: Summary = { capturedCount: 0, initialLive: null, remainingLive: null, rootExited: null }
 
-  const fail = (value: Reason, diagnostic?: CaptureDiagnostic): never => {
+  const fail = (value: Reason, diagnostic?: CaptureDiagnostic | InspectionDiagnostic): never => {
     if (phase !== 'refused') {
       reason = value
     }
@@ -141,6 +147,12 @@ export function createSubscriptionLifecycle(
     if (capture && result.ok === false && result.reason === 'identity_changed' &&
       keys(result, ['ok', 'reason', 'diagnostic']) && captureDiagnostic(result.diagnostic)) {
       return fail('identity_changed', result.diagnostic)
+    }
+
+    if (capture && result.ok === false &&
+      (result.reason === 'inspection_failed' || result.reason === 'inspection_denied') &&
+      keys(result, ['ok', 'reason', 'diagnostic']) && inspectionDiagnostic(result.diagnostic)) {
+      return fail(result.reason, result.diagnostic)
     }
 
     if (

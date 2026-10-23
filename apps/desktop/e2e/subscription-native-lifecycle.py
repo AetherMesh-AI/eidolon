@@ -41,6 +41,16 @@ class Refusal(Exception):
         self.diagnostic = diagnostic
 
 
+def exception_category(error):
+    # Fixed categories only: never serialize exception classes, arguments or text.
+    for kind, label in ((PermissionError, "permission"), (ProcessLookupError, "process_lookup"),
+                        (OSError, "os_error"), (AttributeError, "attribute"),
+                        (TypeError, "type"), (ValueError, "value")):
+        if isinstance(error, kind):
+            return label
+    return "other"
+
+
 class Gone(Exception):
     pass
 
@@ -119,31 +129,35 @@ class Observer:
         # Only field names leave the helper, never either identity's values.
         return next((key for key in ("birth", "uid", "pid") if actual[key] != expected[key]), "identity")
 
-    def inspect(self, operation):
+    def inspection_refusal(self, reason, stage, category):
+        detail = {"stage": stage, "category": category} if self.capture_root_pid is not None else None
+        return Refusal(reason, detail)
+
+    def inspect(self, operation, stage="unspecified"):
         self.deadline.check()
         try:
             value = operation()
         except self.psutil.NoSuchProcess:
             raise Gone from None
         except self.psutil.AccessDenied:
-            raise Refusal("inspection_denied") from None
-        except Exception:
-            raise Refusal("inspection_failed") from None
+            raise self.inspection_refusal("inspection_denied", stage, "access_denied") from None
+        except Exception as error:
+            raise self.inspection_refusal("inspection_failed", stage, exception_category(error)) from None
         self.deadline.check()
         return value
 
     def snapshot(self, pid, parent_pid=None):
         # New Process objects are essential: psutil caches create_time per object.
-        process = self.inspect(lambda: self.psutil.Process(pid))
-        birth = self.inspect(process.create_time)
-        uid = self.inspect(lambda: process.uids().real)
+        process = self.inspect(lambda: self.psutil.Process(pid), "process")
+        birth = self.inspect(process.create_time, "birth")
+        uid = self.inspect(lambda: process.uids().real, "uid")
         if not _birth(birth) or not _integer(uid, 0, 2**32 - 1):
             raise Refusal("inspection_failed")
         if parent_pid is not None:
-            ppid = self.inspect(process.ppid)
+            ppid = self.inspect(process.ppid, "parent")
             if not _integer(ppid, 1, 2**31 - 1) or ppid != parent_pid:
                 raise self.changed("parent_link", pid, "ppid")
-        status = self.inspect(process.status)
+        status = self.inspect(process.status, "status")
         if not isinstance(status, str) or not status:
             raise Refusal("inspection_failed")
         if status in {self.psutil.STATUS_ZOMBIE, self.psutil.STATUS_DEAD}:
@@ -170,18 +184,18 @@ class Observer:
             # Check birth before UID: a reused PID is the original's exit, even
             # if its replacement has a different owner or inaccessible metadata.
             for _ in range(2):
-                process = self.inspect(lambda: self.psutil.Process(expected["pid"]))
-                birth = self.inspect(process.create_time)
+                process = self.inspect(lambda: self.psutil.Process(expected["pid"]), "process")
+                birth = self.inspect(process.create_time, "birth")
                 if not _birth(birth):
                     raise Refusal("inspection_failed")
                 if birth != expected["birth"]:
                     return False
-                uid = self.inspect(lambda: process.uids().real)
+                uid = self.inspect(lambda: process.uids().real, "uid")
                 if not _integer(uid, 0, 2**32 - 1):
                     raise Refusal("inspection_failed")
                 if uid != expected["uid"]:
                     raise Refusal("identity_changed")
-                status = self.inspect(process.status)
+                status = self.inspect(process.status, "status")
                 if not isinstance(status, str) or not status:
                     raise Refusal("inspection_failed")
                 if status in {self.psutil.STATUS_ZOMBIE, self.psutil.STATUS_DEAD}:
@@ -203,8 +217,8 @@ class Observer:
                 raise Refusal("limit")
             seen.add(parent["pid"])
             result.append(parent)
-            process = self.inspect(lambda: self.psutil.Process(parent["pid"]))
-            children = self.inspect(lambda: process.children(recursive=False))
+            process = self.inspect(lambda: self.psutil.Process(parent["pid"]), "process")
+            children = self.inspect(lambda: process.children(recursive=False), "children")
             self.verify(parent)
             if type(children) is not list:
                 raise Refusal("inspection_failed")
@@ -213,14 +227,14 @@ class Observer:
             direct = set()
             for child in children:
                 self.verify(parent)
-                child_pid = self.inspect(lambda: child.pid)
+                child_pid = self.inspect(lambda: child.pid, "child_pid")
                 if not _integer(child_pid, 1, 2**31 - 1):
                     raise Refusal("inspection_failed")
                 if child_pid in direct or child_pid in seen:
                     raise self.changed("duplicate", child_pid, "pid")
                 direct.add(child_pid)
                 try:
-                    listed_birth = self.inspect(child.create_time)
+                    listed_birth = self.inspect(child.create_time, "listed_birth")
                     if not _birth(listed_birth):
                         raise Refusal("inspection_failed")
                     identity = self.capture_identity(child_pid, parent["pid"])
@@ -344,12 +358,14 @@ def run(request, psutil=None, *, started=None):
                 deadline.check()
             except Refusal as error:
                 result = failure(error.reason, summary)
-                if mode == "capture" and error.reason == "identity_changed" and error.diagnostic is not None:
+                if mode == "capture" and error.diagnostic is not None:
                     result["diagnostic"] = error.diagnostic
             except Gone:
                 result = failure("identity_changed", summary)
-            except Exception:
+            except Exception as error:
                 result = failure("inspection_failed", summary)
+                if mode == "capture":
+                    result["diagnostic"] = {"stage": "observe", "category": exception_category(error)}
             responses.put(result)
 
         threading.Thread(target=observe, daemon=True).start()

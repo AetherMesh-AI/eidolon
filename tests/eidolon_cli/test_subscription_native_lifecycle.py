@@ -150,11 +150,17 @@ def assert_failure(result, reason, *, count=None):
     if "diagnostic" in result:
         expected.add("diagnostic")
         detail = result["diagnostic"]
-        assert reason == "identity_changed" and count is None
-        assert set(detail) == {"check", "scope", "component"}
-        assert detail["check"] in {"parent_link", "snapshot", "verify", "duplicate", "listed_child", "post_walk", "unhandled_disappearance"}
-        assert detail["scope"] in {"root", "descendant", "unknown"}
-        assert detail["component"] in {"birth", "uid", "pid", "ppid", "presence", "identity"}
+        assert count is None
+        if reason in {"inspection_failed", "inspection_denied"}:
+            assert set(detail) == {"stage", "category"}
+            assert detail["stage"] in {"unspecified", "process", "birth", "uid", "parent", "status", "children", "child_pid", "listed_birth", "observe"}
+            assert detail["category"] in {"permission", "process_lookup", "os_error", "attribute", "type", "value", "other", "access_denied"}
+        else:
+            assert reason == "identity_changed" and count is None
+            assert set(detail) == {"check", "scope", "component"}
+            assert detail["check"] in {"parent_link", "snapshot", "verify", "duplicate", "listed_child", "post_walk", "unhandled_disappearance"}
+            assert detail["scope"] in {"root", "descendant", "unknown"}
+            assert detail["component"] in {"birth", "uid", "pid", "ppid", "presence", "identity"}
     if count is not None:
         expected |= {"capturedCount", "initialLive", "remainingLive", "rootExited"}
         assert result["capturedCount"] == count
@@ -540,13 +546,15 @@ def test_real_subprocess_descendants_capture_and_wait(posix_host):
         detail = detail if isinstance(detail, dict) else {}
         allowed = {
             "reason": lifecycle.REASONS,
+            "stage": {"unspecified", "process", "birth", "uid", "parent", "status", "children", "child_pid", "listed_birth", "observe"},
+            "category": {"permission", "process_lookup", "os_error", "attribute", "type", "value", "other", "access_denied"},
             "check": {"parent_link", "snapshot", "verify", "duplicate", "listed_child",
                       "post_walk", "unhandled_disappearance"},
             "scope": {"root", "descendant", "unknown"},
             "component": {"birth", "uid", "pid", "ppid", "presence", "identity"},
         }
         labels = {"reason": captured.get("reason"),
-                  **{key: detail.get(key) for key in ("check", "scope", "component")}}
+                  **{key: detail.get(key) for key in ("check", "scope", "component", "stage", "category")}}
         refusal = {key: value if isinstance(value, str) and value in allowed[key] else "unavailable"
                    for key, value in labels.items()}
         assert captured["ok"] is True, f"Owned subprocess capture refused: {refusal}"
@@ -636,3 +644,25 @@ def test_capture_refusal_reports_only_check_scope_and_component(posix_host, scen
     assert set(result) == {"ok", "reason", "diagnostic"}
     assert not fake.forbidden_calls
     assert "991" not in json.dumps(result) and "1001" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("error,category,reason", [
+    (PermissionError("private"), "permission", "inspection_failed"),
+    (OSError("private"), "os_error", "inspection_failed"),
+    (RuntimeError("private"), "other", "inspection_failed"),
+    (FakePsutil.AccessDenied("private"), "access_denied", "inspection_denied"),
+])
+def test_capture_inspection_diagnostic_is_fixed_and_capture_only(posix_host, error, category, reason):
+    observer = lifecycle.Observer(FakePsutil(), lifecycle.Deadline(2, started=time.monotonic()))
+    def refused():
+        raise error
+    observer.capture_root_pid = 10
+    with pytest.raises(lifecycle.Refusal) as caught:
+        observer.inspect(refused, "children")
+    assert caught.value.reason == reason
+    assert caught.value.diagnostic == {"stage": "children", "category": category}
+    observer.capture_root_pid = None
+    with pytest.raises(lifecycle.Refusal) as caught:
+        observer.inspect(refused, "children")
+    assert caught.value.reason == reason
+    assert caught.value.diagnostic is None
