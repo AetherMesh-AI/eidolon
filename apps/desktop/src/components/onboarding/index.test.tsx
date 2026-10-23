@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { HermesGateway } from '@/eidolon'
+import { I18nProvider } from '@/i18n'
 import { $gateway, setPrimaryGateway } from '@/store/gateway'
 import * as notifications from '@/store/notifications'
 import { $desktopOnboarding, closeManualOnboarding, type DesktopOnboardingState, type OnboardingContext, startManualOnboarding } from '@/store/onboarding'
@@ -11,6 +12,8 @@ import { $gatewayState } from '@/store/session'
 import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 import { makeOAuthProvider } from '@/test/oauth-provider'
 import type { OAuthProvider } from '@/types/eidolon'
+
+import { FlowPanel } from './flow'
 
 import { DesktopOnboardingOverlay, Picker } from '.'
 
@@ -423,4 +426,40 @@ it('hands off only the explicitly requested Settings provider using the manageme
     closeManualOnboarding()
     Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previousBridge })
   }
+})
+
+describe('authenticated account without runtime eligibility', () => {
+  it.each([false, true])('can close without claiming readiness (manual=%s)', manual => {
+    setProviders([])
+    $desktopOnboarding.set({ ...$desktopOnboarding.get(), manual, requested: true })
+    render(
+      <FlowPanel
+        ctx={ctx}
+        flow={{
+          status: 'authenticated_unavailable',
+          provider: makeOAuthProvider('openai-codex', 'Codex'),
+          reason: 'Synthetic workspace route unavailable.'
+        }}
+        leaving={false}
+        onBegin={vi.fn()}
+      />
+    )
+    expect(screen.getByText(/account connected/i)).toBeTruthy()
+    expect(screen.getByText(/Sign-in succeeded/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect($desktopOnboarding.get().configured).toBe(false)
+    expect($desktopOnboarding.get().requested).toBe(false)
+    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).not.toBe('1')
+  })
+})
+
+
+it('renders authenticated-but-unavailable copy in the selected locale', () => {
+  render(<I18nProvider configClient={null} initialLocale="ja">
+    <FlowPanel ctx={ctx} flow={{
+      status: 'authenticated_unavailable', provider: makeOAuthProvider('openai-codex', 'Codex'), reason: null
+    }} leaving={false} onBegin={vi.fn()} />
+  </I18nProvider>)
+  expect(screen.getByText('ChatGPT or Codex Subscription アカウントに接続しました')).toBeTruthy()
+  expect(screen.getByText(/ログインは成功しました/)).toBeTruthy()
 })

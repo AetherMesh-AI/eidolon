@@ -2376,6 +2376,9 @@ export const ar = defineLocale({
     startingSignIn: provider => `جار بدء تسجيل الدخول لـ ${provider}...`,
     verifyingCode: provider => `جار التحقق من الرمز عبر ${provider}...`,
     connectedProvider: provider => `تم ربط ${provider}`,
+    accountAuthenticated: provider => `تم ربط حساب ${provider}`,
+    accountRuntimeUnavailable:
+      'نجح تسجيل الدخول، لكن مساحة العمل ليست جاهزة لاستخدام هذا المزود. راجع المزود والنموذج في الإعدادات. لا يلزم تكرار تسجيل الدخول لمجرد عدم توفر إعداد التشغيل.',
     connectedPicking: provider => `تم ربط ${provider}. جار اختيار نموذج افتراضي...`,
     signInFailed: 'فشل تسجيل الدخول. حاول مرة أخرى.',
     signInExpired:

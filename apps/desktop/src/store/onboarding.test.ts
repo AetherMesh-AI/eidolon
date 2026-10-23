@@ -560,6 +560,136 @@ describe('OAuth onboarding', () => {
     expect(setIndex).toBeGreaterThan(recommendedIndex)
   })
 
+  it('retains OAuth success without selecting a foreign provider or claiming runtime readiness', async () => {
+    const calls: string[] = []
+    installApiMock(async ({ path }) => {
+      calls.push(path)
+
+      if (path === '/api/providers/oauth/openai-codex/submit') {return { ok: true, status: 'approved' }}
+
+      if (path.startsWith('/api/model/options')) {return { providers: [{ slug: 'openai-api', models: ['api-model'] }] }}
+      throw new Error(`unexpected api path: ${path}`)
+    })
+
+    const requestGateway: OnboardingContext['requestGateway'] = async (method, params) => {
+      if (method === 'reload.env') {return {} as never}
+
+      if (method === 'setup.status') {return { provider_configured: false } as never}
+
+      if (method === 'setup.runtime_check') {
+        expect(params).toEqual({ provider: 'openai-codex' })
+
+        return { ok: false, error: 'This workspace route is unavailable.' } as never
+      }
+
+      throw new Error(`unexpected method: ${method}`)
+    }
+
+    $desktopOnboarding.set(
+      baseState({
+        manual: true,
+        flow: {
+          status: 'awaiting_user',
+          provider: makeOAuthProvider('openai-codex', 'Codex'),
+          start: { auth_url: 'https://example.test/auth', expires_in: 600, flow: 'pkce', session_id: 'synthetic' },
+          code: 'synthetic-code'
+        }
+      })
+    )
+    await submitOnboardingCode({ requestGateway, profile: 'synthetic-org' })
+    expect($desktopOnboarding.get().flow).toMatchObject({ status: 'authenticated_unavailable' })
+    expect($desktopOnboarding.get().configured).toBe(false)
+    expect(calls).not.toContain('/api/model/set')
+    expect(calls.some(path => path.includes('recommended-default'))).toBe(false)
+    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).not.toBe('1')
+  })
+
+  it('preserves approved device-code authentication when runtime setup is unavailable', async () => {
+    const { startProviderOAuth, cancelOnboardingFlow } = await import('./onboarding')
+    vi.useFakeTimers()
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    installApiMock(async ({ path }) => {
+      if (path.endsWith('/start')) {return {
+        flow: 'device_code', session_id: 'synthetic', user_code: 'SYNTHETIC',
+        verification_url: 'https://example.test', expires_in: 600
+      }}
+
+      if (path.includes('/poll/')) {return { status: 'approved' }}
+
+      if (path.startsWith('/api/model/options')) {return { providers: [] }}
+      throw new Error(`unexpected api path: ${path}`)
+    })
+
+    const requestGateway: OnboardingContext['requestGateway'] = async method => {
+      if (method === 'reload.env') {return {} as never}
+
+      if (method === 'setup.status') {return { provider_configured: false } as never}
+
+      if (method === 'setup.runtime_check') {return { ok: false, error: 'Unavailable route' } as never}
+      throw new Error(`unexpected method: ${method}`)
+    }
+
+    try {
+      await startProviderOAuth({ ...makeOAuthProvider('openai-codex'), flow: 'device_code' }, { requestGateway })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect($desktopOnboarding.get().flow.status).toBe('authenticated_unavailable')
+      expect($desktopOnboarding.get().configured).toBe(false)
+    } finally {
+      cancelOnboardingFlow()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([[false, false], [true, false], [false, true], [false, 'approved']])('ignores repeated or retired device-code completions (retired=%s, rejected=%s)', async (retired, rejected) => {
+    const { startProviderOAuth, cancelOnboardingFlow } = await import('./onboarding')
+    vi.useFakeTimers()
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const polls: Array<(value: unknown) => void> = []
+    const failures: Array<(error: Error) => void> = []
+    installApiMock(async ({ path }) => {
+      if (path.endsWith('/start')) {
+        return { flow: 'device_code', session_id: 'synthetic', user_code: 'SYNTHETIC',
+          verification_url: 'https://example.test', expires_in: 600 }
+      }
+
+      if (path.includes('/poll/')) { return new Promise((resolve, reject) => { polls.push(resolve); failures.push(reject) }) }
+
+      if (path.startsWith('/api/model/options')) { return { providers: [] } }
+
+      if (path.endsWith('/cancel')) { return { ok: true } }
+      throw new Error(`unexpected api path: ${path}`)
+    })
+
+    const gateway = vi.fn(async (method: string) => {
+      if (method === 'reload.env') { return {} }
+
+      if (method === 'setup.status') { return { provider_configured: false } }
+
+      if (method === 'setup.runtime_check') { return { ok: false, error: 'Unavailable route' } }
+      throw new Error(`unexpected method: ${method}`)
+    })
+
+    try {
+      await startProviderOAuth({ ...makeOAuthProvider('openai-codex'), flow: 'device_code' },
+        { requestGateway: gateway as OnboardingContext['requestGateway'] })
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(polls).toHaveLength(2)
+
+      if (retired) { cancelOnboardingFlow() }
+      polls[0]({ status: 'approved' })
+      await vi.advanceTimersByTimeAsync(0)
+
+      if (rejected === true) { failures[1](new Error('Synthetic late polling failure')) } else { polls[1]({ status: rejected === 'approved' ? 'approved' : 'expired' }) }
+      await vi.advanceTimersByTimeAsync(0)
+      expect($desktopOnboarding.get().flow.status).toBe(retired ? 'idle' : 'authenticated_unavailable')
+      expect(gateway.mock.calls.filter(([method]) => method === 'setup.runtime_check')).toHaveLength(retired ? 0 : 1)
+      expect($desktopOnboarding.get().configured).toBe(false)
+    } finally {
+      cancelOnboardingFlow()
+      vi.useRealTimers()
+    }
+  })
+
   it('does not advance when the default model assignment is not persisted', async () => {
     const model = 'openai/gpt-5.5-pro'
     installApiMock(async ({ path }: { path: string }) => {
@@ -617,8 +747,8 @@ describe('OAuth onboarding', () => {
     await submitOnboardingCode(onboardingContext(requestGateway))
 
     const state = $desktopOnboarding.get()
-    expect(state.flow.status).toBe('error')
-    expect(state.flow.status === 'error' ? state.flow.message : '').toContain('Confirm this expensive model.')
+    expect(state.flow.status).toBe('authenticated_unavailable')
+    expect(state.flow.status === 'authenticated_unavailable' ? state.flow.reason : '').toContain('Confirm this expensive model.')
     expect(requestGatewayMock).not.toHaveBeenCalledWith('setup.runtime_check', expect.anything())
   })
 })

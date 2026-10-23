@@ -31,6 +31,7 @@ export type OnboardingFlow =
   | { provider: OAuthProvider; start: OAuthStartResponse; status: 'submitting' }
   | { copied: boolean; provider: OAuthProvider; status: 'external_pending' }
   | { provider: OAuthProvider; status: 'success' }
+  | { provider: OAuthProvider; reason: null | string; status: 'authenticated_unavailable' }
   | {
       // After successful credential acquisition, before completing
       // onboarding: show the user which model they're getting and let
@@ -291,13 +292,14 @@ async function fetchProviderDefaultModel(
     return null
   }
 
-  // Try each preferred slug (lowercased), fall back to the first provider
-  // returned (model.options orders by recency / authenticated state, so
-  // the just-authenticated provider is usually first anyway).
+  // Authentication never authorizes selecting a different provider.
   const lower = preferredSlugs.map(s => s.toLowerCase())
 
-  const matched =
-    providers.find((p: ModelOptionProvider) => lower.includes(String(p.slug).toLowerCase())) ?? providers[0]
+  const matched = providers.find((p: ModelOptionProvider) => lower.includes(String(p.slug).toLowerCase()))
+
+  if (!matched) {
+    return null
+  }
 
   const models = matched.models ?? []
 
@@ -422,14 +424,6 @@ async function completeWithModelConfirm(
     label: providerLabel,
     saving: false
   })
-}
-
-function providerResolutionFailure(reason: null | string) {
-  const detail = reason?.trim()
-
-  return detail
-    ? `Connected, but Eidolon still cannot resolve a usable provider. ${detail}`
-    : 'Connected, but Eidolon still cannot resolve a usable provider.'
 }
 
 async function refreshProviders(ctx?: OnboardingContext) {
@@ -765,21 +759,26 @@ export async function startProviderOAuth(provider: OAuthProvider, ctx: Onboardin
 
 // Poll a session-backed device-code flow until it resolves.
 async function pollSession(provider: OAuthProvider, start: DeviceStart, ctx: OnboardingContext, generation: number) {
+  let authenticated = false
+
   try {
     const { error_message, status } = await pollOAuthSession(provider.id, start.session_id, ctx.profile)
 
-    if (generation !== flowGeneration) {
+    const active = $desktopOnboarding.get().flow
+
+    if (generation !== flowGeneration || active.status !== 'polling' || active.start.session_id !== start.session_id) {
       return
     }
 
     if (status === 'approved') {
+      authenticated = true
       clearPoll()
       setFlow({ status: 'success', provider })
       await completeWithModelConfirm(ctx, provider.name, [provider.id], reason =>
         setFlow({
-          status: 'error',
+          status: 'authenticated_unavailable',
           provider,
-          message: providerResolutionFailure(reason)
+          reason
         })
       )
     } else if (status !== 'pending') {
@@ -788,6 +787,18 @@ async function pollSession(provider: OAuthProvider, start: DeviceStart, ctx: Onb
     }
   } catch (error) {
     if (generation !== flowGeneration) {
+      return
+    }
+
+    if (authenticated) {
+      setFlow({ status: 'authenticated_unavailable', provider, reason: errMessage(error) })
+
+      return
+    }
+
+    const active = $desktopOnboarding.get().flow
+
+    if (active.status !== 'polling' || active.start.session_id !== start.session_id) {
       return
     }
 
@@ -828,9 +839,9 @@ export async function submitOnboardingCode(ctx: OnboardingContext) {
       setFlow({ status: 'success', provider })
       await completeWithModelConfirm(ctx, provider.name, [provider.id], reason =>
         setFlow({
-          status: 'error',
+          status: 'authenticated_unavailable',
           provider,
-          message: providerResolutionFailure(reason)
+          reason
         })
       )
     } else {
