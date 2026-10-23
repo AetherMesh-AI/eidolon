@@ -147,7 +147,7 @@ def guarded(tmp_path, monkeypatch):
     spec.loader.exec_module(guard)
     identity = {'organizationId': 'org-one', 'ownerId': 'owner-one', 'profile': 'fresh'}
     isolation = {**identity, 'isolationVersion': 1, 'credentialMode': 'profile-local-openai-api',
-        'executionMode': 'tool-free-organization', 'supportedProviders': ['openai-api']}
+        'executionMode': 'tool-free-organization', 'supportedProviders': ['openai-api', 'openai-codex']}
     inputs = {'jobs': 'Review café drafts', 'goals': 'Keep original text', 'namingStyle': 'Ash names'}
     request = {'expectedOrganizationId': identity['organizationId'], 'sourceRevision': 'revision-one',
         'idempotencyKey': 'generation-one', **inputs}

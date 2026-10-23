@@ -105,7 +105,7 @@ def _fixture_identity_matches(marker,entry,live,expected):
     return False
    if any(isolation.get(key) != value for key,value in identity.items()):
     return False
-   if isolation.get('isolationVersion') != 1 or isolation.get('credentialMode') != 'profile-local-openai-api' or isolation.get('executionMode') != 'tool-free-organization' or isolation.get('supportedProviders') != ['openai-api']:
+   if isolation.get('isolationVersion') != 1 or isolation.get('credentialMode') != 'profile-local-openai-api' or isolation.get('executionMode') != 'tool-free-organization' or isolation.get('supportedProviders') != ['openai-api', 'openai-codex']:
     return False
    metadata=descriptor.get('metadata',{})
    if metadata.get('organizationId') != identity['organizationId'] or metadata.get('owner',{}).get('ownerId') != identity['ownerId']:
