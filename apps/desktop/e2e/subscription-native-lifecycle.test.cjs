@@ -314,3 +314,44 @@ test('exactly one receipt follows success or failure; missing success receipt fa
       assert.deepEqual(calls, ['cleanup', 'receipt'])
     }
 })
+
+
+test('capture diagnostic narrows refusal without authorizing cleanup or changing receipts', async () => {
+  const h = harness([{ ok: true, root }, {
+    ok: false, reason: 'identity_changed',
+    diagnostic: { check: 'snapshot', scope: 'descendant', component: 'birth' }
+  }])
+  await h.lifecycle.bind()
+  const calls = []
+  await assert.rejects(h.cleanup({
+    capture: () => h.lifecycle.capture(),
+    observer: async () => calls.push('observer'),
+    app: async () => calls.push('app'),
+    wait: async () => { calls.push('wait'); await h.lifecycle.wait() },
+    mock: async () => calls.push('mock'),
+    remove: async () => calls.push('remove')
+  }), /^Error: subscription_fixture_lifecycle_identity_changed \[snapshot\/descendant\/birth\]$/)
+  assert.deepEqual(calls, ['observer', 'app', 'wait', 'mock'])
+  assert.deepEqual(plain(h.lifecycle.diagnostic()), {
+    phase: 'refused', reason: 'identity_changed', capturedCount: 0,
+    initialLive: null, remainingLive: null, rootExited: null
+  })
+  assert.deepEqual(h.requests.map(x => x.input.mode), ['root', 'capture'])
+})
+
+test('diagnostic replies reject extra, unknown and misplaced fields without leaking values', async () => {
+  const detail = { check: 'verify', scope: 'root', component: 'uid' }
+  for (const diagnostic of [null, {}, { ...detail, pid: 1234 },
+    { ...detail, check: 'private/path' }, { ...detail, scope: 1234 },
+    { ...detail, component: { secret: 'private' } }]) {
+    const h = harness([{ ok: true, root }, { ok: false, reason: 'identity_changed', diagnostic }])
+    await h.lifecycle.bind()
+    await assert.rejects(h.lifecycle.capture(), /^Error: subscription_fixture_lifecycle_invalid$/)
+    assert.equal(JSON.stringify(h.lifecycle.diagnostic()).includes('private'), false)
+  }
+  const rootReply = harness([{ ok: false, reason: 'identity_changed', diagnostic: detail }])
+  await assert.rejects(rootReply.lifecycle.bind(), /^Error: subscription_fixture_lifecycle_invalid$/)
+  const wrongReason = harness([{ ok: true, root }, { ok: false, reason: 'timeout', diagnostic: detail }])
+  await wrongReason.lifecycle.bind()
+  await assert.rejects(wrongReason.lifecycle.capture(), /^Error: subscription_fixture_lifecycle_invalid$/)
+})

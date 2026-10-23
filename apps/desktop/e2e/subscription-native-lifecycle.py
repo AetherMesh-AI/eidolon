@@ -36,8 +36,9 @@ REASONS = frozenset({
 class Refusal(Exception):
     """A closed-schema failure; never include an underlying exception."""
 
-    def __init__(self, reason):
+    def __init__(self, reason, diagnostic=None):
         self.reason = reason
+        self.diagnostic = diagnostic
 
 
 class Gone(Exception):
@@ -104,6 +105,19 @@ class Observer:
     def __init__(self, psutil, deadline):
         self.psutil = psutil
         self.deadline = deadline
+        self.capture_root_pid = None
+
+    def changed(self, check, pid, component):
+        diagnostic = None
+        if self.capture_root_pid is not None:
+            diagnostic = {"check": check, "scope": "root" if pid == self.capture_root_pid else "descendant",
+                          "component": component}
+        return Refusal("identity_changed", diagnostic)
+
+    @staticmethod
+    def difference(actual, expected):
+        # Only field names leave the helper, never either identity's values.
+        return next((key for key in ("birth", "uid", "pid") if actual[key] != expected[key]), "identity")
 
     def inspect(self, operation):
         self.deadline.check()
@@ -128,7 +142,7 @@ class Observer:
         if parent_pid is not None:
             ppid = self.inspect(process.ppid)
             if not _integer(ppid, 1, 2**31 - 1) or ppid != parent_pid:
-                raise Refusal("identity_changed")
+                raise self.changed("parent_link", pid, "ppid")
         status = self.inspect(process.status)
         if not isinstance(status, str) or not status:
             raise Refusal("inspection_failed")
@@ -138,17 +152,18 @@ class Observer:
 
     def capture_identity(self, pid, parent_pid=None):
         identity = self.snapshot(pid, parent_pid)
-        if self.snapshot(pid, parent_pid) != identity:
-            raise Refusal("identity_changed")
+        after = self.snapshot(pid, parent_pid)
+        if after != identity:
+            raise self.changed("snapshot", pid, self.difference(after, identity))
         return identity
 
     def verify(self, expected):
         try:
             actual = self.capture_identity(expected["pid"])
         except Gone:
-            raise Refusal("identity_changed") from None
+            raise self.changed("verify", expected["pid"], "presence") from None
         if actual != expected:
-            raise Refusal("identity_changed")
+            raise self.changed("verify", expected["pid"], self.difference(actual, expected))
 
     def live(self, expected):
         try:
@@ -176,13 +191,14 @@ class Observer:
             return False
 
     def capture(self, root):
+        self.capture_root_pid = root["pid"]
         result = []
         seen = set()
 
         def traverse(parent):
             self.verify(parent)
             if parent["pid"] in seen:
-                raise Refusal("identity_changed")
+                raise self.changed("duplicate", parent["pid"], "pid")
             if len(seen) >= MAX_DESCENDANTS + 1:
                 raise Refusal("limit")
             seen.add(parent["pid"])
@@ -201,7 +217,7 @@ class Observer:
                 if not _integer(child_pid, 1, 2**31 - 1):
                     raise Refusal("inspection_failed")
                 if child_pid in direct or child_pid in seen:
-                    raise Refusal("identity_changed")
+                    raise self.changed("duplicate", child_pid, "pid")
                 direct.add(child_pid)
                 try:
                     listed_birth = self.inspect(child.create_time)
@@ -214,7 +230,8 @@ class Observer:
                     continue
                 self.verify(parent)
                 if identity["birth"] != listed_birth or identity["uid"] != parent["uid"]:
-                    raise Refusal("identity_changed")
+                    raise self.changed("listed_child", child_pid,
+                                       "birth" if identity["birth"] != listed_birth else "uid")
                 traverse(identity)
                 self.verify(parent)
                 # Check the original direct linkage after the recursive walk.
@@ -226,10 +243,18 @@ class Observer:
                     after = identity
                 self.verify(parent)
                 if after != identity:
-                    raise Refusal("identity_changed")
+                    raise self.changed("post_walk", child_pid, self.difference(after, identity))
             self.verify(parent)
 
-        traverse(root)
+        try:
+            traverse(root)
+        except Gone:
+            # A disappearance outside the existing omission/verification sites
+            # remains a refusal. Do not guess which process vanished.
+            raise Refusal("identity_changed", {"check": "unhandled_disappearance",
+                                               "scope": "unknown", "component": "presence"}) from None
+        finally:
+            self.capture_root_pid = None
         return result
 
     def wait(self, identities, summary):
@@ -319,6 +344,8 @@ def run(request, psutil=None, *, started=None):
                 deadline.check()
             except Refusal as error:
                 result = failure(error.reason, summary)
+                if mode == "capture" and error.reason == "identity_changed" and error.diagnostic is not None:
+                    result["diagnostic"] = error.diagnostic
             except Gone:
                 result = failure("identity_changed", summary)
             except Exception:

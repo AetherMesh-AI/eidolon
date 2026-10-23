@@ -147,6 +147,14 @@ def wait_request(identities=None, *, milliseconds=500):
 
 def assert_failure(result, reason, *, count=None):
     expected = {"ok", "reason"}
+    if "diagnostic" in result:
+        expected.add("diagnostic")
+        detail = result["diagnostic"]
+        assert reason == "identity_changed" and count is None
+        assert set(detail) == {"check", "scope", "component"}
+        assert detail["check"] in {"parent_link", "snapshot", "verify", "duplicate", "listed_child", "post_walk", "unhandled_disappearance"}
+        assert detail["scope"] in {"root", "descendant", "unknown"}
+        assert detail["component"] in {"birth", "uid", "pid", "ppid", "presence", "identity"}
     if count is not None:
         expected |= {"capturedCount", "initialLive", "remainingLive", "rootExited"}
         assert result["capturedCount"] == count
@@ -563,3 +571,54 @@ def test_real_subprocess_descendants_capture_and_wait(posix_host):
         root.wait(timeout=7)
         stdout, stderr = root.communicate(timeout=1)
         assert root.returncode == 0 and stderr == b""
+
+
+@pytest.mark.parametrize("scenario,expected", [
+    ("root_birth", ("verify", "root", "birth")),
+    ("root_uid", ("verify", "root", "uid")),
+    ("root_gone", ("verify", "root", "presence")),
+    ("child_link", ("parent_link", "descendant", "ppid")),
+    ("child_uid", ("listed_child", "descendant", "uid")),
+    ("snapshot_birth", ("snapshot", "descendant", "birth")),
+    ("listed_birth", ("listed_child", "descendant", "birth")),
+    ("duplicate", ("duplicate", "descendant", "pid")),
+    ("post_walk", ("post_walk", "descendant", "birth")),
+    ("during_enumeration", ("unhandled_disappearance", "unknown", "presence")),
+])
+def test_capture_refusal_reports_only_check_scope_and_component(posix_host, scenario, expected):
+    fake = FakePsutil().add(10, children=[20]).add(20, ppid=10)
+    if scenario == "root_birth":
+        fake.records[10]["birth"] = 991.0
+    elif scenario == "root_uid":
+        fake.records[10]["uid"] = 1001
+    elif scenario == "root_gone":
+        del fake.records[10]
+    elif scenario == "child_link":
+        fake.records[20]["ppid"] = 99
+    elif scenario == "child_uid":
+        fake.records[20]["uid"] = 1001
+    elif scenario == "duplicate":
+        fake.records[10]["children"] = [20, 20]
+    walked = False
+
+    def mutate(pid, method):
+        nonlocal walked
+        if scenario == "snapshot_birth" and (pid, method) == (20, "uid"):
+            fake.records[20]["birth"] = 991.0
+        if scenario == "listed_birth" and (pid, method) == (20, "listed_birth"):
+            fake.records[20]["birth"] = 991.0
+        if scenario == "post_walk":
+            if (pid, method) == (20, "children"):
+                walked = True
+            if walked and (pid, method) == (10, "birth"):
+                fake.records[20]["birth"] = 991.0
+        if scenario == "during_enumeration" and (pid, method) == (10, "children"):
+            del fake.records[10]
+
+    fake.hook = mutate
+    result = run({"mode": "capture", "root": identity()}, fake)
+    assert_failure(result, "identity_changed")
+    assert result["diagnostic"] == dict(zip(("check", "scope", "component"), expected))
+    assert set(result) == {"ok", "reason", "diagnostic"}
+    assert not fake.forbidden_calls
+    assert "991" not in json.dumps(result) and "1001" not in json.dumps(result)
