@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS organization_model_calls (
  objective_id TEXT NOT NULL REFERENCES objectives(id), provider TEXT NOT NULL, model TEXT NOT NULL,
  input_limit INTEGER NOT NULL, output_limit INTEGER NOT NULL, reserved_cost_usd TEXT,
  created REAL NOT NULL, pricing TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS organization_model_call_contracts (
+ model_call_id TEXT PRIMARY KEY REFERENCES organization_model_calls(id),
+ output_contract TEXT NOT NULL CHECK(output_contract IN ('provider-cap','subscription-reservation')));
+CREATE TRIGGER IF NOT EXISTS organization_model_call_contracts_immutable_update
+ BEFORE UPDATE ON organization_model_call_contracts
+ BEGIN SELECT RAISE(ABORT,'Model call contract is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS organization_model_call_contracts_immutable_delete
+ BEFORE DELETE ON organization_model_call_contracts
+ BEGIN SELECT RAISE(ABORT,'Model call contract is immutable'); END;
 CREATE INDEX IF NOT EXISTS model_calls_objective ON organization_model_calls(objective_id);
 CREATE TABLE IF NOT EXISTS organization_evidence_passes (
  request_id TEXT NOT NULL REFERENCES requests(id), token TEXT NOT NULL, pass_index INTEGER NOT NULL,
@@ -107,6 +116,20 @@ def budget_view(conn, objective_id, settings):
             'configuredCostLimitUsd': format(cost_limit, 'f') if cost_limit is not None else None,
             'legacyUsageUnknown': bool(row['legacy_usage_unknown']),
             'budgetScope': 'Durable admission reservations, including interrupted or unreported calls; never refunded. USD uses only configured exact-route ceilings, not current provider prices or an invoice. The deadline includes time awaiting owner input.'}
+    subscription_calls = conn.execute(
+        "SELECT count(*) FROM organization_model_calls m JOIN organization_model_call_contracts c ON c.model_call_id=m.id "
+        "WHERE m.objective_id=? AND c.output_contract='subscription-reservation'", (objective_id,)).fetchone()[0]
+    if subscription_calls:
+        reported = conn.execute(
+            'SELECT count(o.model_call_id),sum(o.input_tokens),sum(o.output_tokens), '
+            'sum(CASE WHEN o.input_tokens IS NULL OR o.output_tokens IS NULL THEN 1 ELSE 0 END) '
+            'FROM organization_model_calls m JOIN organization_model_call_contracts c ON c.model_call_id=m.id '
+            'LEFT JOIN organization_route_observations o ON o.model_call_id=m.id '
+            "WHERE m.objective_id=? AND c.output_contract='subscription-reservation'", (objective_id,)).fetchone()
+        view['subscriptionBudget'] = {'version': 1, 'calls': subscription_calls,
+            'outputContract': 'reservation-only', 'providerOutputCeiling': False,
+            'reportedInputTokens': reported[1], 'reportedOutputTokens': reported[2],
+            'usageComplete': reported[0] == subscription_calls and reported[3] == 0}
     view['completionReserve'] = completion_reserve_view(conn, objective_id, calls, view)
     from eidolon_cli.organization_shared_budget import shared_projection
     shared = shared_projection(conn)
@@ -166,6 +189,16 @@ class OrganizationBudgetStore:
             raise ValueError('Model reservation requires bounded input and output token ceilings')
         if input_limit + output_limit > self.settings.max_context_tokens or output_limit > self.settings.max_output_tokens:
             raise ValueError('Model reservation exceeds the configured context/output ceiling')
+        from eidolon_constants import get_eidolon_home
+        from eidolon_cli.profile_isolation import isolated_route, CODEX_PROVIDER
+        subscription = False
+        if provider == CODEX_PROVIDER:
+            home = self.path.absolute().parent.parent
+            if get_eidolon_home().absolute() != home:
+                raise ValueError('Subscription reservation requires the selected workspace')
+            route = isolated_route(home=home, requested=provider, target_model=model)
+            if route is not None:
+                subscription = True
         with self._write() as conn:
             request = self._owned(conn, claim)
             if request is None:
@@ -179,10 +212,12 @@ class OrganizationBudgetStore:
             view = budget_view(conn, request['objective_id'], self.settings)
             if view['reservedTokens'] + input_limit + output_limit > view['tokenLimit']:
                 raise ValueError('The next model call would exceed the objective reserved-token budget; no call was sent.')
-            rate = next((item for item in self.settings.model_costs if (item.provider, item.model) == (provider, model)), None)
+            rate = None if subscription else next((item for item in self.settings.model_costs if (item.provider, item.model) == (provider, model)), None)
             cost = None if rate is None else ((Decimal(input_limit) * Decimal(rate.input_usd_per_million) + Decimal(output_limit) * Decimal(rate.output_usd_per_million)) / 1_000_000).quantize(Decimal('0.000000001'), rounding=ROUND_CEILING)
             if view['configuredCostLimitUsd'] is not None:
                 if cost is None:
+                    if subscription:
+                        raise ValueError('Subscription output has no guaranteed provider ceiling; a configured monetary ceiling cannot authorize this route. No model call was sent.')
                     raise ValueError('No configured cost ceiling exists for this exact provider/model. No model call was sent; configure both input and output ceilings before retrying.')
                 if Decimal(view['configuredCostReservedUsd']) + cost > Decimal(view['configuredCostLimitUsd']):
                     raise ValueError('The next model call would exceed the objective configured-cost budget; no call was sent.')
@@ -213,6 +248,8 @@ class OrganizationBudgetStore:
             conn.execute('INSERT INTO organization_model_calls VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                          (ident, request['id'], request['token'], request['objective_id'], provider, model,
                           input_limit, output_limit, format(cost, 'f') if cost is not None else None, time.time(), json.dumps(pricing)))
+            conn.execute('INSERT INTO organization_model_call_contracts VALUES (?,?)',
+                         (ident, 'subscription-reservation' if subscription else 'provider-cap'))
             conn.execute('INSERT INTO organization_model_call_classes VALUES (?,?,?,?)',
                          (ident, request['type'], classification, COMPLETION_POLICY))
             if dispatch is not None:

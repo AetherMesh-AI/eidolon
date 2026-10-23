@@ -16,6 +16,8 @@ VERSION = 1
 MARKER = '.organization-isolation.json'
 WORKSPACES = '.organization-workspaces'
 PROVIDER = 'openai-api'
+CODEX_PROVIDER = 'openai-codex'
+CODEX_ENDPOINT = 'https://chatgpt.com/backend-api/codex'
 ENDPOINT = 'https://api.openai.com/v1'
 MODE = 'profile-local-openai-api'
 _FIELDS = {'version', 'state', 'profile', 'operation', 'organizationId', 'ownerId'}
@@ -139,7 +141,7 @@ def isolation_view(home: Path) -> dict | None:
     value = verify_isolation(home)
     return ({'isolationVersion': VERSION, 'credentialMode': MODE,
              'profile': value['profile'], 'organizationId': value['organizationId'],
-             'ownerId': value['ownerId'], 'supportedProviders': [PROVIDER],
+             'ownerId': value['ownerId'], 'supportedProviders': [PROVIDER, CODEX_PROVIDER],
              'executionMode': 'tool-free-organization'} if value else None)
 
 
@@ -149,8 +151,9 @@ def source_runtime_capability(home: Path) -> dict | None:
     import sys
     if verify_isolation(home) is None:
         return None
-    return {'version': 1, 'mode': 'scheduler-scoped-organization',
-            'requestTypes': ['work.inspect', 'work.edit'], 'provider': PROVIDER,
+    return {'version': 2, 'mode': 'scheduler-scoped-organization',
+            'requestTypes': ['work.inspect', 'work.edit'], 'providers': [PROVIDER, CODEX_PROVIDER],
+            'outputContracts': {PROVIDER: 'provider-cap', CODEX_PROVIDER: 'subscription-reservation'},
             'credentialScope': 'profile-local', 'grantsIncluded': False,
             'host': {'sourceReading': 'supported' if os.name == 'posix' else 'unsupported',
                      'projectValidation': 'requires-sandbox' if sys.platform == 'linux' else 'unsupported'}}
@@ -182,37 +185,41 @@ def isolated_route(*, requested=None, explicit_base_url=None,
         configuration = load_config_readonly(initialize_home=False)
         effective = configuration.get('model')
         providers = configuration.get('providers')
-        block = providers.get(PROVIDER) if isinstance(providers, dict) else None
+        selected = raw.get('provider') if isinstance(raw, dict) else None
+        block = providers.get(selected) if isinstance(providers, dict) else None
         if isinstance(block, dict) and not is_provider_enabled(block):
-            raise ProfileIsolationError('OpenAI API is disabled in this workspace configuration')
+            raise ProfileIsolationError('The selected provider is disabled in this workspace configuration')
     except ProfileIsolationError:
         raise
     except Exception as exc:
         raise ProfileIsolationError('Workspace model configuration is unavailable') from exc
     finally:
         reset_eidolon_home_override(token)
-    if (not isinstance(raw, dict) or raw.get('provider') != PROVIDER
+    if (not isinstance(raw, dict) or raw.get('provider') not in {PROVIDER, CODEX_PROVIDER}
             or not isinstance(raw.get('default'), str) or not raw['default'].strip() or len(raw['default']) > 300
-            or not isinstance(effective, dict) or effective.get('provider') != PROVIDER
+            or not isinstance(effective, dict) or effective.get('provider') != raw.get('provider')
             or effective.get('default') != raw['default']):
-        raise ProfileIsolationError('Select OpenAI API and a model in this workspace’s settings first')
-    if requested not in (None, '', 'auto', PROVIDER):
-        raise ProfileIsolationError('This workspace supports only its own OpenAI API credentials')
+        raise ProfileIsolationError('Select a supported provider and a model in this workspace’s settings first')
+    provider = raw['provider']
+    endpoint = CODEX_ENDPOINT if provider == CODEX_PROVIDER else ENDPOINT
+    mode = 'codex_responses' if provider == CODEX_PROVIDER else 'chat_completions'
+    if requested not in (None, '', 'auto', provider):
+        raise ProfileIsolationError('The requested provider differs from this workspace’s selected route')
     for config in (raw, effective):
         if str(config.get('openai_runtime') or '').strip().lower() == 'codex_app_server':
             from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
             raise ProfileIsolationError(APP_SERVER_BLOCKER)
-        if (config.get('base_url') not in (None, '', ENDPOINT, ENDPOINT + '/')
-                or config.get('api_mode') not in (None, '', 'chat_completions')
+        if (config.get('base_url') not in (None, '', endpoint, endpoint + '/')
+                or config.get('api_mode') not in (None, '', mode)
                 or any(config.get(key) for key in ('api_key', 'api', 'default_headers'))):
             raise ProfileIsolationError('This workspace requires a direct OpenAI API route without inline credentials or headers')
-    if explicit_base_url not in (None, '', ENDPOINT, ENDPOINT + '/'):
+    if explicit_base_url not in (None, '', endpoint, endpoint + '/'):
         raise ProfileIsolationError('Explicit credentials or endpoint do not belong to this workspace')
     model = raw['default'] if target_model is None else target_model
     if not isinstance(model, str) or not model.strip() or len(model) > 300:
         raise ProfileIsolationError('A bounded model name is required')
-    return {'provider': PROVIDER, 'requested_provider': PROVIDER, 'model': model.strip(),
-            'api_mode': 'chat_completions', 'base_url': ENDPOINT,
+    return {'provider': provider, 'requested_provider': provider, 'model': model.strip(),
+            'api_mode': mode, 'base_url': endpoint,
             'request_overrides': effective.get('request_overrides')}
 
 
@@ -224,6 +231,14 @@ def isolated_runtime(*, requested=None, explicit_api_key=None, explicit_base_url
                            target_model=target_model, home=home)
     if route is None:
         return None
+    if route['provider'] == CODEX_PROVIDER:
+        from eidolon_cli.profile_codex_auth import ProfileCodexAuth
+        binding = ProfileCodexAuth.read(home)
+        key = binding.tokens['access_token']
+        if explicit_api_key not in (None, '', key):
+            raise ProfileIsolationError('Explicit credentials do not belong to this workspace')
+        return {key: value for key, value in {**route, 'api_key': key,
+                'source': 'profile-local-codex-auth'}.items() if key != 'request_overrides'}
     secrets = profile_secrets(home)
     key = secrets.get('OPENAI_API_KEY', '').strip()
     from eidolon_cli.auth import has_usable_secret
@@ -307,12 +322,13 @@ def allow_log_record(path: Path, producer_home) -> bool:
 
 
 def initialize_agent(agent, *, platform, provider, model, api_key, base_url, api_mode,
-                     enabled_toolsets, fallback_model) -> None:
+                     enabled_toolsets, fallback_model, credential_pool=None) -> None:
     from eidolon_constants import get_eidolon_home
     if read_isolation() is None:
         return
     if (platform != 'organization' or enabled_toolsets != [] or fallback_model
-            or provider != PROVIDER or api_mode != 'chat_completions'):
+            or credential_pool is not None
+            or (provider, api_mode) not in {(PROVIDER, 'chat_completions'), (CODEX_PROVIDER, 'codex_responses')}):
         raise ProfileIsolationError('This isolated workspace currently supports tool-free organization work only')
     isolated_runtime(requested=provider, target_model=model, explicit_api_key=api_key,
                      explicit_base_url=base_url)
@@ -321,6 +337,9 @@ def initialize_agent(agent, *, platform, provider, model, api_key, base_url, api
         from eidolon_cli.organization_isolated_admission import require_admission
         require_admission(admission=admission)
     agent._isolated_workspace_home = str(local_path(get_eidolon_home()))
+    if provider == CODEX_PROVIDER:
+        from eidolon_cli.profile_codex_auth import ProfileCodexAuth
+        agent._isolated_codex_auth = ProfileCodexAuth.read(Path(agent._isolated_workspace_home))
 
 
 def validate_agent_send(agent) -> None:
@@ -334,6 +353,9 @@ def validate_agent_send(agent) -> None:
         raise ProfileIsolationError('Agent workspace changed before provider send')
     isolated_runtime(home=Path(pinned), requested=agent.provider, target_model=agent.model,
                      explicit_api_key=agent.api_key, explicit_base_url=agent.base_url)
+    if agent.provider == CODEX_PROVIDER:
+        from eidolon_cli.profile_codex_auth import check_agent_auth
+        check_agent_auth(agent)
     execution = getattr(agent, '_organization_tool_execution', None)
     admission = getattr(agent, '_isolated_source_admission', None)
     from eidolon_cli.organization_isolated_admission import check_active, require_admission
@@ -342,7 +364,7 @@ def validate_agent_send(agent) -> None:
         require_admission(execution=execution, admission=admission, agent=agent)
 
 
-def create_isolated_client(agent, kwargs: dict):
+def create_isolated_client(agent, kwargs: dict, *, reason=None):
     from eidolon_constants import get_eidolon_home
     pinned = getattr(agent, '_isolated_workspace_home', None)
     if pinned is None:
@@ -351,11 +373,23 @@ def create_isolated_client(agent, kwargs: dict):
         return None
     if local_path(get_eidolon_home()) != Path(pinned):
         raise ProfileIsolationError('Agent workspace changed before client construction')
+    if getattr(agent, 'provider', None) == CODEX_PROVIDER and reason != 'agent_init':
+        from eidolon_cli.profile_codex_auth import refresh_agent_auth
+        refresh_agent_auth(agent)
+        kwargs = {**kwargs, 'api_key': agent.api_key}
     route = isolated_runtime(home=Path(pinned), requested=getattr(agent, 'provider', None),
                              target_model=getattr(agent, 'model', None),
                              explicit_api_key=kwargs.get('api_key'), explicit_base_url=kwargs.get('base_url'))
-    if route is None or getattr(agent, 'api_mode', None) != 'chat_completions':
+    if route is None or getattr(agent, 'api_mode', None) != route['api_mode']:
         raise ProfileIsolationError('The agent no longer has a supported isolated route')
+    if route['provider'] == CODEX_PROVIDER:
+        from agent.codex_headers import codex_cloudflare_headers
+        expected = codex_cloudflare_headers(route['api_key'], base_url=CODEX_ENDPOINT)
+        if kwargs.get('default_headers') not in (None, expected):
+            raise ProfileIsolationError('Custom Codex identity headers are unavailable in this workspace')
+        kwargs = {key: value for key, value in kwargs.items() if key != 'default_headers'}
+    else:
+        expected = {}
     if any(value for key, value in kwargs.items()
            if key not in {'api_key', 'base_url', 'timeout', 'max_retries'}):
         raise ProfileIsolationError('Custom SDK options are unavailable in this isolated workspace')
@@ -363,7 +397,8 @@ def create_isolated_client(agent, kwargs: dict):
     from openai import OpenAI
     transport = httpx.Client(trust_env=False, follow_redirects=False)
     try:
-        return OpenAI(api_key=route['api_key'], base_url=ENDPOINT, organization='', project='',
+        return OpenAI(api_key=route['api_key'], base_url=route['base_url'], organization='', project='',
+                      default_headers=expected,
                       max_retries=0, http_client=transport,
                       **({'timeout': kwargs['timeout']} if 'timeout' in kwargs else {}))
     except BaseException:

@@ -60,8 +60,10 @@ def record_observation(conn, claim, call_id, *, input_tokens, output_tokens, ela
                    for value in (input_tokens, output_tokens))):
         raise ValueError('Invalid physical-call observation')
     row = conn.execute('SELECT 1 FROM organization_model_calls m '
-        'JOIN organization_model_call_dispatches d ON d.model_call_id=m.id '
-        'WHERE m.id=? AND m.request_id=? AND m.token=?', (call_id, claim['id'], claim['token'])).fetchone()
+        'LEFT JOIN organization_model_call_dispatches d ON d.model_call_id=m.id '
+        'LEFT JOIN organization_model_call_contracts c ON c.model_call_id=m.id '
+        "WHERE (d.model_call_id IS NOT NULL OR c.output_contract='subscription-reservation') "
+        'AND m.id=? AND m.request_id=? AND m.token=?', (call_id, claim['id'], claim['token'])).fetchone()
     if row is None:
         raise ValueError('Observation requires the matching routed call reservation')
     values = (input_tokens, output_tokens, float(elapsed_seconds), outcome)

@@ -1671,7 +1671,7 @@ def _gemini_native_client(agent, client_kwargs: dict, httpx_verify, *, reason: s
 
 def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: bool) -> Any:
     from eidolon_cli.profile_isolation import create_isolated_client
-    isolated = create_isolated_client(agent, client_kwargs)
+    isolated = create_isolated_client(agent, client_kwargs, reason=reason)
     if isolated is not None:
         return isolated
     from agent.auxiliary_client import _validate_base_url, _validate_proxy_env_urls

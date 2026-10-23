@@ -920,6 +920,13 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     def _open_codex_stream(next_api_kwargs: dict[str, Any]):
         stream_kwargs = _sanitize_consumer_codex_request(agent, next_api_kwargs)
         stream_kwargs["stream"] = True
+        if getattr(agent, '_isolated_codex_auth', None) is not None:
+            from eidolon_cli.profile_codex_auth import check_agent_auth
+            agent._organization_check(stream_kwargs)
+            check_agent_auth(agent, client=active_client, request=stream_kwargs)
+            agent._organization_reserve_call(stream_kwargs, attempts=1)
+            observation['call_id'] = agent._organization_last_call_id
+            observation['started'] = time.monotonic()
         return active_client.responses.create(**_bypass_sdk_request_transform(stream_kwargs))
 
     def _log_failure(exc: BaseException) -> None:
@@ -981,6 +988,8 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 watchdog_state.retry_started_ts = time.time()
         intercepted_events: list = []
         writer_token["value"] = event_stream = None
+        observation = {}
+        final = None
         try:
             try:
                 event_stream = relay_llm.stream(
@@ -1014,7 +1023,8 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
             except RuntimeError:
                 # "No terminal response"; Relay may still hold a finalizer-assembled response.
                 if event_stream is not None and event_stream.final_response is not None:
-                    return event_stream.final_response
+                    final = event_stream.final_response
+                    return final
                 raise
             except _APIConnectionError as exc:
                 _log_failure(exc)
@@ -1028,6 +1038,9 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                                sum(len(p) for p in agent._codex_streamed_text_parts), agent._client_log_context())
             return final
         finally:
+            if observation:
+                from eidolon_cli.profile_codex_auth import record_attempt
+                record_attempt(agent, observation, final)
             _close_event_stream(event_stream)
 
 
