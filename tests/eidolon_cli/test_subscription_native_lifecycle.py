@@ -535,7 +535,21 @@ def test_real_subprocess_descendants_capture_and_wait(posix_host):
         root_result = invoke({"mode": "root", "pid": root.pid, "uid": os.getuid()})
         assert root_result["ok"] is True
         captured = invoke({"mode": "capture", "root": root_result["root"]})
-        assert captured["ok"] is True
+        # Retain only closed diagnostic labels on failure, never process identities.
+        detail = captured.get("diagnostic")
+        detail = detail if isinstance(detail, dict) else {}
+        allowed = {
+            "reason": lifecycle.REASONS,
+            "check": {"parent_link", "snapshot", "verify", "duplicate", "listed_child",
+                      "post_walk", "unhandled_disappearance"},
+            "scope": {"root", "descendant", "unknown"},
+            "component": {"birth", "uid", "pid", "ppid", "presence", "identity"},
+        }
+        labels = {"reason": captured.get("reason"),
+                  **{key: detail.get(key) for key in ("check", "scope", "component")}}
+        refusal = {key: value if isinstance(value, str) and value in allowed[key] else "unavailable"
+                   for key, value in labels.items()}
+        assert captured["ok"] is True, f"Owned subprocess capture refused: {refusal}"
         assert {item["pid"] for item in captured["identities"]} == {root.pid, child_pid, grandchild_pid}
         # All three owned processes remain blocked on their input pipes. This
         # independent observation must refuse cleanup while any survivor lives.
