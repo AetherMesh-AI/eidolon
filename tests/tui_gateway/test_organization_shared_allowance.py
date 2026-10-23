@@ -4,11 +4,14 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
+from io import StringIO
 import sqlite3
+import threading
 import time
 from types import SimpleNamespace
 import uuid
+from unittest.mock import patch
 
 import pytest
 
@@ -27,13 +30,61 @@ OPERATIONS = {
 METHODS = [READ, *(name for pair in OPERATIONS.values() for name in pair)]
 
 
+def _timeout_evidence(futures, writes):
+    # Observations only: a completed Future does not establish process shutdown.
+    states, failure_frames = [], []
+    for future in futures:
+        error = None
+        if future.done():
+            if not future.cancelled():
+                error = future.exception()
+            states.append('cancelled' if future.cancelled() else 'failed' if error is not None else 'completed')
+        else:
+            states.append('running' if future.running() else 'pending')
+        frames, tb = [], error.__traceback__ if error is not None else None
+        while tb is not None:
+            code = tb.tb_frame.f_code
+            frames.append({'file': code.co_filename.replace('\\', '/').rsplit('/', 1)[-1],
+                           'line': tb.tb_lineno, 'function': code.co_name})
+            tb = tb.tb_next
+        failure_frames.append(frames)
+    from scripts.ci.organization_timing import _write_python_stacks
+    frames = StringIO()
+    _write_python_stacks(frames)  # Existing basename/frame-only formatter; no locals.
+    return json.dumps({'futureStates': states, 'failureFrames': failure_frames, 'writesAttempted': writes[0],
+                       'writesCompleted': writes[1]}) + '\n' + frames.getvalue()
+
+
 def call(method=READ, params=None, transport=None):
     responses = Queue()
     transport = transport or SimpleNamespace(closed=False)
-    transport.write = responses.put
+    writes, futures = [0, 0], []
+    def write(response):
+        writes[0] += 1
+        result = responses.put(response)
+        writes[1] += 1
+        return result
+    transport.write = write
     request = {'jsonrpc': '2.0', 'id': 17, 'method': method, 'params': {} if params is None else params}
-    result = server.dispatch(request, transport=transport)
-    return result if result is not None else responses.get(timeout=10)
+    submit = server._pool.submit
+    caller = threading.get_ident()
+    def observe_submit(*args, **kwargs):
+        future = submit(*args, **kwargs)
+        if threading.get_ident() == caller:
+            futures.append(future)
+        return future
+    # Observe the existing submission, without wrapping the worker or replacing its pool.
+    # These fixture calls are serial; restore submit before waiting for the response.
+    with patch.object(server._pool, 'submit', observe_submit):
+        result = server.dispatch(request, transport=transport)
+    try:
+        return result if result is not None else responses.get(timeout=10)
+    except Empty as exc:
+        try:
+            exc.add_note('SHARED_ALLOWANCE_RPC_TIMEOUT ' + _timeout_evidence(futures, writes))
+        except Exception:
+            exc.add_note('SHARED_ALLOWANCE_RPC_TIMEOUT evidence_unavailable')
+        raise
 
 
 def make_profile(home, name='Organization', *, execution=True):
@@ -304,3 +355,158 @@ def test_passive_review_never_loads_profile_credentials_or_replaces_ambient_secr
         assert 'not-shared' not in json.dumps(response)
     finally:
         secret_scope.reset_secret_scope(token)
+
+
+@pytest.fixture
+def controlled_rpc(monkeypatch):
+    """Drive real dispatch deterministically without waiting ten seconds per failure."""
+    from concurrent.futures import Future
+    import sys
+    module = sys.modules[__name__]
+    pending = []
+    class Pool:
+        def submit(self, fn):
+            future = Future()
+            pending.append((future, fn))
+            return future
+    pool = Pool()
+    monkeypatch.setattr(server, '_pool', pool)
+    class ControlledQueue(Queue):
+        def get(self, *, timeout):
+            assert timeout == 10  # Production fixture deadline remains unchanged.
+            for future, fn in pending:
+                if future.done() or future.running():
+                    continue
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    future.set_result(fn())
+                except BaseException as exc:
+                    future.set_exception(exc)
+            return super().get(block=False)
+    monkeypatch.setattr(module, 'Queue', ControlledQueue)
+    return module, pending, ControlledQueue
+
+
+@pytest.mark.parametrize('outcome,states,writes', [
+    ('no_response', ['completed'], [0, 0]),
+    ('worker_exception', ['failed'], [0, 0]),
+    ('write_exception', ['failed'], [1, 0]),
+    ('cancelled', ['cancelled'], [0, 0]),
+    ('pending', ['pending'], [0, 0]),
+    ('running', ['running'], [0, 0]),
+])
+def test_rpc_timeout_retains_original_failure_and_safe_worker_evidence(controlled_rpc, monkeypatch, outcome, states, writes):
+    module, pending, queue = controlled_rpc
+    class WorkerFailure(BaseException):
+        pass
+    def handler(rid, params):
+        if outcome == 'worker_exception':
+            raise WorkerFailure('PRIVATE_EXCEPTION_VALUE')
+        return None if outcome == 'no_response' else {'id': rid, 'result': params}
+    monkeypatch.setitem(server._methods, OPERATIONS['configuration'][1], handler)
+    if outcome == 'write_exception':
+        def broken_write(self, value):
+            raise OSError('PRIVATE_WRITE_VALUE')
+        monkeypatch.setattr(queue, 'put', broken_write)
+    original = Empty()
+    get = queue.get
+    def fail(self, *, timeout):
+        assert timeout == 10
+        if outcome in {'pending', 'running', 'cancelled'}:
+            future = pending[-1][0]
+            if outcome == 'running':
+                future.set_running_or_notify_cancel()
+            elif outcome == 'cancelled':
+                future.cancel()
+        else:
+            with pytest.raises(Empty):
+                get(self, timeout=timeout)
+        raise original
+    monkeypatch.setattr(queue, 'get', fail)
+    submit = server._pool.submit
+    with pytest.raises(Empty) as caught:
+        call(OPERATIONS['configuration'][1], {'private': 'PRIVATE_REQUEST_VALUE'})
+    assert caught.value is original
+    assert server._pool.submit == submit
+    note = caught.value.__notes__[0]
+    data = json.loads(note.split('\n', 1)[0].removeprefix('SHARED_ALLOWANCE_RPC_TIMEOUT '))
+    frames = data.pop('failureFrames')
+    assert data == {'futureStates': states, 'writesAttempted': writes[0], 'writesCompleted': writes[1]}
+    assert len(frames) == 1
+    assert bool(frames[0]) == (outcome in {'worker_exception', 'write_exception'})
+    for frame in frames[0]:
+        assert set(frame) == {'file', 'line', 'function'}
+        assert '/' not in frame['file'] and '\\' not in frame['file']
+    assert 'Python frame snapshot (not a native stack dump)' in note
+    assert 'PRIVATE_' not in note
+
+
+def test_rpc_timeout_evidence_failure_cannot_replace_original(controlled_rpc, monkeypatch):
+    module, _, queue = controlled_rpc
+    original = Empty()
+    def fail(self, *, timeout):
+        assert timeout == 10
+        raise original
+    def broken_evidence(*args):
+        raise OSError('PRIVATE_DIAGNOSTIC_VALUE')
+    monkeypatch.setattr(queue, 'get', fail)
+    monkeypatch.setattr(module, '_timeout_evidence', broken_evidence)
+    with pytest.raises(Empty) as caught:
+        call(OPERATIONS['configuration'][1])
+    assert caught.value is original
+    assert caught.value.__notes__ == ['SHARED_ALLOWANCE_RPC_TIMEOUT evidence_unavailable']
+
+
+def test_rpc_handler_exception_is_a_response_and_late_response_stays_with_original_queue(controlled_rpc, monkeypatch):
+    _, pending, queue = controlled_rpc
+    def handler(rid, params):
+        if params.get('fail'):
+            raise ValueError('synthetic handler failure')
+        return {'id': rid, 'result': params}
+    monkeypatch.setitem(server._methods, OPERATIONS['configuration'][1], handler)
+    assert call(OPERATIONS['configuration'][1], {'fail': True})['error']['code'] == -32000
+    original_get = queue.get
+    with monkeypatch.context() as delayed:
+        def immediate_timeout(self, *, timeout):
+            assert timeout == 10
+            raise Empty()
+        delayed.setattr(queue, 'get', immediate_timeout)
+        with pytest.raises(Empty):
+            call(OPERATIONS['configuration'][1], {'value': 'old'})
+    assert queue.get == original_get
+    # Both requests reuse id 17; the old response must remain in its old queue.
+    assert call(OPERATIONS['configuration'][1], {'value': 'new'})['result'] == {'value': 'new'}
+    assert all(future.done() for future, _ in pending)
+
+
+def test_rpc_running_worker_is_not_mistaken_for_shutdown(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import sys
+    entered, release = threading.Event(), threading.Event()
+    replies = []
+    class ObservedQueue(Queue):
+        def get(self, *, timeout):
+            assert timeout == 10
+            assert entered.wait(2)
+            raise Empty()
+        def put(self, response):
+            replies.append(response)
+            return super().put(response)
+    def handler(rid, params):
+        entered.set()
+        assert release.wait(2)
+        return {'id': rid, 'result': 'late'}
+    monkeypatch.setattr(sys.modules[__name__], 'Queue', ObservedQueue)
+    monkeypatch.setitem(server._methods, OPERATIONS['configuration'][1], handler)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        monkeypatch.setattr(server, '_pool', pool)
+        try:
+            with pytest.raises(Empty) as caught:
+                call(OPERATIONS['configuration'][1])
+            assert '"futureStates": ["running"]' in caught.value.__notes__[0]
+            assert replies == []
+        finally:
+            release.set()
+    # Only this synthetic executor's explicit join establishes completion.
+    assert replies == [{'id': 17, 'result': 'late'}]
