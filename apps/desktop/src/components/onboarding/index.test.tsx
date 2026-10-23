@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { HermesGateway } from '@/eidolon'
 import { I18nProvider } from '@/i18n'
 import { $gateway, setPrimaryGateway } from '@/store/gateway'
+import { $localModelsEnabled } from '@/store/local-models-flag'
 import * as notifications from '@/store/notifications'
 import { $desktopOnboarding, closeManualOnboarding, type DesktopOnboardingState, type OnboardingContext, startManualOnboarding } from '@/store/onboarding'
 import { $gatewayState } from '@/store/session'
@@ -366,6 +367,30 @@ it('offers only supported ordinary API choices for an isolated organization', ()
   expect(screen.queryByText('Google Gemini')).toBeNull()
   expect(screen.queryByText('Local / custom endpoint')).toBeNull()
   expect(screen.queryByText('ChatGPT or Codex Subscription')).toBeNull()
+})
+
+it.each(['restricted', 'empty', 'unrestricted'] as const)('filters static picker actions for a %s catalog', async kind => {
+  const previous = $localModelsEnabled.get()
+  $localModelsEnabled.set(true)
+  setProviders(kind === 'empty' ? [] : [makeOAuthProvider('openai-codex', 'ChatGPT or Codex Subscription')])
+  $desktopOnboarding.set({ ...$desktopOnboarding.get(), supportedProviders:
+    kind === 'unrestricted' ? undefined : kind === 'empty' ? [] : ['openai-api', 'openai-codex'] })
+  try {
+    render(<Picker ctx={ctx} />)
+    for (const name of [/Fireworks AI/, /OpenRouter/, /Run models locally/]) {
+      expect(Boolean(screen.queryByRole('button', { name }))).toBe(kind === 'unrestricted')
+    }
+    if (kind === 'restricted') {
+      expect(screen.getByText('ChatGPT or Codex Subscription')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'I have an API key' }))
+      expect(screen.getByText('OpenAI')).toBeTruthy()
+      expect(screen.queryByText('Fireworks AI')).toBeNull()
+      expect(screen.queryByText('OpenRouter')).toBeNull()
+      expect(screen.queryByText('Local / custom endpoint')).toBeNull()
+    }
+  } finally {
+    await act(async () => $localModelsEnabled.set(previous))
+  }
 })
 
 it('lets first-run onboarding choose later after a failed catalog without restoring provider choices', async () => {
