@@ -838,7 +838,9 @@ jobs:
     name: Organization owner policy acceptance (Linux)
     runs-on: ubuntu-22.04
     # Real owner edits and visual evidence remain independently required.
-    timeout-minutes: 35
+    # Observed cold install: 24m41s; full 18-case run: 10m17s. Bound each
+    # phase separately, with 5m for other setup, build and retained evidence.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -860,6 +862,7 @@ jobs:
       - name: Install required native project isolation
         run: bash scripts/ci/organization-sandbox.sh
       - name: Install Electron system dependencies
+        timeout-minutes: 30
         run: |
           sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
           fc-match --format='%{family}\n' ':lang=ja'
@@ -868,6 +871,7 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
       - name: Verify actual owner policy previews, writes and recovery
+        timeout-minutes: 15
         working-directory: apps/desktop
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
