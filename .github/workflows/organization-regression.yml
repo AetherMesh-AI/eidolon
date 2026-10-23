@@ -179,6 +179,7 @@ jobs:
             tests/eidolon_cli/test_organization_routing_observations.py
             tests/eidolon_cli/test_organization_route_benchmarks.py
             tests/eidolon_cli/test_organization_owner_policy.py
+            tests/eidolon_cli/test_organization_sqlite_diagnostics.py
             tests/eidolon_cli/test_organization_ledger_writer.py
             tests/eidolon_cli/test_organization_store_readonly_connections.py
             tests/eidolon_cli/test_organization_subscription_send_coordination.py
