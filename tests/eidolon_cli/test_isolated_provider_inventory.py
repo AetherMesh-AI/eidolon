@@ -45,7 +45,7 @@ def test_empty_isolated_workspace_can_load_options_without_enabling_runtime(work
     from eidolon_cli.profile_isolation import ProfileIsolationError
     result = options()
     assert any(row['slug'] == 'openai-api' for row in result['providers'])
-    with pytest.raises(ProfileIsolationError, match='Select OpenAI API'):
+    with pytest.raises(ProfileIsolationError, match='Select a supported provider and a model'):
         auth.resolve_provider('openai-codex')
 
 
@@ -82,7 +82,7 @@ def test_configured_isolated_route_survives_inventory(workspace):
     assert result['provider'] == 'openai-api'
     assert result['model'] == 'synthetic-model'
     assert auth.resolve_provider('openai-api') == 'openai-api'
-    with pytest.raises(ProfileIsolationError, match='only its own OpenAI API'):
+    with pytest.raises(ProfileIsolationError, match='differs from this workspace’s selected route'):
         auth.resolve_provider('openai-codex')
 
 

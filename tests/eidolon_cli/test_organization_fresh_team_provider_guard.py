@@ -379,7 +379,7 @@ def test_cold_metadata_inventory_and_real_readiness_before_and_after_setup(guard
             assert not os.environ.get('OPENAI_API_KEY')
             assert not credential_pool.load_pool('openai-api').has_credentials()
             if stage != 'configured':
-                with pytest.raises(profile_isolation.ProfileIsolationError, match='Select OpenAI API'):
+                with pytest.raises(profile_isolation.ProfileIsolationError, match='Select a supported provider and a model'):
                     resolve_runtime_provider(requested='openai-api')
                 assert config.load_config_readonly()['model']['default'] == ''
             else:
