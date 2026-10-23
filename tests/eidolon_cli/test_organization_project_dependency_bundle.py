@@ -452,6 +452,14 @@ def test_invalid_deadline_is_rejected_before_staging(prepared, deadline):
 def test_same_size_mid_read_mutation_cannot_receive_verified_receipt(prepared, monkeypatch):
     original = os.read
     changed = False
+    evidence = {'mutationRan': False}
+    identity = bundle._identity
+    observed = []
+    def observe_identity(info):
+        value = identity(info)
+        if evidence.get('before', ())[:2] == value[:2]:
+            observed.append(value)
+        return value
     def read(descriptor, count):
         nonlocal changed
         data = original(descriptor, count)
@@ -459,11 +467,47 @@ def test_same_size_mid_read_mutation_cannot_receive_verified_receipt(prepared, m
             changed = True
             target = Path('/proc/self/fd') / str(descriptor)
             path = Path(os.readlink(target))
+            evidence.update(mutationRan=True, before=identity(os.fstat(descriptor)),
+                            relativePath=str(path.relative_to(prepared['source'])),
+                            readSha256=digest(data))
             path.write_bytes(b'x' * path.stat().st_size)
+            evidence.update(after=identity(os.fstat(descriptor)),
+                            replacementSha256=digest(path.read_bytes()))
+        return data
+    monkeypatch.setattr(os, 'read', read)
+    monkeypatch.setattr(bundle, '_identity', observe_identity)
+    try:
+        with pytest.raises(ValueError, match='identity changed'):
+            stage(prepared)
+    except pytest.fail.Exception as error:
+        evidence['verificationIdentities'] = observed
+        if evidence.get('relativePath'):
+            copied = prepared['destination'] / evidence['relativePath']
+            evidence['stagedSha256'] = digest(copied.read_bytes()) if copied.is_file() else None
+        error.add_note('mutation evidence: ' + json.dumps(evidence, sort_keys=True))
+        raise
+    assert_clean(prepared)
+
+
+@pytest.mark.linux_only
+def test_mid_read_mutation_with_explicit_metadata_change_is_rejected(prepared, monkeypatch):
+    original = os.read
+    changed = False
+    def read(descriptor, count):
+        nonlocal changed
+        data = original(descriptor, count)
+        if not changed and data:
+            changed = True
+            path = Path(os.readlink('/proc/self/fd/' + str(descriptor)))
+            before = os.fstat(descriptor)
+            path.write_bytes(b'x' * before.st_size)
+            os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
+            assert os.fstat(descriptor).st_mtime_ns != before.st_mtime_ns
         return data
     monkeypatch.setattr(os, 'read', read)
     with pytest.raises(ValueError, match='identity changed'):
         stage(prepared)
+    assert changed
     assert_clean(prepared)
 
 
